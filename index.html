@@ -19,24 +19,24 @@
       </div>
 
       <div class="sidebar-control">
-        <label for="viewModeSelect">View Mode</label>
+        <label for="viewerModeSelect">Viewer Context</label>
+        <select id="viewerModeSelect"></select>
+      </div>
+
+      <div class="sidebar-control">
+        <label for="viewModeSelect">Data View</label>
         <select id="viewModeSelect"></select>
       </div>
 
-      <div class="sidebar-control" id="ownerPreviewControl">
-        <label for="previewSelect">Preview Shared View</label>
-        <select id="previewSelect">
-          <option value="owner">Owner (full access)</option>
-          <option value="family">Family View preset</option>
-          <option value="clinician">Clinician View preset</option>
-          <option value="full">Full Read-Only preset</option>
-        </select>
+      <div class="sidebar-control hidden" id="previewLinkControl">
+        <label for="previewLinkSelect">Preview Shared Link</label>
+        <select id="previewLinkSelect"></select>
       </div>
 
       <nav id="sectionNav" class="section-nav"></nav>
 
       <div class="sidebar-footnote">
-        <p id="contextPill" class="pill">Owner mode</p>
+        <p id="contextPill" class="pill">My View</p>
       </div>
     </aside>
 

@@ -30,12 +30,37 @@ const COMMON_MEDICATION_NAMES = [
 ];
 
 const SCHEDULE_PRESETS = {
-  once_morning: { label: "Once daily (morning)", times: ["08:00"] },
-  once_evening: { label: "Once daily (evening)", times: ["20:00"] },
-  twice_daily: { label: "Twice daily", times: ["08:00", "20:00"] },
+  am: { label: "AM", times: ["08:00"] },
+  pm: { label: "PM", times: ["20:00"] },
+  bid: { label: "BID (twice daily)", times: ["08:00", "20:00"] },
+  tid: { label: "TID (three times daily)", times: ["08:00", "13:00", "20:00"] },
   prn: { label: "PRN / as needed", times: [] },
-  custom: { label: "Custom", times: [] }
+  custom: { label: "Custom", times: [] },
+  // Legacy aliases kept for backwards compatibility with older saved data.
+  once_morning: { label: "AM", times: ["08:00"] },
+  once_evening: { label: "PM", times: ["20:00"] },
+  twice_daily: { label: "BID (twice daily)", times: ["08:00", "20:00"] }
 };
+
+const SCHEDULE_PRESET_ORDER = ["am", "pm", "bid", "tid", "prn", "custom"];
+
+const VIEWER_MODE_OPTIONS = {
+  my: { label: "My View" },
+  clinician: { label: "Clinician View (preview)" },
+  family: { label: "Family View (preview)" },
+  preview_link: { label: "Preview Shared Link" }
+};
+
+const OWNER_PERMISSIONS = Object.freeze({
+  showSensitiveNotes: true,
+  showSensitiveTags: true,
+  showJournalText: true,
+  showLibido: true,
+  showSubstance: true,
+  showFreeText: true
+});
+
+const SENSITIVE_TAG_KEYWORDS = ["sensitive", "journal", "libido", "sexual", "substance", "private"];
 
 const PRESETS = {
   family: {
@@ -43,6 +68,7 @@ const PRESETS = {
     defaultModes: ["daily"],
     permissions: {
       showSensitiveNotes: false,
+      showSensitiveTags: false,
       showJournalText: false,
       showLibido: false,
       showSubstance: false,
@@ -54,6 +80,7 @@ const PRESETS = {
     defaultModes: ["daily", "clinical"],
     permissions: {
       showSensitiveNotes: true,
+      showSensitiveTags: true,
       showJournalText: false,
       showLibido: true,
       showSubstance: true,
@@ -65,6 +92,7 @@ const PRESETS = {
     defaultModes: ["daily", "clinical", "personal"],
     permissions: {
       showSensitiveNotes: true,
+      showSensitiveTags: true,
       showJournalText: true,
       showLibido: true,
       showSubstance: true,
@@ -157,9 +185,10 @@ const SECTION_META = [
 ];
 
 const dom = {
+  viewerModeSelect: document.getElementById("viewerModeSelect"),
   viewModeSelect: document.getElementById("viewModeSelect"),
-  previewSelect: document.getElementById("previewSelect"),
-  ownerPreviewControl: document.getElementById("ownerPreviewControl"),
+  previewLinkControl: document.getElementById("previewLinkControl"),
+  previewLinkSelect: document.getElementById("previewLinkSelect"),
   sectionNav: document.getElementById("sectionNav"),
   contextPill: document.getElementById("contextPill"),
   sectionTitle: document.getElementById("sectionTitle"),
@@ -190,11 +219,17 @@ const app = {
   drafts: loadDrafts(),
   accessLogs: loadAccessLogs(),
   ui: {
+    viewerMode: "my",
     activeViewMode: "daily",
+    previewLinkId: "",
     activeSection: "dashboard",
     entryWorkflow: "medication",
-    previewPreset: "owner",
-    comparisonChangeId: ""
+    comparisonChangeId: "",
+    timelineFilters: {
+      medicationId: "all",
+      fromDate: "",
+      toDate: ""
+    }
   },
   statusTimeout: null
 };
@@ -234,156 +269,12 @@ function saveOwnerData(nextData) {
 }
 
 function buildSeedState() {
-  const now = new Date();
-  const today = isoDate(now);
-  const daysAgo = (n) => {
-    const date = new Date(now);
-    date.setDate(date.getDate() - n);
-    return isoDate(date);
-  };
-
-  const meds = [
-    {
-      id: uid(),
-      name: "Vyvanse",
-      genericName: "Lisdexamfetamine",
-      route: "oral",
-      currentDose: "40 mg",
-      schedulePreset: "once_morning",
-      scheduleTimes: ["08:00"],
-      startDate: daysAgo(70),
-      indication: "Attention and daytime focus support",
-      moaSimple: [
-        "May raise dopamine and norepinephrine levels during the day.",
-        "Can improve sustained attention and task initiation in some people."
-      ],
-      moaTechnical: "Prodrug converted to dextroamphetamine; often increases synaptic catecholamines via transporter-mediated release and reuptake effects. Onset and offset may vary with metabolism and sleep.",
-      adjustmentAcute: "Dose increases may quickly feel more activating and may increase appetite suppression or tension in the first days.",
-      adjustmentChronic: "Over weeks, focus patterns may stabilize while tolerance and sleep effects can change.",
-      commonSideEffects: "Lower appetite, dry mouth, increased heart rate, delayed sleep.",
-      monitor: "Sleep duration, appetite, anxiety, heart rate, rebound fatigue.",
-      questions: "Is current morning timing still best for afternoon productivity?",
-      active: true,
-      createdAt: isoDateTime(now),
-      updatedAt: isoDateTime(now)
-    },
-    {
-      id: uid(),
-      name: "Clonidine",
-      genericName: "Clonidine",
-      route: "oral",
-      currentDose: "150 mcg",
-      schedulePreset: "once_evening",
-      scheduleTimes: ["21:00"],
-      startDate: daysAgo(95),
-      indication: "Evening calming and sleep transition support",
-      moaSimple: [
-        "May reduce arousal and internal restlessness at night.",
-        "Can support sleep onset in some situations."
-      ],
-      moaTechnical: "Alpha-2 adrenergic agonism may reduce central sympathetic signaling, sometimes lowering autonomic arousal and blood pressure.",
-      adjustmentAcute: "Dose increases may cause more sedation, dizziness, or dry mouth in the first week.",
-      adjustmentChronic: "Sleep-related benefit may become steadier; blood pressure effects may remain relevant.",
-      commonSideEffects: "Sedation, dry mouth, dizziness, low blood pressure.",
-      monitor: "Morning grogginess, standing dizziness, BP trends.",
-      questions: "Could timing be moved slightly earlier to reduce morning grogginess?",
-      active: true,
-      createdAt: isoDateTime(now),
-      updatedAt: isoDateTime(now)
-    },
-    {
-      id: uid(),
-      name: "Quetiapine",
-      genericName: "Quetiapine",
-      route: "oral",
-      currentDose: "25 mg PRN",
-      schedulePreset: "prn",
-      scheduleTimes: [],
-      startDate: daysAgo(40),
-      indication: "PRN nighttime sedation support",
-      moaSimple: [
-        "May reduce nighttime agitation and support sleep when needed.",
-        "Can be sedating even at lower doses."
-      ],
-      moaTechnical: "At low doses, antihistaminergic and adrenergic effects may dominate sedation profile; receptor occupancy profile changes with dose.",
-      adjustmentAcute: "PRN use can cause next-day sedation or sluggishness in some people.",
-      adjustmentChronic: "Regular frequent use patterns may affect daytime energy and appetite over time.",
-      commonSideEffects: "Sedation, dry mouth, next-day drowsiness.",
-      monitor: "Morning alertness, appetite changes, frequency of PRN use.",
-      questions: "When should PRN threshold be reconsidered?",
-      active: true,
-      createdAt: isoDateTime(now),
-      updatedAt: isoDateTime(now)
-    }
-  ];
-
-  const [vyvanse, clonidine, quetiapine] = meds;
-
-  const changes = [
-    createSeedChange(vyvanse, daysAgo(35), "30 mg", "40 mg", "Afternoon focus dropped too early"),
-    createSeedChange(vyvanse, daysAgo(14), "40 mg", "40 mg + timing review", "Trying earlier start for smoother afternoon window"),
-    createSeedChange(clonidine, daysAgo(21), "100 mcg", "150 mcg", "Night arousal remained high"),
-    createSeedChange(quetiapine, daysAgo(9), "12.5 mg PRN", "25 mg PRN", "Low PRN dose had limited effect")
-  ];
-
-  const notes = [
-    {
-      id: uid(),
-      date: daysAgo(6),
-      medicationId: vyvanse.id,
-      medicationName: vyvanse.name,
-      noteType: "effect",
-      severity: "moderate",
-      checklist: ["focus improved"],
-      noteText: "Morning initiation felt easier and fewer stalled tasks before lunch.",
-      trainingNotes: "Gym session felt easier to start.",
-      isSensitive: false,
-      createdAt: isoDateTime(now)
-    },
-    {
-      id: uid(),
-      date: daysAgo(4),
-      medicationId: clonidine.id,
-      medicationName: clonidine.name,
-      noteType: "side_effect",
-      severity: "mild",
-      checklist: ["dizziness"],
-      noteText: "Mild dizziness on standing after late dose.",
-      trainingNotes: "No training that day.",
-      isSensitive: false,
-      createdAt: isoDateTime(now)
-    },
-    {
-      id: uid(),
-      date: daysAgo(2),
-      medicationId: "",
-      medicationName: "",
-      noteType: "journal",
-      severity: "moderate",
-      checklist: [],
-      noteText: "Motivation improved when evening routine started earlier.",
-      trainingNotes: "",
-      isSensitive: true,
-      createdAt: isoDateTime(now)
-    }
-  ];
-
-  const checkins = [
-    createSeedCheckin(daysAgo(6), { mood: 6, anxiety: 5, focus: 6, sleepHours: 7.1, sleepQuality: 6, appetite: 5, energy: 6, irritability: 4, cravingsImpulsivity: 4 }),
-    createSeedCheckin(daysAgo(5), { mood: 6, anxiety: 4, focus: 7, sleepHours: 7.4, sleepQuality: 6, appetite: 5, energy: 6, irritability: 3, cravingsImpulsivity: 3 }),
-    createSeedCheckin(daysAgo(4), { mood: 5, anxiety: 6, focus: 5, sleepHours: 6.3, sleepQuality: 5, appetite: 4, energy: 5, irritability: 5, cravingsImpulsivity: 5 }),
-    createSeedCheckin(daysAgo(3), { mood: 7, anxiety: 4, focus: 7, sleepHours: 7.8, sleepQuality: 7, appetite: 5, energy: 7, irritability: 3, cravingsImpulsivity: 3 }),
-    createSeedCheckin(daysAgo(2), { mood: 6, anxiety: 5, focus: 6, sleepHours: 7.2, sleepQuality: 6, appetite: 5, energy: 6, irritability: 4, cravingsImpulsivity: 4 }),
-    createSeedCheckin(daysAgo(1), { mood: 7, anxiety: 4, focus: 7, sleepHours: 7.5, sleepQuality: 7, appetite: 6, energy: 7, irritability: 3, cravingsImpulsivity: 3 }),
-    createSeedCheckin(today, { mood: 6, anxiety: 4, focus: 6, sleepHours: 7.0, sleepQuality: 6, appetite: 5, energy: 6, irritability: 3, cravingsImpulsivity: 3 })
-  ];
-
   return ensureStateShape({
     version: APP_VERSION,
-    medications: meds,
-    changes,
-    notes,
-    checkins,
+    medications: [],
+    changes: [],
+    notes: [],
+    checkins: [],
     adherence: [],
     shareLinks: []
   });
@@ -456,16 +347,20 @@ function migrateToV2(input) {
       id: med.id || uid(),
       name: med.name || "Unnamed medication",
       genericName: med.genericName || "",
+      brandName: med.brandName || "",
       route: med.route || "oral",
       currentDose: med.currentDose || med.dose || "",
-      schedulePreset: med.schedulePreset || "custom",
+      schedulePreset: normalizeSchedulePresetValue(med.schedulePreset || "custom"),
       scheduleTimes: normalizeTimes(med.scheduleTimes || (med.time ? [med.time] : [])),
       startDate: med.startDate || isoDate(new Date()),
       indication: med.indication || med.notes || "",
       moaSimple: Array.isArray(med.moaSimple) ? med.moaSimple : [],
       moaTechnical: med.moaTechnical || "",
+      timeCourseNotes: med.timeCourseNotes || "",
       adjustmentAcute: med.adjustmentAcute || "",
       adjustmentChronic: med.adjustmentChronic || "",
+      interactionsNotes: med.interactionsNotes || "",
+      contraindicationsNotes: med.contraindicationsNotes || "",
       commonSideEffects: med.commonSideEffects || "",
       monitor: med.monitor || "",
       questions: med.questions || "",
@@ -506,6 +401,7 @@ function migrateToV2(input) {
       noteType: note.noteType || note.type || "effect",
       severity: note.severity || "moderate",
       checklist: Array.isArray(note.checklist) ? note.checklist : [],
+      tags: Array.isArray(note.tags) ? note.tags.map((tag) => String(tag || "").trim()).filter(Boolean) : [],
       noteText: note.noteText || note.note || "",
       trainingNotes: note.trainingNotes || "",
       isSensitive: Boolean(note.isSensitive || note.noteType === "journal") || note.type === "journal",
@@ -540,10 +436,6 @@ function migrateToV2(input) {
     });
   }
 
-  if (!migrated.medications.length) {
-    return buildSeedState();
-  }
-
   return ensureStateShape(migrated);
 }
 
@@ -563,16 +455,20 @@ function ensureStateShape(input) {
       id: med.id || uid(),
       name: med.name || "Unnamed medication",
       genericName: med.genericName || "",
+      brandName: med.brandName || "",
       route: med.route || "oral",
       currentDose: med.currentDose || "",
-      schedulePreset: med.schedulePreset || "custom",
+      schedulePreset: normalizeSchedulePresetValue(med.schedulePreset || "custom"),
       scheduleTimes: normalizeTimes(med.scheduleTimes || []),
       startDate: med.startDate || isoDate(new Date()),
       indication: med.indication || "",
       moaSimple: Array.isArray(med.moaSimple) ? med.moaSimple.filter(Boolean) : [],
       moaTechnical: med.moaTechnical || "",
+      timeCourseNotes: med.timeCourseNotes || "",
       adjustmentAcute: med.adjustmentAcute || "",
       adjustmentChronic: med.adjustmentChronic || "",
+      interactionsNotes: med.interactionsNotes || "",
+      contraindicationsNotes: med.contraindicationsNotes || "",
       commonSideEffects: med.commonSideEffects || "",
       monitor: med.monitor || "",
       questions: med.questions || "",
@@ -605,6 +501,7 @@ function ensureStateShape(input) {
       noteType: note.noteType || "effect",
       severity: note.severity || "moderate",
       checklist: Array.isArray(note.checklist) ? note.checklist : [],
+      tags: Array.isArray(note.tags) ? note.tags.map((tag) => String(tag || "").trim()).filter(Boolean) : [],
       noteText: note.noteText || "",
       trainingNotes: note.trainingNotes || "",
       isSensitive: Boolean(note.isSensitive),
@@ -692,12 +589,14 @@ function normalizeInterpretation(input) {
 }
 
 function normalizePermissions(input) {
+  const source = input || {};
   return {
-    showSensitiveNotes: Boolean(input.showSensitiveNotes),
-    showJournalText: Boolean(input.showJournalText),
-    showLibido: Boolean(input.showLibido),
-    showSubstance: Boolean(input.showSubstance),
-    showFreeText: Boolean(input.showFreeText)
+    showSensitiveNotes: Boolean(source.showSensitiveNotes),
+    showSensitiveTags: Boolean(source.showSensitiveTags),
+    showJournalText: Boolean(source.showJournalText),
+    showLibido: Boolean(source.showLibido),
+    showSubstance: Boolean(source.showSubstance),
+    showFreeText: Boolean(source.showFreeText)
   };
 }
 
@@ -712,6 +611,15 @@ function normalizeTimes(times) {
     .map((value) => String(value || "").trim())
     .filter(Boolean)))
     .sort();
+}
+
+function normalizeSchedulePresetValue(preset) {
+  const incoming = String(preset || "").trim();
+  if (incoming === "once_morning") return "am";
+  if (incoming === "once_evening") return "pm";
+  if (incoming === "twice_daily") return "bid";
+  if (SCHEDULE_PRESET_ORDER.includes(incoming)) return incoming;
+  return "custom";
 }
 
 function parseSharePayload() {
@@ -787,6 +695,7 @@ function handleShareSessionInit() {
     }
   }
 
+  app.ui.viewerMode = "my";
   app.ui.activeViewMode = app.shareSession.allowedModes[0] || "daily";
   app.ui.activeSection = "dashboard";
 }
@@ -875,8 +784,40 @@ function getActiveContext() {
     };
   }
 
-  if (app.ui.previewPreset !== "owner") {
-    const preset = PRESETS[app.ui.previewPreset] || PRESETS.full;
+  if (app.ui.viewerMode === "preview_link") {
+    const links = app.ownerData.shareLinks.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    if (!links.length) {
+      return {
+        type: "preview",
+        label: "Preview Shared Link",
+        readOnly: true,
+        permissions: normalizePermissions(PRESETS.family.permissions),
+        allowedModes: normalizeAllowedModes(PRESETS.family.defaultModes),
+        blockedReason: "No shared links available to preview yet.",
+        expiresAt: "",
+        preset: "family"
+      };
+    }
+
+    const selected = links.find((entry) => entry.id === app.ui.previewLinkId) || links[0];
+    app.ui.previewLinkId = selected.id;
+    const expired = selected.expiresAt && new Date(selected.expiresAt).getTime() < Date.now();
+
+    return {
+      type: "preview",
+      label: `Preview Shared Link: ${selected.name}`,
+      readOnly: true,
+      permissions: normalizePermissions(selected.permissions || PRESETS.full.permissions),
+      allowedModes: normalizeAllowedModes(selected.allowedModes || PRESETS.full.defaultModes),
+      blockedReason: selected.revoked ? "This link is revoked." : expired ? "This link is expired." : "",
+      expiresAt: selected.expiresAt || "",
+      preset: selected.preset || "full",
+      selectedLinkId: selected.id
+    };
+  }
+
+  if (app.ui.viewerMode === "clinician" || app.ui.viewerMode === "family") {
+    const preset = PRESETS[app.ui.viewerMode];
     return {
       type: "preview",
       label: `${preset.label} preview`,
@@ -885,25 +826,19 @@ function getActiveContext() {
       allowedModes: normalizeAllowedModes(preset.defaultModes),
       blockedReason: "",
       expiresAt: "",
-      preset: app.ui.previewPreset
+      preset: app.ui.viewerMode
     };
   }
 
   return {
     type: "owner",
-    label: "Owner mode",
+    label: "My View",
     readOnly: false,
-    permissions: normalizePermissions({
-      showSensitiveNotes: true,
-      showJournalText: true,
-      showLibido: true,
-      showSubstance: true,
-      showFreeText: true
-    }),
+    permissions: normalizePermissions(OWNER_PERMISSIONS),
     allowedModes: ["daily", "clinical", "personal"],
     blockedReason: "",
     expiresAt: "",
-    preset: "owner"
+    preset: "my"
   };
 }
 
@@ -917,6 +852,15 @@ function getSourceData() {
 function getVisibleData() {
   const context = getActiveContext();
   const source = deepClone(getSourceData());
+
+  if (!context.permissions.showSensitiveTags) {
+    source.notes = source.notes.map((note) => ({
+      ...note,
+      tags: Array.isArray(note.tags)
+        ? note.tags.filter((tag) => !SENSITIVE_TAG_KEYWORDS.some((keyword) => String(tag || "").toLowerCase().includes(keyword)))
+        : []
+    }));
+  }
 
   const filteredNotes = source.notes.filter((note) => {
     if (!context.permissions.showSensitiveNotes && note.isSensitive) return false;
@@ -966,14 +910,24 @@ function hydrateMedicationNameOptions() {
 }
 
 function bindGlobalHandlers() {
+  dom.viewerModeSelect.addEventListener("change", (event) => {
+    app.ui.viewerMode = event.target.value;
+    if (app.ui.viewerMode !== "preview_link") {
+      app.ui.previewLinkId = "";
+    }
+    ensureSectionForCurrentMode();
+    renderAll();
+  });
+
   dom.viewModeSelect.addEventListener("change", (event) => {
     app.ui.activeViewMode = event.target.value;
     ensureSectionForCurrentMode();
     renderAll();
   });
 
-  dom.previewSelect.addEventListener("change", (event) => {
-    app.ui.previewPreset = event.target.value;
+  dom.previewLinkSelect.addEventListener("change", (event) => {
+    app.ui.viewerMode = "preview_link";
+    app.ui.previewLinkId = event.target.value;
     ensureSectionForCurrentMode();
     renderAll();
   });
@@ -999,7 +953,7 @@ function bindShareHashListener() {
     if (app.shareSession) {
       handleShareSessionInit();
     } else {
-      app.ui.previewPreset = "owner";
+      app.ui.viewerMode = "my";
     }
     ensureSectionForCurrentMode();
     renderAll();
@@ -1021,6 +975,17 @@ function renderAll() {
 }
 
 function renderViewModeSelector(context) {
+  if (!app.shareSession) {
+    dom.viewerModeSelect.innerHTML = Object.entries(VIEWER_MODE_OPTIONS)
+      .map(([value, meta]) => `<option value="${value}">${escapeHtml(meta.label)}</option>`)
+      .join("");
+    dom.viewerModeSelect.disabled = false;
+    dom.viewerModeSelect.value = app.ui.viewerMode;
+  } else {
+    dom.viewerModeSelect.innerHTML = `<option value="share">Shared link view</option>`;
+    dom.viewerModeSelect.disabled = true;
+  }
+
   const options = context.allowedModes.map((mode) => {
     const meta = VIEW_MODE_META[mode];
     return `<option value="${mode}">${meta.label}</option>`;
@@ -1031,12 +996,25 @@ function renderViewModeSelector(context) {
 }
 
 function renderContextElements(context) {
-  dom.contextPill.textContent = context.type === "share" ? "Read-only shared view" : context.label;
+  dom.contextPill.textContent = context.label;
 
-  if (context.type === "owner") {
-    dom.ownerPreviewControl.classList.remove("hidden");
+  if (!app.shareSession && app.ui.viewerMode === "preview_link") {
+    const links = app.ownerData.shareLinks.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    dom.previewLinkControl.classList.remove("hidden");
+    dom.previewLinkSelect.innerHTML = links.length
+      ? links
+          .map((link) => {
+            const expired = link.expiresAt && new Date(link.expiresAt).getTime() < Date.now();
+            const status = link.revoked ? "revoked" : expired ? "expired" : "active";
+            return `<option value="${link.id}">${escapeHtml(link.name)} (${escapeHtml(status)})</option>`;
+          })
+          .join("")
+      : `<option value="">No links available</option>`;
+    dom.previewLinkSelect.value = app.ui.previewLinkId || links[0]?.id || "";
+    dom.previewLinkSelect.disabled = !links.length;
   } else {
-    dom.ownerPreviewControl.classList.add("hidden");
+    dom.previewLinkControl.classList.add("hidden");
+    dom.previewLinkSelect.innerHTML = "";
   }
 
   if (context.type === "share") {
@@ -1044,16 +1022,20 @@ function renderContextElements(context) {
     dom.readOnlyBanner.innerHTML = `<strong>Read-only access:</strong> Shared for ${escapeHtml(context.label)}.${context.expiresAt ? ` Link expires ${escapeHtml(niceDate(context.expiresAt))}.` : ""}`;
   } else if (context.type === "preview") {
     dom.readOnlyBanner.classList.remove("hidden");
-    dom.readOnlyBanner.innerHTML = `<strong>Preview mode:</strong> You are previewing ${escapeHtml(context.label)} permissions.`;
+    dom.readOnlyBanner.innerHTML = `<strong>Preview mode:</strong> You are previewing ${escapeHtml(context.label)} permissions in read-only mode.`;
   } else {
-    dom.readOnlyBanner.classList.add("hidden");
-    dom.readOnlyBanner.innerHTML = "";
+    dom.readOnlyBanner.classList.remove("hidden");
+    dom.readOnlyBanner.innerHTML = `<strong>My View:</strong> Full data and editing access is active.`;
   }
 
   if (context.blockedReason) {
     dom.globalStatus.classList.remove("hidden");
-    dom.globalStatus.classList.add("error");
+    dom.globalStatus.classList.add("error", "context-block");
     dom.globalStatus.textContent = context.blockedReason;
+  } else if (dom.globalStatus.classList.contains("context-block")) {
+    dom.globalStatus.classList.add("hidden");
+    dom.globalStatus.classList.remove("error", "context-block");
+    dom.globalStatus.textContent = "";
   }
 }
 
@@ -1157,8 +1139,81 @@ function renderSections(context) {
   }
 }
 
+function resolveCurrentMedications(data) {
+  const grouped = new Map();
+
+  for (const med of data.medications || []) {
+    const key = normalizeMedicationKey(med.name || med.id || uid());
+    if (!grouped.has(key)) {
+      grouped.set(key, []);
+    }
+    grouped.get(key).push(med);
+  }
+
+  const resolved = [];
+
+  for (const [key, records] of grouped.entries()) {
+    const sorted = records.slice().sort((a, b) => medicationSortValue(b) - medicationSortValue(a));
+    const activeRecords = sorted.filter((entry) => entry.active);
+    const latestRecord = sorted[0];
+    const canonical = activeRecords[0] || latestRecord;
+    const sourceIds = new Set(sorted.map((entry) => entry.id));
+
+    const latestChange = (data.changes || [])
+      .filter((change) => {
+        if (change.medicationId && sourceIds.has(change.medicationId)) return true;
+        if (change.medicationName && normalizeMedicationKey(change.medicationName) === key) return true;
+        return false;
+      })
+      .sort((a, b) => changeSortValue(b) - changeSortValue(a))[0];
+
+    const fallbackScheduleSource = activeRecords.find((entry) => (entry.scheduleTimes || []).length) || latestRecord;
+    resolved.push({
+      ...canonical,
+      scheduleTimes: normalizeTimes((canonical.scheduleTimes || []).length ? canonical.scheduleTimes : fallbackScheduleSource?.scheduleTimes || []),
+      currentDose: latestChange?.newDose || canonical.currentDose || "",
+      isCurrent: activeRecords.length > 0,
+      sourceCount: sorted.length,
+      latestChangeDate: latestChange?.date || ""
+    });
+  }
+
+  return resolved.sort((a, b) => {
+    if (Number(b.isCurrent) !== Number(a.isCurrent)) return Number(b.isCurrent) - Number(a.isCurrent);
+    return (a.name || "").localeCompare(b.name || "");
+  });
+}
+
+function normalizeMedicationKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function medicationSortValue(medication) {
+  return Math.max(
+    parseSortableDate(medication.updatedAt),
+    parseSortableDate(medication.createdAt),
+    parseSortableDate(medication.startDate)
+  );
+}
+
+function changeSortValue(change) {
+  return Math.max(parseSortableDate(change.date), parseSortableDate(change.createdAt));
+}
+
+function parseSortableDate(value) {
+  if (!value) return 0;
+  const raw = String(value);
+  const normalized = raw.includes("T") ? raw : `${raw}T12:00:00`;
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+}
+
 function renderDashboard(root, data, context) {
-  const activeMeds = data.medications.filter((med) => med.active);
+  const resolvedMeds = resolveCurrentMedications(data);
+  const activeMeds = resolvedMeds.filter((med) => med.isCurrent);
   const today = isoDate(new Date());
   const todayCheckin = data.checkins.find((entry) => entry.date === today);
   const recentChanges = data.changes
@@ -1175,9 +1230,14 @@ function renderDashboard(root, data, context) {
   root.innerHTML = `
     <div class="grid cards">
       <article class="card">
-        <div class="label">Active meds</div>
+        <div class="label">Current meds (resolved)</div>
         <strong class="value">${activeMeds.length}</strong>
-        <div class="meta">${dueState.dueNow.length} due now · ${dueState.next.length} next</div>
+        <div class="meta">${activeMeds.slice(0, 3).map((med) => med.name).join(", ") || "No active medications yet"}</div>
+      </article>
+      <article class="card">
+        <div class="label">Today doses</div>
+        <strong class="value">${dueState.dueNow.length} due now</strong>
+        <div class="meta">${dueState.next.length} upcoming · ${dueState.taken.length} marked</div>
       </article>
       <article class="card">
         <div class="label">Today check-in</div>
@@ -1200,6 +1260,15 @@ function renderDashboard(root, data, context) {
       <article class="card">
         <h3>Today’s doses</h3>
         ${renderDoseTable(dueState, context)}
+      </article>
+
+      <article class="card">
+        <h3>Current Medications</h3>
+        ${activeMeds.length ? `
+          <ul class="timeline-list">
+            ${activeMeds.map((med) => `<li><strong>${escapeHtml(med.name)}</strong> · ${escapeHtml(med.currentDose || "-")} · ${escapeHtml(formatSchedule(med))}${med.sourceCount > 1 ? ` <span class="subtle">(resolved from ${med.sourceCount} records)</span>` : ""}</li>`).join("")}
+          </ul>
+        ` : `<div class="empty">No active medications recorded yet.</div>`}
       </article>
 
       <article class="card">
@@ -1297,10 +1366,19 @@ function renderSharePanelPreview(context) {
 }
 
 function renderMedications(root, data, context) {
-  const meds = data.medications.slice().sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
+  const resolved = resolveCurrentMedications(data);
+  const recordCount = data.medications.length;
+  const current = resolved.filter((med) => med.isCurrent);
+  const historical = resolved.filter((med) => !med.isCurrent);
 
-  root.innerHTML = meds.length
+  root.innerHTML = resolved.length
     ? `
+      <div class="card" style="margin-bottom:12px;">
+        <h3>Current medications (resolved from stored data)</h3>
+        <div class="subtle">
+          If multiple records conflict, this list shows the most recently updated active/current record while preserving all history.
+        </div>
+      </div>
       <div class="table-wrap">
         <table>
           <thead>
@@ -1311,30 +1389,34 @@ function renderMedications(root, data, context) {
               <th>Route</th>
               <th>Start</th>
               <th>Status</th>
+              <th>Resolution</th>
               <th>Detail</th>
             </tr>
           </thead>
           <tbody>
-            ${meds.map((med) => `
+            ${[...current, ...historical].map((med) => `
               <tr>
                 <td>
                   <strong>${escapeHtml(med.name)}</strong>
                   ${med.genericName ? `<div class="subtle">${escapeHtml(med.genericName)}</div>` : ""}
+                  ${med.brandName ? `<div class="subtle">${escapeHtml(med.brandName)}</div>` : ""}
                 </td>
                 <td>${escapeHtml(med.currentDose || "-")}</td>
                 <td>${escapeHtml(formatSchedule(med))}</td>
                 <td>${escapeHtml(med.route || "-")}</td>
                 <td>${escapeHtml(niceDate(med.startDate))}</td>
-                <td>${med.active ? "Active" : "Inactive"}</td>
+                <td>${med.isCurrent ? "Current" : "Historical"}</td>
+                <td>${med.sourceCount > 1 ? `Resolved from ${med.sourceCount} records` : "Single record"}</td>
                 <td>
                   <button type="button" class="btn btn-secondary small" data-open-medication="${med.id}">Open details</button>
-                  ${context.readOnly ? "" : `<button type="button" class="btn btn-secondary small" data-toggle-med="${med.id}">${med.active ? "Set inactive" : "Set active"}</button>`}
+                  ${context.readOnly ? "" : `<button type="button" class="btn btn-secondary small" data-toggle-med="${med.id}">${med.isCurrent ? "Set inactive" : "Set active"}</button>`}
                 </td>
               </tr>
             `).join("")}
           </tbody>
         </table>
       </div>
+      <div class="subtle" style="margin-top:8px;">Underlying medication records stored: ${recordCount}. Current list rows: ${current.length}.</div>
     `
     : `<div class="empty">No medications added yet.</div>`;
 
@@ -1383,6 +1465,10 @@ function openMedicationModal(medicationId, context) {
             <input id="modalMedGeneric" value="${escapeHtml(med.genericName || "")}" ${editable ? "" : "disabled"}>
           </div>
           <div>
+            <label>Brand name</label>
+            <input id="modalMedBrand" value="${escapeHtml(med.brandName || "")}" ${editable ? "" : "disabled"}>
+          </div>
+          <div>
             <label>Current dose</label>
             <input id="modalMedDose" value="${escapeHtml(med.currentDose || "")}" ${editable ? "" : "disabled"}>
           </div>
@@ -1409,6 +1495,8 @@ function openMedicationModal(medicationId, context) {
         <textarea id="modalMedMoaSimple" ${editable ? "" : "disabled"}>${escapeHtml((med.moaSimple || []).join("\n"))}</textarea>
         <label style="margin-top:10px;">Technical explanation</label>
         <textarea id="modalMedMoaTechnical" ${editable ? "" : "disabled"}>${escapeHtml(med.moaTechnical || "")}</textarea>
+        <label style="margin-top:10px;">Acute vs chronic time-course / adaptation notes</label>
+        <textarea id="modalMedTimeCourse" ${editable ? "" : "disabled"}>${escapeHtml(med.timeCourseNotes || "")}</textarea>
         <label style="margin-top:10px;">Dose adjustment interpretation (acute)</label>
         <textarea id="modalMedAdjustAcute" ${editable ? "" : "disabled"}>${escapeHtml(med.adjustmentAcute || "")}</textarea>
         <label style="margin-top:10px;">Dose adjustment interpretation (longer-term)</label>
@@ -1423,6 +1511,10 @@ function openMedicationModal(medicationId, context) {
         <textarea id="modalMedSideEffects" ${editable ? "" : "disabled"}>${escapeHtml(med.commonSideEffects || "")}</textarea>
         <label style="margin-top:10px;">What to monitor</label>
         <textarea id="modalMedMonitor" ${editable ? "" : "disabled"}>${escapeHtml(med.monitor || "")}</textarea>
+        <label style="margin-top:10px;">Interactions notes</label>
+        <textarea id="modalMedInteractions" ${editable ? "" : "disabled"}>${escapeHtml(med.interactionsNotes || "")}</textarea>
+        <label style="margin-top:10px;">Contraindications notes</label>
+        <textarea id="modalMedContraindications" ${editable ? "" : "disabled"}>${escapeHtml(med.contraindicationsNotes || "")}</textarea>
         <label style="margin-top:10px;">Notes / questions for psychiatrist or GP</label>
         <textarea id="modalMedQuestions" ${editable ? "" : "disabled"}>${escapeHtml(med.questions || "")}</textarea>
         <p class="safety-footnote">Clinical interpretation may vary. Discuss with prescriber.</p>
@@ -1456,17 +1548,25 @@ function openMedicationModal(medicationId, context) {
 
       target.name = valueOf("modalMedName");
       target.genericName = valueOf("modalMedGeneric");
+      target.brandName = valueOf("modalMedBrand");
       target.currentDose = valueOf("modalMedDose");
       target.route = valueOf("modalMedRoute");
       target.startDate = valueOf("modalMedStart") || target.startDate;
       target.scheduleTimes = normalizeTimes(valueOf("modalMedTimes").split(",").map((item) => item.trim()));
+      const invalidTime = target.scheduleTimes.find((time) => !isTimeValue(time));
+      if (invalidTime) {
+        return setStatus(`Schedule time "${invalidTime}" is invalid. Use HH:MM (24-hour).`, "error");
+      }
       target.indication = valueOf("modalMedIndication");
       target.moaSimple = valueOf("modalMedMoaSimple").split("\n").map((line) => line.trim()).filter(Boolean);
       target.moaTechnical = valueOf("modalMedMoaTechnical");
+      target.timeCourseNotes = valueOf("modalMedTimeCourse");
       target.adjustmentAcute = valueOf("modalMedAdjustAcute");
       target.adjustmentChronic = valueOf("modalMedAdjustChronic");
       target.commonSideEffects = valueOf("modalMedSideEffects");
       target.monitor = valueOf("modalMedMonitor");
+      target.interactionsNotes = valueOf("modalMedInteractions");
+      target.contraindicationsNotes = valueOf("modalMedContraindications");
       target.questions = valueOf("modalMedQuestions");
       target.updatedAt = isoDateTime(new Date());
 
@@ -1516,7 +1616,7 @@ function renderChanges(root, data, context) {
                 <details>
                   <summary>Open interpretation card</summary>
                   <div class="interpret-card">
-                    ${renderInterpretationCard(row.interpretation)}
+                    ${renderInterpretationCard(row)}
                     ${context.readOnly ? "" : renderInterpretationEditor(row)}
                     <p class="safety-footnote">This interpretation is informational and may change with clinical review. Discuss with prescriber.</p>
                   </div>
@@ -1553,10 +1653,12 @@ function renderChanges(root, data, context) {
   }
 }
 
-function renderInterpretationCard(interpretation) {
-  const i = normalizeInterpretation(interpretation);
+function renderInterpretationCard(change) {
+  const i = normalizeInterpretation(change.interpretation || {});
   return `
     <div class="interpret-grid">
+      <div class="interpret-item"><div class="label">What changed</div><div>${escapeHtml(change.oldDose || "-")} → ${escapeHtml(change.newDose || "-")}</div></div>
+      <div class="interpret-item"><div class="label">Reason</div><div>${escapeHtml(change.reason || "-")}</div></div>
       <div class="interpret-item"><div class="label">Short term (1-7 days)</div><div>${escapeHtml(i.shortTerm)}</div></div>
       <div class="interpret-item"><div class="label">Longer term (2-6 weeks)</div><div>${escapeHtml(i.longTerm)}</div></div>
       <div class="interpret-item"><div class="label">What to monitor</div><div>${escapeHtml(i.monitor)}</div></div>
@@ -1668,7 +1770,7 @@ function renderNotes(root, data) {
           <ul class="timeline-list">
             ${items
               .sort((a, b) => b.date.localeCompare(a.date))
-              .map((item) => `<li><strong>${escapeHtml(niceDate(item.date))}</strong> ${escapeHtml(item.medicationName ? `(${item.medicationName})` : "")} · ${escapeHtml(item.noteText || "-")} ${item.trainingNotes ? `<div class="subtle">Training: ${escapeHtml(item.trainingNotes)}</div>` : ""}</li>`)
+              .map((item) => `<li><strong>${escapeHtml(niceDate(item.date))}</strong> ${escapeHtml(item.medicationName ? `(${item.medicationName})` : "")} · ${escapeHtml(item.noteText || "-")} ${(item.tags || []).length ? `<div class="subtle">Tags: ${escapeHtml(item.tags.join(", "))}</div>` : ""} ${item.trainingNotes ? `<div class="subtle">Training: ${escapeHtml(item.trainingNotes)}</div>` : ""}</li>`)
               .join("")}
           </ul>
         </article>
@@ -1681,22 +1783,54 @@ function renderNotes(root, data) {
 }
 
 function renderTimeline(root, data) {
-  const checkins = data.checkins.slice().sort((a, b) => a.date.localeCompare(b.date));
-  const changeDates = data.changes.map((entry) => entry.date);
+  const meds = resolveCurrentMedications(data);
+  const medicationOptions = meds.map((med) => ({ id: med.id, name: med.name }));
+  if (app.ui.timelineFilters.medicationId && app.ui.timelineFilters.medicationId !== "all") {
+    const exists = medicationOptions.some((option) => option.id === app.ui.timelineFilters.medicationId);
+    if (!exists) {
+      app.ui.timelineFilters.medicationId = "all";
+    }
+  }
+
+  const filtered = applyTimelineFilters(data);
+  const checkins = filtered.checkins.slice().sort((a, b) => a.date.localeCompare(b.date));
+  const changeDates = filtered.changes.map((entry) => entry.date);
 
   const moodSeries = checkins.map((entry) => ({ date: entry.date, value: toNumber(entry.mood) }));
   const anxietySeries = checkins.map((entry) => ({ date: entry.date, value: toNumber(entry.anxiety) }));
   const focusSeries = checkins.map((entry) => ({ date: entry.date, value: toNumber(entry.focus) }));
   const sleepSeries = checkins.map((entry) => ({ date: entry.date, value: toNumber(entry.sleepHours) }));
+  const sideEffectCounts = buildSideEffectCounts(filtered);
 
-  const sideEffectCounts = buildSideEffectCounts(data);
-
-  if (!app.ui.comparisonChangeId && data.changes[0]) {
-    app.ui.comparisonChangeId = data.changes[0].id;
+  if (!app.ui.comparisonChangeId && filtered.changes[0]) {
+    app.ui.comparisonChangeId = filtered.changes[0].id;
   }
 
   root.innerHTML = `
     <div class="grid" style="grid-template-columns: 1fr; gap: 12px;">
+      <article class="card">
+        <h3>Timeline filters</h3>
+        <div class="field-grid">
+          <div>
+            <label for="timelineMedicationFilter">Medication</label>
+            <select id="timelineMedicationFilter">
+              <option value="all">All medications</option>
+              ${medicationOptions
+                .map((option) => `<option value="${option.id}" ${app.ui.timelineFilters.medicationId === option.id ? "selected" : ""}>${escapeHtml(option.name)}</option>`)
+                .join("")}
+            </select>
+          </div>
+          <div>
+            <label for="timelineFromDate">From date</label>
+            <input id="timelineFromDate" type="date" value="${escapeHtml(app.ui.timelineFilters.fromDate || "")}">
+          </div>
+          <div>
+            <label for="timelineToDate">To date</label>
+            <input id="timelineToDate" type="date" value="${escapeHtml(app.ui.timelineFilters.toDate || "")}">
+          </div>
+        </div>
+      </article>
+
       <article class="chart-box">
         <h4>Mood / Anxiety / Focus over time</h4>
         ${renderLineChart(
@@ -1721,15 +1855,30 @@ function renderTimeline(root, data) {
 
       <article class="card">
         <h3>Before/After comparison around a medication change</h3>
-        ${renderBeforeAfterComparison(data)}
+        ${renderBeforeAfterComparison(filtered)}
       </article>
 
       <article class="card">
         <h3>Timeline</h3>
-        ${renderCombinedTimeline(data)}
+        ${renderCombinedTimeline(filtered)}
       </article>
     </div>
   `;
+
+  root.querySelector("#timelineMedicationFilter")?.addEventListener("change", (event) => {
+    app.ui.timelineFilters.medicationId = event.target.value;
+    renderAll();
+  });
+
+  root.querySelector("#timelineFromDate")?.addEventListener("change", (event) => {
+    app.ui.timelineFilters.fromDate = event.target.value;
+    renderAll();
+  });
+
+  root.querySelector("#timelineToDate")?.addEventListener("change", (event) => {
+    app.ui.timelineFilters.toDate = event.target.value;
+    renderAll();
+  });
 
   const comparisonSelect = root.querySelector("#comparisonChangeSelect");
   if (comparisonSelect) {
@@ -1738,6 +1887,45 @@ function renderTimeline(root, data) {
       renderAll();
     });
   }
+}
+
+function applyTimelineFilters(data) {
+  const medicationId = app.ui.timelineFilters.medicationId || "all";
+  const selectedMedication = (data.medications || []).find((med) => med.id === medicationId);
+  const selectedKey = selectedMedication ? normalizeMedicationKey(selectedMedication.name) : "";
+  const fromDate = app.ui.timelineFilters.fromDate || "";
+  const toDate = app.ui.timelineFilters.toDate || "";
+
+  const inDateWindow = (value) => {
+    if (!value) return true;
+    if (fromDate && value < fromDate) return false;
+    if (toDate && value > toDate) return false;
+    return true;
+  };
+
+  const changes = (data.changes || []).filter((change) => {
+    if (!inDateWindow(change.date)) return false;
+    if (medicationId === "all") return true;
+    if (change.medicationId && change.medicationId === medicationId) return true;
+    if (change.medicationName && normalizeMedicationKey(change.medicationName) === selectedKey) return true;
+    return false;
+  });
+
+  const notes = (data.notes || []).filter((note) => {
+    if (!inDateWindow(note.date)) return false;
+    if (medicationId === "all") return true;
+    if (note.medicationId && note.medicationId === medicationId) return true;
+    if (note.medicationName && normalizeMedicationKey(note.medicationName) === selectedKey) return true;
+    return false;
+  });
+
+  const checkins = (data.checkins || []).filter((checkin) => inDateWindow(checkin.date));
+  return {
+    ...data,
+    changes,
+    notes,
+    checkins
+  };
 }
 
 function renderCombinedTimeline(data) {
@@ -1862,6 +2050,7 @@ function renderEntryWorkflows(root, data, context) {
 function renderWorkflowForm(data) {
   if (app.ui.entryWorkflow === "medication") {
     const draft = app.drafts.medication || {};
+    const selectedPreset = normalizeSchedulePresetValue(draft.schedulePreset || "custom");
     return `
       <form id="formMedication" class="card">
         <h3>Add Current Medication</h3>
@@ -1873,6 +2062,10 @@ function renderWorkflowForm(data) {
           <div>
             <label>Generic name</label>
             <input name="genericName" value="${escapeHtml(draft.genericName || "")}">
+          </div>
+          <div>
+            <label>Brand name</label>
+            <input name="brandName" value="${escapeHtml(draft.brandName || "")}">
           </div>
           <div>
             <label>Current dose</label>
@@ -1891,7 +2084,7 @@ function renderWorkflowForm(data) {
           <div>
             <label>Schedule preset</label>
             <select name="schedulePreset" id="medSchedulePreset">
-              ${Object.entries(SCHEDULE_PRESETS).map(([key, meta]) => `<option value="${key}" ${draft.schedulePreset === key ? "selected" : ""}>${escapeHtml(meta.label)}</option>`).join("")}
+              ${SCHEDULE_PRESET_ORDER.map((key) => `<option value="${key}" ${selectedPreset === key ? "selected" : ""}>${escapeHtml(SCHEDULE_PRESETS[key].label)}</option>`).join("")}
             </select>
           </div>
           <div style="grid-column: 1 / -1;">
@@ -2006,6 +2199,10 @@ function renderWorkflowForm(data) {
             </select>
           </div>
           <div style="grid-column: 1 / -1;">
+            <label>Tags (comma separated, optional)</label>
+            <input name="tags" value="${escapeHtml(draft.tags || "")}" placeholder="e.g. daytime, sedation, sensitive">
+          </div>
+          <div style="grid-column: 1 / -1;">
             <label>Side effects checklist</label>
             <div class="checklist">
               ${SIDE_EFFECT_OPTIONS.map((item) => `
@@ -2095,7 +2292,9 @@ function bindWorkflowFormHandlers(root, data) {
     const scheduleTimes = medicationForm.querySelector("#medScheduleTimes");
 
     schedulePreset.addEventListener("change", () => {
-      const preset = SCHEDULE_PRESETS[schedulePreset.value];
+      const presetKey = normalizeSchedulePresetValue(schedulePreset.value);
+      schedulePreset.value = presetKey;
+      const preset = SCHEDULE_PRESETS[presetKey];
       if (preset && preset.times.length) {
         scheduleTimes.value = preset.times.join(", ");
       }
@@ -2111,6 +2310,13 @@ function bindWorkflowFormHandlers(root, data) {
         return setStatus("Dose format looks invalid. Use a number and unit (for example: 40 mg).", "error");
       }
 
+      const normalizedSchedulePreset = normalizeSchedulePresetValue(values.schedulePreset);
+      const normalizedScheduleTimes = normalizeTimes((values.scheduleTimes || "").split(",").map((item) => item.trim()));
+      const invalidTime = normalizedScheduleTimes.find((time) => !isTimeValue(time));
+      if (invalidTime) {
+        return setStatus(`Schedule time "${invalidTime}" is invalid. Use HH:MM (24-hour).`, "error");
+      }
+
       const duplicate = app.ownerData.medications.find(
         (entry) => entry.active && entry.name.trim().toLowerCase() === (values.name || "").trim().toLowerCase()
       );
@@ -2124,16 +2330,20 @@ function bindWorkflowFormHandlers(root, data) {
         id: uid(),
         name: values.name,
         genericName: values.genericName || "",
+        brandName: values.brandName || "",
         route: values.route || "oral",
         currentDose: values.currentDose,
-        schedulePreset: values.schedulePreset || "custom",
-        scheduleTimes: normalizeTimes((values.scheduleTimes || "").split(",").map((item) => item.trim())),
+        schedulePreset: normalizedSchedulePreset,
+        scheduleTimes: normalizedScheduleTimes,
         startDate: values.startDate,
         indication: values.indication || "",
         moaSimple: (values.moaSimple || "").split("\n").map((line) => line.trim()).filter(Boolean),
         moaTechnical: values.moaTechnical || "",
+        timeCourseNotes: "",
         adjustmentAcute: "",
         adjustmentChronic: "",
+        interactionsNotes: "",
+        contraindicationsNotes: "",
         commonSideEffects: "",
         monitor: values.monitor || "",
         questions: "",
@@ -2255,6 +2465,7 @@ function bindWorkflowFormHandlers(root, data) {
         noteType: values.noteType,
         severity: values.severity,
         checklist,
+        tags: normalizeTags(values.tags || ""),
         noteText: values.noteText,
         trainingNotes: values.trainingNotes || "",
         isSensitive: Boolean(noteForm.elements.isSensitive.checked || values.noteType === "journal"),
@@ -2346,8 +2557,10 @@ function renderSharing(root, _data, context) {
   }
 
   const defaultPreset = PRESETS.family;
-  const toggles = app.drafts.sharePermissions || normalizePermissions(defaultPreset.permissions);
+  const toggles = normalizePermissions(app.drafts.sharePermissions || defaultPreset.permissions);
   const draftShare = app.drafts.share || {};
+  const selectedPresetKey = draftShare.preset || "family";
+  const selectedPreset = PRESETS[selectedPresetKey] || PRESETS.family;
 
   root.innerHTML = `
     <div class="card">
@@ -2369,6 +2582,7 @@ function renderSharing(root, _data, context) {
           <h4>Per-link visibility toggles</h4>
           <div class="field-grid">
             ${renderPermissionToggle("showSensitiveNotes", "Show sensitive notes", toggles.showSensitiveNotes)}
+            ${renderPermissionToggle("showSensitiveTags", "Show sensitive tags", toggles.showSensitiveTags)}
             ${renderPermissionToggle("showJournalText", "Show journal text", toggles.showJournalText)}
             ${renderPermissionToggle("showLibido", "Show libido / sexual side effects", toggles.showLibido)}
             ${renderPermissionToggle("showSubstance", "Show substance-use notes", toggles.showSubstance)}
@@ -2377,13 +2591,13 @@ function renderSharing(root, _data, context) {
 
           <label style="margin-top:10px;">Allowed views</label>
           <div class="row">
-            ${["daily", "clinical", "personal"].map((mode) => {
-              const checked = Array.isArray(draftShare.allowedModes)
-                ? draftShare.allowedModes.includes(mode)
-                : defaultPreset.defaultModes.includes(mode);
-              return `<label class="check-item"><input type="checkbox" name="allowedModes" value="${mode}" ${checked ? "checked" : ""}><span>${escapeHtml(VIEW_MODE_META[mode].label)}</span></label>`;
-            }).join("")}
-          </div>
+              ${["daily", "clinical", "personal"].map((mode) => {
+                const checked = Array.isArray(draftShare.allowedModes)
+                  ? draftShare.allowedModes.includes(mode)
+                  : selectedPreset.defaultModes.includes(mode);
+                return `<label class="check-item"><input type="checkbox" name="allowedModes" value="${mode}" ${checked ? "checked" : ""}><span>${escapeHtml(VIEW_MODE_META[mode].label)}</span></label>`;
+              }).join("")}
+            </div>
         </div>
 
         <div class="row" style="margin-top:10px;">
@@ -2418,6 +2632,7 @@ function renderSharing(root, _data, context) {
     app.drafts.share = values;
     app.drafts.sharePermissions = {
       showSensitiveNotes: shareForm.elements.showSensitiveNotes.checked,
+      showSensitiveTags: shareForm.elements.showSensitiveTags.checked,
       showJournalText: shareForm.elements.showJournalText.checked,
       showLibido: shareForm.elements.showLibido.checked,
       showSubstance: shareForm.elements.showSubstance.checked,
@@ -2437,6 +2652,7 @@ function renderSharing(root, _data, context) {
 
     const permissions = normalizePermissions({
       showSensitiveNotes: shareForm.elements.showSensitiveNotes.checked,
+      showSensitiveTags: shareForm.elements.showSensitiveTags.checked,
       showJournalText: shareForm.elements.showJournalText.checked,
       showLibido: shareForm.elements.showLibido.checked,
       showSubstance: shareForm.elements.showSubstance.checked,
@@ -2486,7 +2702,7 @@ function renderSharing(root, _data, context) {
 
     saveOwnerData(app.ownerData);
     app.drafts.share = {};
-    app.drafts.sharePermissions = {};
+    app.drafts.sharePermissions = null;
     saveDrafts();
     setStatus("Read-only link created.");
     renderAll();
@@ -2519,7 +2735,12 @@ function renderSharing(root, _data, context) {
       const id = button.dataset.previewLink;
       const link = app.ownerData.shareLinks.find((entry) => entry.id === id);
       if (!link) return;
-      window.open(link.url, "_blank", "noopener,noreferrer");
+      app.ui.viewerMode = "preview_link";
+      app.ui.previewLinkId = link.id;
+      app.ui.activeSection = "dashboard";
+      ensureSectionForCurrentMode();
+      setStatus(`Previewing as ${link.name}.`);
+      renderAll();
     });
   });
 
@@ -2556,7 +2777,7 @@ function renderShareList() {
           <textarea class="share-url" readonly>${escapeHtml(link.url)}</textarea>
           <div class="row" style="margin-top:8px;">
             <button class="btn btn-secondary" type="button" data-copy-link="${link.id}">Copy</button>
-            <button class="btn btn-secondary" type="button" data-preview-link="${link.id}">Open preview</button>
+            <button class="btn btn-secondary" type="button" data-preview-link="${link.id}">Preview as recipient</button>
             <button class="btn btn-danger" type="button" data-revoke-link="${link.id}">${link.revoked ? "Unrevoke" : "Revoke"}</button>
             <button class="btn btn-secondary" type="button" data-delete-link="${link.id}">Delete</button>
           </div>
@@ -2599,11 +2820,15 @@ function renderExports(root, data) {
     const rows = data.medications.map((med) => ({
       name: med.name,
       generic_name: med.genericName,
+      brand_name: med.brandName,
       current_dose: med.currentDose,
       schedule_times: (med.scheduleTimes || []).join(" | "),
       route: med.route,
       start_date: med.startDate,
       indication: med.indication,
+      time_course_notes: med.timeCourseNotes || "",
+      interactions_notes: med.interactionsNotes || "",
+      contraindications_notes: med.contraindicationsNotes || "",
       active: med.active
     }));
     downloadFile(`medications-${isoDate(new Date())}.csv`, toCsv(rows), "text/csv");
@@ -2660,7 +2885,7 @@ function renderExports(root, data) {
 }
 
 function buildClinicianSummaryHtml(data) {
-  const meds = data.medications.filter((entry) => entry.active);
+  const meds = resolveCurrentMedications(data).filter((entry) => entry.isCurrent);
   const recentChanges = data.changes.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 12);
   const recentCheckins = data.checkins.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 14);
   const notes = data.notes.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
@@ -2687,9 +2912,9 @@ function buildClinicianSummaryHtml(data) {
 
         <h2>Current Medications</h2>
         <table>
-          <thead><tr><th>Name</th><th>Dose</th><th>Schedule</th><th>Route</th><th>Indication</th><th>Monitor</th><th>Questions</th></tr></thead>
+          <thead><tr><th>Name</th><th>Dose</th><th>Schedule</th><th>Route</th><th>Indication</th><th>Monitor</th><th>Interactions</th><th>Contraindications</th><th>Questions</th></tr></thead>
           <tbody>
-            ${meds.map((med) => `<tr><td>${escapeHtml(med.name)}</td><td>${escapeHtml(med.currentDose)}</td><td>${escapeHtml(formatSchedule(med))}</td><td>${escapeHtml(med.route)}</td><td>${escapeHtml(med.indication || "-")}</td><td>${escapeHtml(med.monitor || "-")}</td><td>${escapeHtml(med.questions || "-")}</td></tr>`).join("")}
+            ${meds.map((med) => `<tr><td>${escapeHtml(med.name)}</td><td>${escapeHtml(med.currentDose)}</td><td>${escapeHtml(formatSchedule(med))}</td><td>${escapeHtml(med.route)}</td><td>${escapeHtml(med.indication || "-")}</td><td>${escapeHtml(med.monitor || "-")}</td><td>${escapeHtml(med.interactionsNotes || "-")}</td><td>${escapeHtml(med.contraindicationsNotes || "-")}</td><td>${escapeHtml(med.questions || "-")}</td></tr>`).join("")}
           </tbody>
         </table>
 
@@ -2713,7 +2938,7 @@ function buildClinicianSummaryHtml(data) {
         <table>
           <thead><tr><th>Date</th><th>Type</th><th>Medication</th><th>Detail</th></tr></thead>
           <tbody>
-            ${notes.map((note) => `<tr><td>${escapeHtml(niceDate(note.date))}</td><td>${escapeHtml(note.noteType)}</td><td>${escapeHtml(note.medicationName || "-")}</td><td>${escapeHtml(note.noteText || "-")}</td></tr>`).join("")}
+            ${notes.map((note) => `<tr><td>${escapeHtml(niceDate(note.date))}</td><td>${escapeHtml(note.noteType)}</td><td>${escapeHtml(note.medicationName || "-")}</td><td>${escapeHtml(note.noteText || "-")}${(note.tags || []).length ? ` [tags: ${escapeHtml(note.tags.join(", "))}]` : ""}</td></tr>`).join("")}
           </tbody>
         </table>
 
@@ -2726,6 +2951,16 @@ function buildClinicianSummaryHtml(data) {
 function filterDataForShare(source, permissions) {
   const clone = deepClone(source);
   clone.shareLinks = [];
+
+  if (!permissions.showSensitiveTags) {
+    clone.notes = clone.notes.map((note) => ({
+      ...note,
+      tags: Array.isArray(note.tags)
+        ? note.tags.filter((tag) => !SENSITIVE_TAG_KEYWORDS.some((keyword) => String(tag || "").toLowerCase().includes(keyword)))
+        : []
+    }));
+  }
+
   clone.notes = clone.notes.filter((note) => {
     if (!permissions.showSensitiveNotes && note.isSensitive) return false;
     if (!permissions.showJournalText && note.noteType === "journal") return false;
@@ -3084,7 +3319,7 @@ function valueOf(id) {
 
 function setStatus(message, type = "ok") {
   clearTimeout(app.statusTimeout);
-  dom.globalStatus.classList.remove("hidden", "error");
+  dom.globalStatus.classList.remove("hidden", "error", "context-block");
   if (type === "error") {
     dom.globalStatus.classList.add("error");
   }
@@ -3093,7 +3328,7 @@ function setStatus(message, type = "ok") {
   app.statusTimeout = setTimeout(() => {
     if (getActiveContext().blockedReason) return;
     dom.globalStatus.classList.add("hidden");
-    dom.globalStatus.classList.remove("error");
+    dom.globalStatus.classList.remove("error", "context-block");
     dom.globalStatus.textContent = "";
   }, 5000);
 }
@@ -3103,7 +3338,8 @@ function parseDateTime(date, time) {
 }
 
 function formatSchedule(medication) {
-  const preset = SCHEDULE_PRESETS[medication.schedulePreset]?.label || "Custom";
+  const presetKey = normalizeSchedulePresetValue(medication.schedulePreset);
+  const preset = SCHEDULE_PRESETS[presetKey]?.label || "Custom";
   const times = (medication.scheduleTimes || []).join(", ");
   return times ? `${preset} · ${times}` : preset;
 }
@@ -3198,6 +3434,21 @@ function deepClone(value) {
 
 function valueOrDefault(value, fallback) {
   return value === undefined || value === null || value === "" ? fallback : value;
+}
+
+function normalizeTags(value) {
+  return Array.from(
+    new Set(
+      String(value || "")
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function isTimeValue(value) {
+  return /^\d{2}:\d{2}$/.test(String(value || "").trim());
 }
 
 function doseLooksValid(value) {

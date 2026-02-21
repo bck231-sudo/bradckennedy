@@ -1,85 +1,128 @@
 # Medication Tracker (bradckennedy.org)
 
-This site is a static, client-side medication + wellbeing tracker with local-first storage and shareable read-only links.
+This site is a static, client-side medication and wellbeing tracker with local-first storage and shareable read-only links.
 
-## What Changed In This Refactor
+## Second-Round Upgrade Summary
 
-- Added **multi-view modes**: `Daily View`, `Clinical View`, `Personal View`.
-- Replaced the single mixed form with **split workflows**:
+- Reworked dashboard to be action-first:
+  - Today’s doses due now / upcoming
+  - Quick mark-as-taken actions
+  - Quick daily check-in
+  - Recent medication changes (7 days)
+  - Alerts/monitoring reminders
+  - Weekly trend preview
+  - Shared links management preview
+- Added explicit viewer contexts:
+  - `My View`
+  - `Clinician View (preview)`
+  - `Family View (preview)`
+  - `Preview Shared Link` (simulate a specific recipient)
+- Kept and expanded split entry workflows:
   - Add Current Medication
   - Log Medication Change
   - Log Effects / Side Effects Note
   - Daily Wellbeing Check-in
-- Added **Medication Detail modal** with MOA sections, interpretation notes, monitoring, and medication-specific timeline.
-- Added **structured daily check-ins** with mood/anxiety/focus/sleep/appetite/energy/irritability/cravings, side effect checklist, training notes, optional vitals.
-- Added **change interpretation cards** (templated + editable).
-- Added **charts/timeline** and before/after comparison around medication changes.
-- Added **exports**: PDF clinician summary (print-to-PDF), CSV and JSON backups.
-- Added **link-scoped sharing permissions** with presets, visibility toggles, expiry, revoke, and local access logging.
+- Expanded medication detail panel with:
+  - current dose/schedule/route/start date/indication
+  - MOA simple + technical sections
+  - acute vs chronic adaptation notes
+  - dose adjustment interpretation
+  - interactions + contraindications notes
+  - side effects/monitoring
+  - personal medication timeline
+  - notes/questions for psychiatrist/GP
+- Strengthened change interpretation cards with:
+  - what changed
+  - reason
+  - short-term and longer-term expectations
+  - monitor items
+  - improvement and deterioration markers
+  - uncertainty note
+- Improved sharing controls:
+  - presets (`Family`, `Clinician`, `Full Read-Only`)
+  - per-link visibility toggles including sensitive tags
+  - optional expiry
+  - revoke/unrevoke
+  - local access log (last opened + count)
+  - preview as recipient from owner mode
+- Enhanced charts/timeline with filters:
+  - medication filter
+  - date range filter
+  - change markers
+  - before/after comparison (7 days before, 14 days after)
+- Exports:
+  - JSON backup
+  - CSV datasets
+  - clinician print-to-PDF summary
 
-## Data Compatibility + Migration
+## Data Compatibility and Migration
 
 Storage key remains unchanged: `medication_tracker_data_v1`.
 
-A migration layer in `/Users/brad/Documents/New project/bradckennedy/app.js` upgrades legacy data to schema version 2 at load time:
+Migration and normalization in `/Users/brad/Documents/New project/bradckennedy/app.js` preserve existing records and read-only links:
 
-- Legacy medication rows (`dose`, `time`, `notes`) are mapped into structured medication fields.
-- Legacy change/note rows are normalized.
-- Legacy read-only links with `#share=` payloads are still supported.
+- legacy medication/change/note/check-in rows are normalized into v2 shape
+- legacy `#share=` payloads are still supported
+- no seeded default medications are injected
 
-## Sharing Presets
+## How Current Medications Are Resolved
 
-Sharing is link-scoped (front-end token metadata) with role presets:
+Current meds shown on Dashboard and Current Medications are derived from existing stored data only.
 
-- `Family View`: daily-focused, sensitive/private text hidden by default
-- `Clinician View`: daily + clinical views, journal hidden by default
-- `Full Read-Only`: all read-only views and content visible
+Resolution logic:
 
-Per-link toggles are configurable before link creation:
+1. Group medication records by normalized medication name.
+2. Prefer the most recently updated **active/current** record within each group.
+3. If multiple records conflict, show one resolved current row and keep all underlying records intact.
+4. Use the most recent matching medication change event to determine latest displayed dose when available.
+5. Preserve historical/inactive records in storage and timelines.
+
+This ensures no invented medication names or dosages are created.
+
+## Sharing Presets and Visibility
+
+Presets configure default view access plus content visibility:
+
+- `Family View` (daily-focused)
+- `Clinician View` (daily + clinical)
+- `Full Read-Only` (daily + clinical + personal)
+
+Per-link visibility toggles include:
 
 - sensitive notes
+- sensitive tags
 - journal text
 - libido/sexual side effects
 - substance-use notes
 - free-text notes
 
-Each link can also set allowed views (`daily`, `clinical`, `personal`) and optional expiry date.
+## Editing MOA Templates
 
-### Revoke + Access Logs
+MOA and related clinical text are editable per medication in the medication detail modal in `/Users/brad/Documents/New project/bradckennedy/app.js`.
 
-- Revoke disables the link on this device context.
-- Access logging tracks `last opened` and `total opens` where feasible via local browser storage (`medication_tracker_access_logs_v1`).
+Key fields:
 
-## MOA Content Templates
+- `moaSimple`
+- `moaTechnical`
+- `timeCourseNotes`
+- `adjustmentAcute`
+- `adjustmentChronic`
+- `interactionsNotes`
+- `contraindicationsNotes`
+- `monitor`
+- `questions`
 
-MOA fields are editable per medication in the Medication Detail modal:
+## Interpretation Card Generation
 
-- Simple explanation bullets
-- Technical explanation
-- Dose adjustment interpretation (acute + longer-term)
-- Monitoring and clinician questions
+Default card text is generated by `generateInterpretationTemplate()` in:
 
-To pre-seed default MOA patterns globally, update the seed medication objects in `buildSeedState()` in `/Users/brad/Documents/New project/bradckennedy/app.js`.
+`/Users/brad/Documents/New project/bradckennedy/app.js`
 
-## Change Interpretation Card Generation
+When logging a medication change:
 
-Interpretation cards are generated from `generateInterpretationTemplate()` in `/Users/brad/Documents/New project/bradckennedy/app.js`.
+1. Enter medication, old/new dose, and reason.
+2. Apply template.
+3. Edit fields.
+4. Save.
 
-When logging a change:
-
-1. Enter medication + old/new dose + reason
-2. Click `Apply template` (or use auto-filled draft)
-3. Edit each section as needed
-4. Save change
-
-Saved cards remain editable later from the Medication Change Log.
-
-## Seed Example Data Included
-
-Default seeded data includes:
-
-- 3 medications (Vyvanse, Clonidine, Quetiapine)
-- 4 medication change events
-- multiple effects notes
-- 7 daily check-ins
-
+All interpretation content is informational and includes a discuss-with-prescriber safety footer.
