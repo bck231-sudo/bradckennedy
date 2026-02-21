@@ -4,7 +4,8 @@ import {
   buildDoseState,
   createDoseOccurrenceId,
   getLocalDateKey,
-  normalizeAdherenceStatus
+  normalizeAdherenceStatus,
+  parseDoseOccurrenceId
 } from "./dose-actions.js";
 
 const STORAGE_KEY = "medication_tracker_data_v1";
@@ -12,6 +13,7 @@ const DRAFT_KEY = "medication_tracker_drafts_v2";
 const ACCESS_LOG_KEY = "medication_tracker_access_logs_v1";
 const PROFILE_PATCH_KEY = "medication_tracker_profile_patch_2026_02_21_v1";
 const APP_VERSION = 2;
+const DOSE_SNOOZE_MINUTES = 30;
 
 const SIDE_EFFECT_OPTIONS = [
   "headache",
@@ -56,11 +58,27 @@ const SCHEDULE_PRESETS = {
 const SCHEDULE_PRESET_ORDER = ["am", "pm", "bid", "tid", "prn", "custom"];
 
 const VIEWER_MODE_OPTIONS = {
-  my: { label: "My View" },
-  clinician: { label: "Clinician View (preview)" },
-  family: { label: "Family View (preview)" },
-  preview_link: { label: "Preview Shared Link" }
+  my: { label: "Owner" },
+  clinician: { label: "Clinician" },
+  family: { label: "Family" },
+  preview_link: { label: "Shared Preview" }
 };
+const VIEWER_MODE_ORDER = ["my", "family", "clinician", "preview_link"];
+
+const VIEWER_BADGES = {
+  owner: "Owner View (Editable)",
+  clinician: "Clinician View (Read-only)",
+  family: "Family View (Simplified)",
+  preview_link: "Shared Preview (Read-only)",
+  share: "Shared Link View (Read-only)"
+};
+
+const MOBILE_TABS = [
+  { id: "today", label: "Today", icon: "▦", section: "dashboard" },
+  { id: "medications", label: "Medications", icon: "◉", section: "medications" },
+  { id: "trends", label: "Trends", icon: "∿", section: "timeline" },
+  { id: "settings", label: "Settings / Share", icon: "⋯", section: "sharing", fallback: "exports" }
+];
 
 const OWNER_PERMISSIONS = Object.freeze({
   showSensitiveNotes: true,
@@ -73,6 +91,18 @@ const OWNER_PERMISSIONS = Object.freeze({
 
 const SENSITIVE_TAG_KEYWORDS = ["sensitive", "journal", "libido", "sexual", "substance", "private"];
 const TARGET_MEDICATION_KEYS = ["fluvoxamine", "clonazepam", "vyvanse", "lisdexamfetamine"];
+const CHART_COLORS = Object.freeze({
+  mood: "#1f7b90",
+  anxiety: "#a86a2a",
+  focus: "#3659a8",
+  sleep: "#516ebf",
+  sideEffects: "#2f7cbf",
+  adherence: "#1c8f67",
+  doseChangeMarker: "#b2782f",
+  grid: "#dde6ef",
+  axis: "#d4dee9",
+  label: "#5d7087"
+});
 
 const PRESETS = {
   family: {
@@ -197,6 +227,7 @@ const SECTION_META = [
 ];
 
 const dom = {
+  viewerModeSegment: document.getElementById("viewerModeSegment"),
   viewerModeSelect: document.getElementById("viewerModeSelect"),
   viewModeSelect: document.getElementById("viewModeSelect"),
   previewLinkControl: document.getElementById("previewLinkControl"),
@@ -208,6 +239,10 @@ const dom = {
   quickCheckinButton: document.getElementById("quickCheckinButton"),
   readOnlyBanner: document.getElementById("readOnlyBanner"),
   globalStatus: document.getElementById("globalStatus"),
+  toastStack: document.getElementById("toastStack"),
+  initialSkeleton: document.getElementById("initialSkeleton"),
+  utilityPanel: document.getElementById("utilityPanel"),
+  mobileNav: document.getElementById("mobileNav"),
   commonMedicationNames: document.getElementById("commonMedicationNames"),
   medicationModal: document.getElementById("medicationModal"),
   medicationModalBody: document.getElementById("medicationModalBody"),
@@ -238,8 +273,11 @@ const app = {
     entryWorkflow: "medication",
     comparisonChangeId: "",
     pendingDoseActions: new Set(),
+    lastDraftSavedAt: "",
+    hasRendered: false,
     timelineFilters: {
       medicationId: "all",
+      rangeDays: "14",
       fromDate: "",
       toDate: ""
     }
@@ -292,6 +330,7 @@ function buildSeedState() {
     notes: [],
     checkins: [],
     adherence: [],
+    doseSnoozes: [],
     shareLinks: []
   });
 }
@@ -493,6 +532,7 @@ function migrateToV2(input) {
     notes: [],
     checkins: [],
     adherence: [],
+    doseSnoozes: [],
     shareLinks: []
   };
 
@@ -576,6 +616,13 @@ function migrateToV2(input) {
     migrated.adherence.push(normalizeAdherence(adherence));
   }
 
+  for (const snooze of Array.isArray(input.doseSnoozes) ? input.doseSnoozes : []) {
+    const normalized = normalizeDoseSnooze(snooze);
+    if (normalized) {
+      migrated.doseSnoozes.push(normalized);
+    }
+  }
+
   for (const link of Array.isArray(input.shareLinks) ? input.shareLinks : []) {
     const token = link.token || tokenFromUrl(link.url) || uid();
     migrated.shareLinks.push({
@@ -606,6 +653,7 @@ function ensureStateShape(input) {
     notes: [],
     checkins: [],
     adherence: [],
+    doseSnoozes: [],
     shareLinks: []
   };
 
@@ -678,6 +726,13 @@ function ensureStateShape(input) {
     state.adherence.push(normalizeAdherence(adherence));
   }
 
+  for (const snooze of Array.isArray(input.doseSnoozes) ? input.doseSnoozes : []) {
+    const normalized = normalizeDoseSnooze(snooze);
+    if (normalized) {
+      state.doseSnoozes.push(normalized);
+    }
+  }
+
   for (const link of Array.isArray(input.shareLinks) ? input.shareLinks : []) {
     state.shareLinks.push({
       id: link.id || uid(),
@@ -741,6 +796,19 @@ function normalizeAdherence(input) {
     status: normalizeAdherenceStatus(input?.status),
     createdAt: input?.createdAt || isoDateTime(new Date()),
     updatedAt: input?.updatedAt || input?.createdAt || isoDateTime(new Date())
+  };
+}
+
+function normalizeDoseSnooze(input) {
+  const occurrenceId = String(input?.occurrenceId || "").trim();
+  if (!occurrenceId) return null;
+  const untilAt = String(input?.untilAt || "").trim();
+  const parsed = new Date(untilAt);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return {
+    occurrenceId,
+    untilAt: parsed.toISOString(),
+    createdAt: input?.createdAt || isoDateTime(new Date())
   };
 }
 
@@ -898,6 +966,7 @@ function loadDrafts() {
 
 function saveDrafts() {
   localStorage.setItem(DRAFT_KEY, JSON.stringify(app.drafts));
+  app.ui.lastDraftSavedAt = isoDateTime(new Date());
 }
 
 function loadAccessLogs() {
@@ -999,7 +1068,7 @@ function getActiveContext() {
 
   return {
     type: "owner",
-    label: "My View",
+    label: "Owner View",
     readOnly: false,
     permissions: normalizePermissions(OWNER_PERMISSIONS),
     allowedModes: ["daily", "clinical", "personal"],
@@ -1134,23 +1203,53 @@ function renderAll() {
     app.ui.activeViewMode = context.allowedModes[0] || "daily";
   }
 
+  const visibleData = getVisibleData();
+
   renderViewModeSelector(context);
   renderContextElements(context);
   renderNavigation(context);
+  renderMobileNav(context);
   renderSectionMeta(context);
-  renderSections(context);
+  renderSections(context, visibleData);
+  renderUtilityPanel(context, visibleData);
+
+  if (!app.ui.hasRendered) {
+    app.ui.hasRendered = true;
+    document.body.classList.add("app-ready");
+    dom.initialSkeleton?.classList.add("hidden");
+  }
 }
 
 function renderViewModeSelector(context) {
   if (!app.shareSession) {
-    dom.viewerModeSelect.innerHTML = Object.entries(VIEWER_MODE_OPTIONS)
-      .map(([value, meta]) => `<option value="${value}">${escapeHtml(meta.label)}</option>`)
+    dom.viewerModeSelect.innerHTML = VIEWER_MODE_ORDER
+      .map((value) => `<option value="${value}">${escapeHtml(VIEWER_MODE_OPTIONS[value].label)}</option>`)
       .join("");
     dom.viewerModeSelect.disabled = false;
     dom.viewerModeSelect.value = app.ui.viewerMode;
+
+    dom.viewerModeSegment.innerHTML = VIEWER_MODE_ORDER
+      .map((value) => {
+        const meta = VIEWER_MODE_OPTIONS[value];
+        const active = app.ui.viewerMode === value;
+        return `<button type="button" role="tab" aria-selected="${active ? "true" : "false"}" class="${active ? "active" : ""}" data-viewer-mode="${value}">${escapeHtml(meta.label)}</button>`;
+      })
+      .join("");
+
+    dom.viewerModeSegment.querySelectorAll("[data-viewer-mode]").forEach((button) => {
+      button.addEventListener("click", () => {
+        app.ui.viewerMode = button.dataset.viewerMode || "my";
+        if (app.ui.viewerMode !== "preview_link") {
+          app.ui.previewLinkId = "";
+        }
+        ensureSectionForCurrentMode();
+        renderAll();
+      });
+    });
   } else {
     dom.viewerModeSelect.innerHTML = `<option value="share">Shared link view</option>`;
     dom.viewerModeSelect.disabled = true;
+    dom.viewerModeSegment.innerHTML = `<button type="button" role="tab" aria-selected="true" class="active" disabled>Shared Link View</button>`;
   }
 
   const options = context.allowedModes.map((mode) => {
@@ -1163,7 +1262,7 @@ function renderViewModeSelector(context) {
 }
 
 function renderContextElements(context) {
-  dom.contextPill.textContent = context.label;
+  dom.contextPill.textContent = resolveContextBadge(context);
 
   if (!app.shareSession && app.ui.viewerMode === "preview_link") {
     const links = app.ownerData.shareLinks.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -1192,7 +1291,7 @@ function renderContextElements(context) {
     dom.readOnlyBanner.innerHTML = `<strong>Preview mode:</strong> You are previewing ${escapeHtml(context.label)} permissions in read-only mode.`;
   } else {
     dom.readOnlyBanner.classList.remove("hidden");
-    dom.readOnlyBanner.innerHTML = `<strong>My View:</strong> Full data and editing access is active.`;
+    dom.readOnlyBanner.innerHTML = `<strong>Owner View:</strong> Full data and editing access is active.`;
   }
 
   if (context.blockedReason) {
@@ -1204,6 +1303,15 @@ function renderContextElements(context) {
     dom.globalStatus.classList.remove("error", "context-block");
     dom.globalStatus.textContent = "";
   }
+}
+
+function resolveContextBadge(context) {
+  if (context.type === "owner") return VIEWER_BADGES.owner;
+  if (context.type === "share") return VIEWER_BADGES.share;
+  if (app.ui.viewerMode === "clinician") return VIEWER_BADGES.clinician;
+  if (app.ui.viewerMode === "family") return VIEWER_BADGES.family;
+  if (app.ui.viewerMode === "preview_link") return VIEWER_BADGES.preview_link;
+  return context.label;
 }
 
 function ensureSectionForCurrentMode() {
@@ -1243,15 +1351,109 @@ function renderNavigation(context) {
   });
 }
 
-function renderSectionMeta() {
-  const meta = SECTION_META.find((section) => section.id === app.ui.activeSection) || SECTION_META[0];
-  dom.sectionTitle.textContent = meta.title;
-  dom.sectionSubtitle.textContent = meta.subtitle;
+function resolveMobileTabTarget(tab, sections) {
+  const available = new Set(sections.map((section) => section.id));
+  if (available.has(tab.section)) return tab.section;
+  if (tab.fallback && available.has(tab.fallback)) return tab.fallback;
+  if (tab.id === "settings") {
+    if (available.has("sharing")) return "sharing";
+    if (available.has("exports")) return "exports";
+  }
+  return sections[0]?.id || "dashboard";
 }
 
-function renderSections(context) {
-  const visibleData = getVisibleData();
+function renderMobileNav(context) {
+  if (!dom.mobileNav) return;
+  const sections = availableSections(context, app.ui.activeViewMode);
+  const available = sections.length ? sections : [{ id: "dashboard" }];
 
+  dom.mobileNav.innerHTML = MOBILE_TABS.map((tab) => {
+    const target = resolveMobileTabTarget(tab, available);
+    const active = app.ui.activeSection === target;
+    return `
+      <button type="button" class="${active ? "active" : ""}" data-mobile-section="${target}" aria-label="${escapeHtml(tab.label)}">
+        <span class="icon" aria-hidden="true">${escapeHtml(tab.icon)}</span>
+        <span>${escapeHtml(tab.label)}</span>
+      </button>
+    `;
+  }).join("");
+
+  dom.mobileNav.querySelectorAll("[data-mobile-section]").forEach((button) => {
+    button.addEventListener("click", () => {
+      app.ui.activeSection = button.dataset.mobileSection || "dashboard";
+      renderAll();
+    });
+  });
+}
+
+function renderUtilityPanel(context, data) {
+  if (!dom.utilityPanel) return;
+  if (context.blockedReason) {
+    dom.utilityPanel.innerHTML = `<div class="utility-section"><h3>Access status</h3><p class="subtle">${escapeHtml(context.blockedReason)}</p></div>`;
+    return;
+  }
+
+  const meds = resolveCurrentMedications(data).filter((med) => med.isCurrent);
+  const dueState = getDoseState(meds, data.adherence, data.doseSnoozes);
+  const pending = [...dueState.dueNow, ...dueState.next].sort((left, right) => left.time.localeCompare(right.time));
+  const nextDose = pending[0] || null;
+  const alerts = buildAlerts(data).slice(0, 4);
+  const today = getLocalDateKey(new Date());
+  const todayCheckin = data.checkins.find((entry) => entry.date === today);
+
+  dom.utilityPanel.innerHTML = `
+    <div class="utility-section">
+      <h3>Today summary</h3>
+      <div class="subtle">Taken ${dueState.counts.taken} · Remaining ${dueState.counts.remaining} · Missed ${dueState.counts.missed}</div>
+      <div class="subtle" style="margin-top:8px;">${nextDose ? `Next dose: <strong>${escapeHtml(nextDose.medicationName)}</strong> at ${escapeHtml(nextDose.time)}` : "No scheduled doses remaining for today."}</div>
+    </div>
+
+    <div class="utility-section">
+      <h3>Quick check-in</h3>
+      ${todayCheckin
+        ? `<div class="subtle">Completed today · Mood ${todayCheckin.mood}/10 · Anxiety ${todayCheckin.anxiety}/10</div>`
+        : `<div class="subtle">Complete your quick check-in (30 seconds).</div>
+           ${context.readOnly ? "" : `<button class="btn btn-secondary small" type="button" data-utility-action="checkin">Open check-in</button>`}`}
+    </div>
+
+    <div class="utility-section">
+      <h3>Alerts</h3>
+      ${alerts.length
+        ? `<ul class="timeline-list">${alerts.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+        : `<div class="subtle">No active alerts right now.</div>`}
+    </div>
+
+    <div class="utility-section">
+      <h3>Share status</h3>
+      <div class="subtle">${context.readOnly ? "Read-only session active." : `${app.ownerData.shareLinks.length} shared links configured.`}</div>
+      ${context.readOnly ? "" : `<button class="btn btn-ghost small" type="button" data-utility-action="sharing">Manage sharing</button>`}
+    </div>
+  `;
+
+  dom.utilityPanel.querySelectorAll("[data-utility-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const action = button.dataset.utilityAction;
+      if (action === "checkin") {
+        app.ui.activeSection = "entry";
+        app.ui.entryWorkflow = "checkin";
+      }
+      if (action === "sharing") {
+        app.ui.activeSection = "sharing";
+      }
+      renderAll();
+    });
+  });
+}
+
+function renderSectionMeta(context) {
+  const meta = SECTION_META.find((section) => section.id === app.ui.activeSection) || SECTION_META[0];
+  const modeMeta = VIEW_MODE_META[app.ui.activeViewMode];
+  const permissionHint = context.readOnly ? "Read-only preview." : "Editable owner workspace.";
+  dom.sectionTitle.textContent = meta.title;
+  dom.sectionSubtitle.textContent = `${meta.subtitle} ${modeMeta ? modeMeta.description : ""} ${permissionHint}`.trim();
+}
+
+function renderSections(context, visibleData) {
   Object.values(dom.sections).forEach((sectionNode) => {
     sectionNode.classList.add("hidden");
   });
@@ -1416,57 +1618,71 @@ function parseSortableDate(value) {
 }
 
 function renderDashboard(root, data, context) {
+  pruneExpiredDoseSnoozes();
   const resolvedMeds = resolveCurrentMedications(data);
   const activeMeds = resolvedMeds.filter((med) => med.isCurrent);
   const currentMedsLastUpdated = resolveCurrentMedsLastUpdatedDate(data);
   const today = getLocalDateKey(new Date());
   const todayCheckin = data.checkins.find((entry) => entry.date === today);
   const recentChanges = data.changes
-    .filter((entry) => dateDiffDays(entry.date, today) <= 7)
+    .filter((entry) => dateDiffDays(entry.date, today) <= 14)
     .sort((a, b) => b.date.localeCompare(a.date));
 
   const trendMood = trendArrow(data.checkins, "mood");
   const trendAnxiety = trendArrow(data.checkins, "anxiety", true);
   const trendFocus = trendArrow(data.checkins, "focus");
 
-  const dueState = getDoseState(activeMeds, data.adherence);
+  const dueState = getDoseState(activeMeds, data.adherence, data.doseSnoozes);
   const alerts = buildAlerts(data);
+  const pendingItems = [...dueState.dueNow, ...dueState.next].sort((left, right) => left.time.localeCompare(right.time));
+  const nextDose = pendingItems[0] || null;
+  const overdueCount = dueState.dueNow.filter((item) => String(item.statusLabel).toLowerCase().includes("overdue")).length;
 
   root.innerHTML = `
-    <div class="grid cards">
-      <article class="card">
-        <div class="label">Current meds (resolved)</div>
-        <strong class="value">${activeMeds.length}</strong>
-        <div class="meta">${activeMeds.slice(0, 3).map((med) => med.name).join(", ") || "No active medications yet"}</div>
-        <div class="subtle" style="margin-top:6px;">Last updated: ${escapeHtml(niceDate(currentMedsLastUpdated))}</div>
-      </article>
-      <article class="card">
-        <div class="label">Today doses</div>
-        <strong class="value">${dueState.dueNow.length} due now</strong>
-        <div class="meta">${dueState.next.length} upcoming · Taken ${dueState.counts.taken} · Remaining ${dueState.counts.remaining} · Missed ${dueState.counts.missed}</div>
-      </article>
-      <article class="card">
-        <div class="label">Today check-in</div>
-        <strong class="value">${todayCheckin ? "Done" : "Pending"}</strong>
-        <div class="meta">${todayCheckin ? `Mood ${todayCheckin.mood}/10, Anxiety ${todayCheckin.anxiety}/10` : "Use Quick check-in to add"}</div>
-      </article>
-      <article class="card">
-        <div class="label">7-day changes</div>
-        <strong class="value">${recentChanges.length}</strong>
-        <div class="meta">Recent adjustment activity</div>
-      </article>
-      <article class="card">
-        <div class="label">Weekly trend</div>
-        <strong class="value">Mood ${trendMood.arrow} · Anxiety ${trendAnxiety.arrow}</strong>
-        <div class="meta">Focus ${trendFocus.arrow}</div>
-      </article>
-    </div>
+    <article class="card today-hero">
+      <div class="today-hero-head">
+        <div>
+          <div class="label">Today summary</div>
+          <h3>Medication and wellbeing at a glance</h3>
+          <div class="subtle" style="margin-top:6px;">Last updated meds: ${escapeHtml(niceDate(currentMedsLastUpdated))}</div>
+        </div>
+        <div class="kpi-strip">
+          <div class="kpi-box"><span>Taken</span><strong>${dueState.counts.taken}</strong></div>
+          <div class="kpi-box"><span>Remaining</span><strong>${dueState.counts.remaining}</strong></div>
+          <div class="kpi-box"><span>Missed</span><strong>${dueState.counts.missed}</strong></div>
+          <div class="kpi-box"><span>Overdue</span><strong>${overdueCount}</strong></div>
+        </div>
+      </div>
+      <div class="grid cards">
+        <article class="card">
+          <div class="label">Next dose</div>
+          <strong class="value">${nextDose ? escapeHtml(nextDose.time) : "Done"}</strong>
+          <div class="meta">${nextDose ? `${escapeHtml(nextDose.medicationName)}` : "No scheduled doses remaining for today"}</div>
+        </article>
+        <article class="card">
+          <div class="label">Quick check-in</div>
+          <strong class="value">${todayCheckin ? "Done" : "Pending"}</strong>
+          <div class="meta">${todayCheckin ? `Mood ${todayCheckin.mood}/10 · Anxiety ${todayCheckin.anxiety}/10` : "Complete your quick check-in (30 seconds)"}</div>
+          ${context.readOnly ? "" : `<button class="btn btn-secondary small" type="button" data-dashboard-checkin="1">Open check-in</button>`}
+        </article>
+        <article class="card">
+          <div class="label">Recent changes</div>
+          <strong class="value">${recentChanges.length}</strong>
+          <div class="meta">Medication changes in the last 14 days</div>
+        </article>
+        <article class="card">
+          <div class="label">Weekly trend</div>
+          <strong class="value">Mood ${trendMood.arrow}</strong>
+          <div class="meta">Anxiety ${trendAnxiety.arrow} · Focus ${trendFocus.arrow}</div>
+        </article>
+      </div>
+    </article>
 
-    <div class="grid" style="grid-template-columns: 1.2fr 1fr;">
+    <div class="grid" style="grid-template-columns: 1.3fr 1fr;">
       <article class="card">
-        <h3>Today’s doses</h3>
-        <div class="subtle" style="margin: 6px 0 10px;">Taken: ${dueState.counts.taken} · Remaining: ${dueState.counts.remaining} · Missed: ${dueState.counts.missed}</div>
-        ${renderDoseTable(dueState, context)}
+        <h3>Today’s Doses</h3>
+        <div class="subtle" style="margin: 6px 0 10px;">Action list: Taken / Skip / Snooze / Note</div>
+        ${renderDoseTable(dueState, context, activeMeds)}
       </article>
 
       <article class="card">
@@ -1479,12 +1695,12 @@ function renderDashboard(root, data, context) {
       </article>
 
       <article class="card">
-        <h3>Recent medication changes (7 days)</h3>
+        <h3>Recent medication changes (14 days)</h3>
         ${recentChanges.length ? `
           <ul class="timeline-list">
             ${recentChanges.map((entry) => `<li><strong>${escapeHtml(niceDate(entry.date))}</strong> · ${escapeHtml(entry.medicationName || "Medication")}: ${escapeHtml(entry.oldDose || "-")} → ${escapeHtml(entry.newDose || "-")}</li>`).join("")}
           </ul>
-        ` : `<div class="empty">No medication changes recorded in the last 7 days.</div>`}
+        ` : `<div class="empty">No medication changes logged in the last 14 days. ${context.readOnly ? "" : `<button class="btn btn-secondary small" type="button" data-dashboard-new-change="1">Log a change</button>`}</div>`}
       </article>
     </div>
 
@@ -1514,12 +1730,53 @@ function renderDashboard(root, data, context) {
       await handleDoseAction(occurrenceId, status);
     });
   });
+
+  root.querySelectorAll("[data-dose-snooze]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (context.readOnly) return;
+      const occurrenceId = button.dataset.doseOccurrenceId || "";
+      handleDoseSnooze(occurrenceId, DOSE_SNOOZE_MINUTES);
+    });
+  });
+
+  root.querySelectorAll("[data-dose-note]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (context.readOnly) return;
+      const occurrenceId = button.dataset.doseOccurrenceId || "";
+      const medicationName = button.dataset.medicationName || "";
+      handleDoseNote(occurrenceId, medicationName);
+    });
+  });
+
+  root.querySelectorAll("[data-dashboard-checkin]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (context.readOnly) return;
+      app.ui.activeSection = "entry";
+      app.ui.entryWorkflow = "checkin";
+      renderAll();
+    });
+  });
+
+  root.querySelectorAll("[data-dashboard-new-change]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (context.readOnly) return;
+      app.ui.activeSection = "entry";
+      app.ui.entryWorkflow = "change";
+      renderAll();
+    });
+  });
 }
 
-function renderDoseTable(dueState, context) {
+function renderDoseTable(dueState, context, medications) {
+  const doseByMedicationId = new Map((medications || []).map((med) => [med.id, med.currentDose || "-"]));
   const items = [...dueState.dueNow, ...dueState.next];
   if (!items.length) {
-    return `<div class="empty">All pending doses for today are handled.</div>`;
+    return `
+      <div class="empty">
+        No scheduled doses remaining for today.
+        ${context.readOnly ? "" : `<div style="margin-top:8px;"><button class="btn btn-secondary small" type="button" data-dashboard-checkin="1">Complete quick check-in</button></div>`}
+      </div>
+    `;
   }
 
   return `
@@ -1528,6 +1785,7 @@ function renderDoseTable(dueState, context) {
         <thead>
           <tr>
             <th>Medication</th>
+            <th>Dose</th>
             <th>Time</th>
             <th>Status</th>
             ${context.readOnly ? "" : "<th>Action</th>"}
@@ -1537,11 +1795,16 @@ function renderDoseTable(dueState, context) {
           ${items.map((item) => `
             <tr>
               <td>${escapeHtml(item.medicationName)}</td>
+              <td>${escapeHtml(doseByMedicationId.get(item.medicationId) || "-")}</td>
               <td>${escapeHtml(item.time)}</td>
-              <td>${escapeHtml(item.statusLabel)}</td>
+              <td><span class="status-chip ${escapeHtml(statusChipClass(item.statusLabel))}">${escapeHtml(item.statusLabel)}</span></td>
               ${context.readOnly ? "" : `<td>
-                <button class="btn btn-secondary small" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.TAKEN}" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>${app.ui.pendingDoseActions.has(item.occurrenceId) ? "Saving..." : "Taken"}</button>
-                <button class="btn btn-secondary small" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.SKIPPED}" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>${app.ui.pendingDoseActions.has(item.occurrenceId) ? "Saving..." : "Skipped"}</button>
+                <div class="row">
+                  <button class="btn btn-secondary small ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "is-loading" : ""}" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.TAKEN}" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>${app.ui.pendingDoseActions.has(item.occurrenceId) ? "Saving" : "Taken"}</button>
+                  <button class="btn btn-secondary small ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "is-loading" : ""}" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.SKIPPED}" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>${app.ui.pendingDoseActions.has(item.occurrenceId) ? "Saving" : "Skip"}</button>
+                  <button class="btn btn-ghost small" type="button" data-dose-snooze="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>Snooze</button>
+                  <button class="btn btn-ghost small" type="button" data-dose-note="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-medication-name="${escapeHtml(item.medicationName)}">Note</button>
+                </div>
               </td>`}
             </tr>
           `).join("")}
@@ -1926,7 +2189,7 @@ function renderCheckins(root, data, context) {
           <span class="kpi-badge">Energy ${todayCheckin.energy}/10</span>
           <span class="kpi-badge">Irritability ${todayCheckin.irritability}/10</span>
         </div>
-      ` : `<div class="empty">No check-in saved for today.</div>`}
+      ` : `<div class="empty">No check-in yet for today. ${context.readOnly ? "" : `<button class="btn btn-secondary small" type="button" data-empty-action="checkin">Complete quick check-in (30 seconds)</button>`}</div>`}
     </div>
 
     <div class="table-wrap" style="margin-top: 12px;">
@@ -1968,6 +2231,15 @@ function renderCheckins(root, data, context) {
       <div class="subtle" style="margin-top:8px;">Use Add Entries → Daily Wellbeing Check-in for structured entry.</div>
     `}
   `;
+
+  root.querySelectorAll("[data-empty-action='checkin']").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (context.readOnly) return;
+      app.ui.activeSection = "entry";
+      app.ui.entryWorkflow = "checkin";
+      renderAll();
+    });
+  });
 }
 
 function renderNotes(root, data) {
@@ -2003,10 +2275,19 @@ function renderNotes(root, data) {
     .filter(Boolean)
     .join("");
 
-  root.innerHTML = blocks || `<div class="empty">No notes available for this view.</div>`;
+  root.innerHTML = blocks || `<div class="empty">No notes available for this view.${getActiveContext().readOnly ? "" : ` <button class="btn btn-secondary small" type="button" data-empty-action="note">Add effects note</button>`}</div>`;
+
+  root.querySelectorAll("[data-empty-action='note']").forEach((button) => {
+    button.addEventListener("click", () => {
+      app.ui.activeSection = "entry";
+      app.ui.entryWorkflow = "note";
+      renderAll();
+    });
+  });
 }
 
 function renderTimeline(root, data) {
+  const showAdvancedTimeline = app.ui.activeViewMode === "personal";
   const meds = resolveCurrentMedications(data);
   const medicationOptions = meds.map((med) => ({ id: med.id, name: med.name }));
   if (app.ui.timelineFilters.medicationId && app.ui.timelineFilters.medicationId !== "all") {
@@ -2025,6 +2306,8 @@ function renderTimeline(root, data) {
   const focusSeries = checkins.map((entry) => ({ date: entry.date, value: toNumber(entry.focus) }));
   const sleepSeries = checkins.map((entry) => ({ date: entry.date, value: toNumber(entry.sleepHours) }));
   const sideEffectCounts = buildSideEffectCounts(filtered);
+  const adherenceTrend = buildAdherenceTrend(filtered.adherence);
+  const doseChangeTrend = buildDoseChangeTrend(filtered.changes);
 
   if (!app.ui.comparisonChangeId && filtered.changes[0]) {
     app.ui.comparisonChangeId = filtered.changes[0].id;
@@ -2053,15 +2336,24 @@ function renderTimeline(root, data) {
             <input id="timelineToDate" type="date" value="${escapeHtml(app.ui.timelineFilters.toDate || "")}">
           </div>
         </div>
+        <div class="chip-group" style="margin-top:10px;">
+          ${["7", "14", "30"].map((days) => `<button class="chip ${app.ui.timelineFilters.rangeDays === days ? "active" : ""}" type="button" data-range-days="${days}">${days}d</button>`).join("")}
+        </div>
+        <p class="helper-text" style="margin-top:8px;">${showAdvancedTimeline ? "Personal View: full timeline depth enabled." : "Clinical View: focused chart set."}</p>
       </article>
 
       <article class="chart-box">
-        <h4>Mood / Anxiety / Focus over time</h4>
+        <h4>Adherence % over time</h4>
+        ${renderLineChart([{ label: "Adherence %", color: CHART_COLORS.adherence, points: adherenceTrend }], { yMin: 0, yMax: 100, changeDates })}
+      </article>
+
+      <article class="chart-box">
+        <h4>Symptom trends: mood / anxiety / focus</h4>
         ${renderLineChart(
           [
-            { label: "Mood", color: "#14806f", points: moodSeries },
-            { label: "Anxiety", color: "#c16e2b", points: anxietySeries },
-            { label: "Focus", color: "#3f63be", points: focusSeries }
+            { label: "Mood", color: CHART_COLORS.mood, points: moodSeries },
+            { label: "Anxiety", color: CHART_COLORS.anxiety, points: anxietySeries },
+            { label: "Focus", color: CHART_COLORS.focus, points: focusSeries }
           ],
           { yMin: 0, yMax: 10, changeDates }
         )}
@@ -2069,23 +2361,32 @@ function renderTimeline(root, data) {
 
       <article class="chart-box">
         <h4>Sleep hours over time</h4>
-        ${renderLineChart([{ label: "Sleep hours", color: "#6d4ad4", points: sleepSeries }], { yMin: 0, yMax: 12, changeDates })}
+        ${renderLineChart([{ label: "Sleep hours", color: CHART_COLORS.sleep, points: sleepSeries }], { yMin: 0, yMax: 12, changeDates })}
       </article>
 
       <article class="chart-box">
-        <h4>Side effect frequency over time</h4>
+        <h4>Side-effect intensity trend</h4>
         ${renderBarChart(sideEffectCounts, changeDates)}
       </article>
+
+      ${showAdvancedTimeline ? `
+        <article class="chart-box">
+          <h4>Dose changes timeline</h4>
+          ${renderBarChart(doseChangeTrend, [], { label: "Dose changes", color: CHART_COLORS.doseChangeMarker })}
+        </article>
+      ` : ""}
 
       <article class="card">
         <h3>Before/After comparison around a medication change</h3>
         ${renderBeforeAfterComparison(filtered)}
       </article>
 
-      <article class="card">
-        <h3>Timeline</h3>
-        ${renderCombinedTimeline(filtered)}
-      </article>
+      ${showAdvancedTimeline ? `
+        <article class="card">
+          <h3>Timeline</h3>
+          ${renderCombinedTimeline(filtered)}
+        </article>
+      ` : ""}
     </div>
   `;
 
@@ -2096,12 +2397,23 @@ function renderTimeline(root, data) {
 
   root.querySelector("#timelineFromDate")?.addEventListener("change", (event) => {
     app.ui.timelineFilters.fromDate = event.target.value;
+    app.ui.timelineFilters.rangeDays = "";
     renderAll();
   });
 
   root.querySelector("#timelineToDate")?.addEventListener("change", (event) => {
     app.ui.timelineFilters.toDate = event.target.value;
+    app.ui.timelineFilters.rangeDays = "";
     renderAll();
+  });
+
+  root.querySelectorAll("[data-range-days]").forEach((button) => {
+    button.addEventListener("click", () => {
+      app.ui.timelineFilters.rangeDays = button.dataset.rangeDays || "14";
+      app.ui.timelineFilters.fromDate = "";
+      app.ui.timelineFilters.toDate = "";
+      renderAll();
+    });
   });
 
   const comparisonSelect = root.querySelector("#comparisonChangeSelect");
@@ -2111,14 +2423,34 @@ function renderTimeline(root, data) {
       renderAll();
     });
   }
+
+  root.querySelectorAll("[data-empty-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const action = button.dataset.emptyAction;
+      if (action === "checkin") {
+        app.ui.activeSection = "entry";
+        app.ui.entryWorkflow = "checkin";
+      } else if (action === "change") {
+        app.ui.activeSection = "entry";
+        app.ui.entryWorkflow = "change";
+      }
+      renderAll();
+    });
+  });
 }
 
 function applyTimelineFilters(data) {
   const medicationId = app.ui.timelineFilters.medicationId || "all";
   const selectedMedication = (data.medications || []).find((med) => med.id === medicationId);
   const selectedKey = selectedMedication ? normalizeMedicationKey(selectedMedication.name) : "";
-  const fromDate = app.ui.timelineFilters.fromDate || "";
-  const toDate = app.ui.timelineFilters.toDate || "";
+  let fromDate = app.ui.timelineFilters.fromDate || "";
+  let toDate = app.ui.timelineFilters.toDate || "";
+  const rangeDays = Number(app.ui.timelineFilters.rangeDays || 0);
+
+  if (!fromDate && !toDate && Number.isFinite(rangeDays) && rangeDays > 0) {
+    toDate = getLocalDateKey(new Date());
+    fromDate = shiftDateKey(toDate, -(rangeDays - 1));
+  }
 
   const inDateWindow = (value) => {
     if (!value) return true;
@@ -2144,11 +2476,13 @@ function applyTimelineFilters(data) {
   });
 
   const checkins = (data.checkins || []).filter((checkin) => inDateWindow(checkin.date));
+  const adherence = (data.adherence || []).filter((entry) => inDateWindow(entry.date));
   return {
     ...data,
     changes,
     notes,
-    checkins
+    checkins,
+    adherence
   };
 }
 
@@ -2181,7 +2515,7 @@ function renderCombinedTimeline(data) {
 
   const sorted = events.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 60);
   if (!sorted.length) {
-    return `<div class="empty">No timeline events yet.</div>`;
+    return `<div class="empty">No timeline events yet.${getActiveContext().readOnly ? "" : ` <button class="btn btn-secondary small" type="button" data-empty-action="checkin">Add check-in</button>`}</div>`;
   }
 
   return `
@@ -2193,7 +2527,7 @@ function renderCombinedTimeline(data) {
 
 function renderBeforeAfterComparison(data) {
   if (!data.changes.length) {
-    return `<div class="empty">No medication changes available for comparison.</div>`;
+    return `<div class="empty">No medication changes available for comparison.${getActiveContext().readOnly ? "" : ` <button class="btn btn-secondary small" type="button" data-empty-action="change">Log a medication change</button>`}</div>`;
   }
 
   const sortedChanges = data.changes.slice().sort((a, b) => b.date.localeCompare(a.date));
@@ -2256,6 +2590,8 @@ function renderEntryWorkflows(root, data, context) {
       ${workflowTabs.map((workflow) => `<button class="chip ${app.ui.entryWorkflow === workflow.id ? "active" : ""}" type="button" data-workflow="${workflow.id}">${workflow.label}</button>`).join("")}
     </div>
 
+    <p class="autosave-indicator">${escapeHtml(renderDraftSaveLabel())}</p>
+
     <div style="margin-top: 12px;">
       ${renderWorkflowForm(data)}
     </div>
@@ -2269,6 +2605,20 @@ function renderEntryWorkflows(root, data, context) {
   });
 
   bindWorkflowFormHandlers(root, data);
+}
+
+function renderDraftSaveLabel() {
+  if (!app.ui.lastDraftSavedAt) {
+    return "Draft autosave is on.";
+  }
+  const savedAt = new Date(app.ui.lastDraftSavedAt);
+  if (Number.isNaN(savedAt.getTime())) {
+    return "Draft autosave is on.";
+  }
+  const secondsAgo = Math.max(0, Math.floor((Date.now() - savedAt.getTime()) / 1000));
+  if (secondsAgo < 60) return "Saved just now.";
+  if (secondsAgo < 3600) return `Saved ${Math.floor(secondsAgo / 60)}m ago.`;
+  return `Saved ${niceDateTime(savedAt.toISOString())}.`;
 }
 
 function renderWorkflowForm(data) {
@@ -2314,6 +2664,7 @@ function renderWorkflowForm(data) {
           <div style="grid-column: 1 / -1;">
             <label>Schedule times (HH:MM, comma separated)</label>
             <input name="scheduleTimes" id="medScheduleTimes" value="${escapeHtml(draft.scheduleTimes || "")}" placeholder="08:00, 14:00">
+            <p class="helper-text">Use 24-hour times. Presets can auto-fill common schedules.</p>
           </div>
           <div style="grid-column: 1 / -1;">
             <label>Indication (why taken)</label>
@@ -2366,6 +2717,7 @@ function renderWorkflowForm(data) {
           <div style="grid-column: 1 / -1;">
             <label>Reason</label>
             <textarea name="reason" required>${escapeHtml(draft.reason || "")}</textarea>
+            <p class="helper-text">Use neutral language describing what changed and why.</p>
           </div>
         </div>
         <div class="interpret-card">
@@ -2486,6 +2838,7 @@ function renderWorkflowForm(data) {
           </label>
         `).join("")}
       </div>
+      <p class="helper-text">Keep this quick and consistent for cleaner trend charts.</p>
 
       <div class="field-grid" style="margin-top:10px;">
         <div style="grid-column: 1 / -1;"><label>Side effects free text</label><textarea name="sideEffectsText">${escapeHtml(draft.sideEffectsText || "")}</textarea></div>
@@ -3218,8 +3571,129 @@ function generateInterpretationTemplate(values) {
   };
 }
 
-function getDoseState(activeMeds, adherence) {
-  return buildDoseState(activeMeds, adherence, new Date());
+function getDoseState(activeMeds, adherence, doseSnoozes = []) {
+  const now = new Date();
+  const base = buildDoseState(activeMeds, adherence, now);
+  const activeSnoozes = new Map();
+
+  for (const snooze of Array.isArray(doseSnoozes) ? doseSnoozes : []) {
+    const normalized = normalizeDoseSnooze(snooze);
+    if (!normalized) continue;
+    const until = new Date(normalized.untilAt);
+    if (until.getTime() > now.getTime()) {
+      activeSnoozes.set(normalized.occurrenceId, normalized.untilAt);
+    }
+  }
+
+  if (!activeSnoozes.size) {
+    return base;
+  }
+
+  const decorate = (item) => {
+    const snoozedUntil = activeSnoozes.get(item.occurrenceId);
+    if (!snoozedUntil) return item;
+    return {
+      ...item,
+      snoozedUntil,
+      statusLabel: `Snoozed until ${formatClockTime(snoozedUntil)}`
+    };
+  };
+
+  const decoratedDue = base.dueNow.map(decorate);
+  const decoratedNext = base.next.map(decorate);
+  const dueNow = decoratedDue.filter((item) => !item.snoozedUntil);
+  const movedToNext = decoratedDue.filter((item) => item.snoozedUntil);
+  const next = [...decoratedNext, ...movedToNext].sort((left, right) => left.time.localeCompare(right.time));
+
+  return {
+    ...base,
+    dueNow,
+    next,
+    counts: {
+      ...base.counts,
+      remaining: dueNow.length + next.length
+    }
+  };
+}
+
+function pruneExpiredDoseSnoozes() {
+  const source = Array.isArray(app.ownerData.doseSnoozes) ? app.ownerData.doseSnoozes : [];
+  const nowMs = Date.now();
+  const filtered = source
+    .map((entry) => normalizeDoseSnooze(entry))
+    .filter((entry) => entry && new Date(entry.untilAt).getTime() > nowMs);
+
+  if (filtered.length !== source.length) {
+    app.ownerData = {
+      ...app.ownerData,
+      doseSnoozes: filtered
+    };
+    saveOwnerData(app.ownerData);
+  }
+}
+
+function statusChipClass(label) {
+  const normalized = String(label || "").toLowerCase();
+  if (normalized.includes("overdue")) return "status-chip--overdue";
+  if (normalized.includes("due now")) return "status-chip--due";
+  if (normalized.includes("upcoming")) return "status-chip--upcoming";
+  if (normalized.includes("snoozed")) return "status-chip--snoozed";
+  if (normalized.includes("taken")) return "status-chip--taken";
+  if (normalized.includes("skipped")) return "status-chip--skipped";
+  return "status-chip--upcoming";
+}
+
+function handleDoseSnooze(occurrenceId, minutes = DOSE_SNOOZE_MINUTES) {
+  if (!occurrenceId) {
+    setStatus("Dose snooze is missing required details.", "error");
+    return;
+  }
+
+  const now = new Date();
+  const until = new Date(now.getTime() + Math.max(5, Number(minutes || 0)) * 60 * 1000);
+  const existing = Array.isArray(app.ownerData.doseSnoozes) ? app.ownerData.doseSnoozes : [];
+  const nextSnoozes = [
+    ...existing.filter((entry) => entry.occurrenceId !== occurrenceId),
+    {
+      occurrenceId,
+      untilAt: until.toISOString(),
+      createdAt: isoDateTime(now)
+    }
+  ];
+
+  app.ownerData = {
+    ...app.ownerData,
+    doseSnoozes: nextSnoozes
+  };
+  saveOwnerData(app.ownerData);
+  setStatus(`Dose snoozed until ${formatClockTime(until)}.`);
+  renderAll();
+}
+
+function handleDoseNote(occurrenceId, medicationName = "") {
+  const details = parseDoseOccurrenceId(occurrenceId);
+  const noteDate = details.dateKey || getLocalDateKey(new Date());
+  const timeLabel = details.scheduleTime || "--:--";
+  const notePrefix = `[Dose note ${timeLabel}] `;
+  const existingNoteText = String(app.drafts.note?.noteText || "");
+  const nextNoteText = existingNoteText.startsWith(notePrefix) ? existingNoteText : `${notePrefix}${existingNoteText}`;
+
+  app.drafts.note = {
+    ...app.drafts.note,
+    date: noteDate,
+    medicationName: medicationName || app.drafts.note?.medicationName || "",
+    noteType: app.drafts.note?.noteType || "side_effect",
+    severity: app.drafts.note?.severity || "moderate",
+    noteText: nextNoteText
+  };
+  saveDrafts();
+  app.ui.activeSection = "entry";
+  app.ui.entryWorkflow = "note";
+  setStatus(`Opened note entry for ${medicationName || "selected dose"} (${timeLabel}).`);
+  renderAll();
+  window.setTimeout(() => {
+    document.querySelector("#formNote textarea[name='noteText']")?.focus();
+  }, 0);
 }
 
 function setPendingDoseAction(occurrenceId, pending) {
@@ -3246,7 +3720,11 @@ async function handleDoseAction(occurrenceId, status) {
   setPendingDoseAction(occurrenceId, true);
 
   try {
-    const nextOwnerData = applyDoseAction(previousOwnerData, { occurrenceId, status }, new Date());
+    const nextOwnerDataRaw = applyDoseAction(previousOwnerData, { occurrenceId, status }, new Date());
+    const nextOwnerData = {
+      ...nextOwnerDataRaw,
+      doseSnoozes: (nextOwnerDataRaw.doseSnoozes || []).filter((entry) => entry.occurrenceId !== occurrenceId)
+    };
     app.ownerData = nextOwnerData;
     renderAll();
 
@@ -3330,6 +3808,39 @@ function buildSideEffectCounts(data) {
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
+function buildAdherenceTrend(adherence) {
+  const byDate = new Map();
+  for (const entry of Array.isArray(adherence) ? adherence : []) {
+    if (!entry?.date) continue;
+    if (!byDate.has(entry.date)) {
+      byDate.set(entry.date, { taken: 0, total: 0 });
+    }
+    const row = byDate.get(entry.date);
+    row.total += 1;
+    if (normalizeAdherenceStatus(entry.status) === ADHERENCE_STATUS.TAKEN) {
+      row.taken += 1;
+    }
+  }
+
+  return Array.from(byDate.entries())
+    .map(([date, value]) => ({
+      date,
+      value: value.total ? roundNumber((value.taken / value.total) * 100, 2) : 0
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function buildDoseChangeTrend(changes) {
+  const byDate = new Map();
+  for (const change of Array.isArray(changes) ? changes : []) {
+    if (!change?.date) continue;
+    byDate.set(change.date, (byDate.get(change.date) || 0) + 1);
+  }
+  return Array.from(byDate.entries())
+    .map(([date, value]) => ({ date, value }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
 function computeBeforeAfterMetrics(checkins, changeDate) {
   const parsedChange = new Date(`${changeDate}T12:00:00`);
 
@@ -3371,7 +3882,7 @@ function renderLineChart(seriesList, options = {}) {
   const dates = Array.from(dateSet).sort();
 
   if (!dates.length) {
-    return `<div class="empty">Not enough data for chart.</div>`;
+    return `<div class="empty">Not enough data for chart yet.${getActiveContext().readOnly ? "" : ` <button class="btn btn-secondary small" type="button" data-empty-action="checkin">Add check-in</button>`}</div>`;
   }
 
   const yMin = options.yMin ?? 0;
@@ -3391,13 +3902,13 @@ function renderLineChart(seriesList, options = {}) {
 
   const gridLines = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
     const y = padding.top + ratio * (height - padding.top - padding.bottom);
-    return `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y}" y2="${y}" stroke="#e7edf4" stroke-width="1" />`;
+    return `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y}" y2="${y}" stroke="${CHART_COLORS.grid}" stroke-width="1" />`;
   }).join("");
 
   const markerLines = (options.changeDates || []).map((date) => {
     if (!dates.includes(date)) return "";
     const x = xFor(date);
-    return `<line x1="${x}" x2="${x}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#c88a2c" stroke-dasharray="4 4" stroke-width="1" />`;
+    return `<line x1="${x}" x2="${x}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="${CHART_COLORS.doseChangeMarker}" stroke-dasharray="4 4" stroke-width="1" />`;
   }).join("");
 
   const seriesPaths = seriesList.map((series) => {
@@ -3411,19 +3922,24 @@ function renderLineChart(seriesList, options = {}) {
       .map((point, index) => `${index === 0 ? "M" : "L"}${xFor(point.date).toFixed(2)} ${yFor(point.value).toFixed(2)}`)
       .join(" ");
 
-    const circles = points.map((point) => `<circle cx="${xFor(point.date).toFixed(2)}" cy="${yFor(point.value).toFixed(2)}" r="2.2" fill="${series.color}" />`).join("");
+    const circles = points
+      .map((point) => {
+        const dateLabel = shortDate(point.date);
+        return `<circle cx="${xFor(point.date).toFixed(2)}" cy="${yFor(point.value).toFixed(2)}" r="2.2" fill="${series.color}"><title>${escapeHtml(`${series.label} · ${dateLabel}: ${roundNumber(point.value, 2)}`)}</title></circle>`;
+      })
+      .join("");
     return `<path d="${path}" fill="none" stroke="${series.color}" stroke-width="2.2" />${circles}`;
   }).join("");
 
   const labels = [dates[0], dates[Math.floor(dates.length / 2)], dates[dates.length - 1]]
     .filter(Boolean)
-    .map((date) => `<text x="${xFor(date)}" y="${height - 8}" text-anchor="middle" font-size="10" fill="#5d7087">${escapeHtml(shortDate(date))}</text>`)
+    .map((date) => `<text x="${xFor(date)}" y="${height - 8}" text-anchor="middle" font-size="10" fill="${CHART_COLORS.label}">${escapeHtml(shortDate(date))}</text>`)
     .join("");
 
   const legend = `
     <div class="legend">
       ${seriesList.map((series) => `<span><i style="background:${series.color}"></i>${escapeHtml(series.label)}</span>`).join("")}
-      <span><i style="background:#c88a2c"></i>Medication change marker</span>
+      ${(options.changeDates || []).length ? `<span><i style="background:${CHART_COLORS.doseChangeMarker}"></i>Medication change marker</span>` : ""}
     </div>
   `;
 
@@ -3438,13 +3954,15 @@ function renderLineChart(seriesList, options = {}) {
   `;
 }
 
-function renderBarChart(points, changeDates = []) {
+function renderBarChart(points, changeDates = [], options = {}) {
   const width = 860;
   const height = 210;
   const padding = { top: 18, right: 16, bottom: 26, left: 32 };
+  const seriesColor = options.color || CHART_COLORS.sideEffects;
+  const seriesLabel = options.label || "Side effect frequency";
 
   if (!points.length) {
-    return `<div class="empty">Not enough side effect data for chart.</div>`;
+    return `<div class="empty">Not enough trend data for chart yet.${getActiveContext().readOnly ? "" : ` <button class="btn btn-secondary small" type="button" data-empty-action="checkin">Add check-in</button>`}</div>`;
   }
 
   const maxValue = Math.max(...points.map((point) => point.value), 1);
@@ -3457,7 +3975,7 @@ function renderBarChart(points, changeDates = []) {
     const x = xFor(index);
     const y = yFor(point.value);
     const barWidth = Math.max((width - padding.left - padding.right) / (points.length * 1.6), 6);
-    return `<rect x="${x - barWidth / 2}" y="${y}" width="${barWidth}" height="${height - padding.bottom - y}" fill="#2f7cbf" opacity="0.82" />`;
+    return `<rect x="${x - barWidth / 2}" y="${y}" width="${barWidth}" height="${height - padding.bottom - y}" fill="${seriesColor}" opacity="0.82"><title>${escapeHtml(`${seriesLabel} · ${shortDate(point.date)}: ${roundNumber(point.value, 2)}`)}</title></rect>`;
   }).join("");
 
   const markerLines = changeDates
@@ -3465,23 +3983,25 @@ function renderBarChart(points, changeDates = []) {
     .map((date) => {
       const idx = points.findIndex((point) => point.date === date);
       const x = xFor(idx);
-      return `<line x1="${x}" x2="${x}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#c88a2c" stroke-dasharray="4 4" stroke-width="1" />`;
+      return `<line x1="${x}" x2="${x}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="${CHART_COLORS.doseChangeMarker}" stroke-dasharray="4 4" stroke-width="1" />`;
     })
     .join("");
 
-  const labels = [points[0], points[Math.floor(points.length / 2)], points[points.length - 1]]
-    .filter(Boolean)
-    .map((point, index) => `<text x="${xFor(index === 0 ? 0 : index === 1 ? Math.floor(points.length / 2) : points.length - 1)}" y="${height - 8}" text-anchor="middle" font-size="10" fill="#5d7087">${escapeHtml(shortDate(point.date))}</text>`)
+  const labelIndexes = Array.from(new Set([0, Math.floor(points.length / 2), points.length - 1])).filter((index) => index >= 0);
+  const labels = labelIndexes
+    .map((index) => `<text x="${xFor(index)}" y="${height - 8}" text-anchor="middle" font-size="10" fill="${CHART_COLORS.label}">${escapeHtml(shortDate(points[index].date))}</text>`)
     .join("");
+
+  const markerLegend = changeDates.length ? `<span><i style="background:${CHART_COLORS.doseChangeMarker}"></i>Medication change marker</span>` : "";
 
   return `
     <svg class="chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="bar chart">
-      <line x1="${padding.left}" x2="${width - padding.right}" y1="${height - padding.bottom}" y2="${height - padding.bottom}" stroke="#e5edf4" stroke-width="1" />
+      <line x1="${padding.left}" x2="${width - padding.right}" y1="${height - padding.bottom}" y2="${height - padding.bottom}" stroke="${CHART_COLORS.axis}" stroke-width="1" />
       ${markerLines}
       ${bars}
       ${labels}
     </svg>
-    <div class="legend"><span><i style="background:#2f7cbf"></i>Side effect frequency</span><span><i style="background:#c88a2c"></i>Medication change marker</span></div>
+    <div class="legend"><span><i style="background:${seriesColor}"></i>${escapeHtml(seriesLabel)}</span>${markerLegend}</div>
   `;
 }
 
@@ -3515,13 +4035,36 @@ function valueOf(id) {
   return node ? String(node.value || "").trim() : "";
 }
 
+function pushToast(message, type = "success") {
+  if (!dom.toastStack) return;
+  const toast = document.createElement("div");
+  toast.className = `toast ${type === "error" ? "error" : "success"}`;
+  toast.textContent = message;
+  dom.toastStack.appendChild(toast);
+
+  window.setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translateY(-8px)";
+    window.setTimeout(() => toast.remove(), 260);
+  }, 2600);
+}
+
 function setStatus(message, type = "ok") {
   clearTimeout(app.statusTimeout);
-  dom.globalStatus.classList.remove("hidden", "error", "context-block");
-  if (type === "error") {
-    dom.globalStatus.classList.add("error");
+  if (type !== "error") {
+    if (!getActiveContext().blockedReason) {
+      dom.globalStatus.classList.add("hidden");
+      dom.globalStatus.classList.remove("error", "context-block");
+      dom.globalStatus.textContent = "";
+    }
+    pushToast(message, "success");
+    return;
   }
+
+  dom.globalStatus.classList.remove("hidden", "context-block");
+  dom.globalStatus.classList.add("error");
   dom.globalStatus.textContent = message;
+  pushToast(message, "error");
 
   app.statusTimeout = setTimeout(() => {
     if (getActiveContext().blockedReason) return;
@@ -3533,6 +4076,13 @@ function setStatus(message, type = "ok") {
 
 function parseDateTime(date, time) {
   return new Date(`${date}T${time || "00:00"}:00`);
+}
+
+function shiftDateKey(dateKey, days) {
+  const date = new Date(`${dateKey}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return dateKey;
+  date.setDate(date.getDate() + Number(days || 0));
+  return getLocalDateKey(date);
 }
 
 function formatSchedule(medication) {
@@ -3566,6 +4116,12 @@ function niceDateTime(value) {
     hour: "2-digit",
     minute: "2-digit"
   });
+}
+
+function formatClockTime(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "--:--";
+  return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
 function isoDate(date) {

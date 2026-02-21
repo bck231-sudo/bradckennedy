@@ -14,13 +14,19 @@
   <div class="layout">
     <aside class="sidebar panel">
       <div class="brand-block">
-        <h1>Medication Tracker</h1>
-        <p>Track medications, dose changes, outcomes, and weekly trends with structured daily workflows.</p>
+        <div class="brand-lockup">
+          <div class="logo-mark" aria-hidden="true">MT</div>
+          <div>
+            <h1>Medication Tracker</h1>
+            <p>Clinical daily tracking for medications, changes, outcomes, and weekly wellbeing trends.</p>
+          </div>
+        </div>
       </div>
 
       <div class="sidebar-control">
-        <label for="viewerModeSelect">Viewer Context</label>
-        <select id="viewerModeSelect"></select>
+        <label for="viewerModeSegment">Viewer Context</label>
+        <div id="viewerModeSegment" class="segmented-control" role="tablist" aria-label="Viewer context"></div>
+        <select id="viewerModeSelect" class="hidden-native-control"></select>
       </div>
 
       <div class="sidebar-control">
@@ -36,7 +42,7 @@
       <nav id="sectionNav" class="section-nav"></nav>
 
       <div class="sidebar-footnote">
-        <p id="contextPill" class="pill">My View</p>
+        <p id="contextPill" class="pill">Owner View</p>
       </div>
     </aside>
 
@@ -47,9 +53,20 @@
           <p id="sectionSubtitle">Today at a glance.</p>
         </div>
         <div class="header-actions">
-          <button id="quickCheckinButton" class="btn btn-secondary" type="button">Quick check-in</button>
+          <button id="quickCheckinButton" class="btn btn-primary btn-large" type="button">Quick check-in</button>
         </div>
       </header>
+
+      <div id="initialSkeleton" class="skeleton-shell">
+        <div class="skeleton-row">
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+        </div>
+        <div class="skeleton-line"></div>
+        <div class="skeleton-line"></div>
+      </div>
 
       <div id="readOnlyBanner" class="banner hidden"></div>
       <div id="globalStatus" class="status hidden"></div>
@@ -64,7 +81,12 @@
       <section id="section-sharing" class="section hidden"></section>
       <section id="section-exports" class="section hidden"></section>
     </main>
+
+    <aside id="utilityPanel" class="utility panel"></aside>
   </div>
+
+  <nav id="mobileNav" class="mobile-nav" aria-label="Mobile navigation"></nav>
+  <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
 
   <div id="medicationModal" class="modal hidden" aria-hidden="true">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="medModalTitle">
