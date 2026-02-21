@@ -1,3 +1,12 @@
+import {
+  ADHERENCE_STATUS,
+  applyDoseAction,
+  buildDoseState,
+  createDoseOccurrenceId,
+  getLocalDateKey,
+  normalizeAdherenceStatus
+} from "./dose-actions.js";
+
 const STORAGE_KEY = "medication_tracker_data_v1";
 const DRAFT_KEY = "medication_tracker_drafts_v2";
 const ACCESS_LOG_KEY = "medication_tracker_access_logs_v1";
@@ -228,6 +237,7 @@ const app = {
     activeSection: "dashboard",
     entryWorkflow: "medication",
     comparisonChangeId: "",
+    pendingDoseActions: new Set(),
     timelineFilters: {
       medicationId: "all",
       fromDate: "",
@@ -717,14 +727,20 @@ function normalizeCheckin(input) {
 }
 
 function normalizeAdherence(input) {
+  const dateKey = input?.date || getLocalDateKey(new Date());
+  const medicationId = input?.medicationId || "";
+  const scheduleTime = input?.scheduleTime || "";
+  const occurrenceId = input?.occurrenceId || (medicationId && scheduleTime ? createDoseOccurrenceId(dateKey, medicationId, scheduleTime) : input?.id || uid());
   return {
-    id: input?.id || uid(),
-    date: input?.date || isoDate(new Date()),
-    medicationId: input?.medicationId || "",
+    id: input?.id || occurrenceId,
+    occurrenceId,
+    date: dateKey,
+    medicationId,
     medicationName: input?.medicationName || "",
-    scheduleTime: input?.scheduleTime || "",
-    status: input?.status || "taken",
-    createdAt: input?.createdAt || isoDateTime(new Date())
+    scheduleTime,
+    status: normalizeAdherenceStatus(input?.status),
+    createdAt: input?.createdAt || isoDateTime(new Date()),
+    updatedAt: input?.updatedAt || input?.createdAt || isoDateTime(new Date())
   };
 }
 
@@ -1403,7 +1419,7 @@ function renderDashboard(root, data, context) {
   const resolvedMeds = resolveCurrentMedications(data);
   const activeMeds = resolvedMeds.filter((med) => med.isCurrent);
   const currentMedsLastUpdated = resolveCurrentMedsLastUpdatedDate(data);
-  const today = isoDate(new Date());
+  const today = getLocalDateKey(new Date());
   const todayCheckin = data.checkins.find((entry) => entry.date === today);
   const recentChanges = data.changes
     .filter((entry) => dateDiffDays(entry.date, today) <= 7)
@@ -1427,7 +1443,7 @@ function renderDashboard(root, data, context) {
       <article class="card">
         <div class="label">Today doses</div>
         <strong class="value">${dueState.dueNow.length} due now</strong>
-        <div class="meta">${dueState.next.length} upcoming · ${dueState.taken.length} marked</div>
+        <div class="meta">${dueState.next.length} upcoming · Taken ${dueState.counts.taken} · Remaining ${dueState.counts.remaining} · Missed ${dueState.counts.missed}</div>
       </article>
       <article class="card">
         <div class="label">Today check-in</div>
@@ -1449,6 +1465,7 @@ function renderDashboard(root, data, context) {
     <div class="grid" style="grid-template-columns: 1.2fr 1fr;">
       <article class="card">
         <h3>Today’s doses</h3>
+        <div class="subtle" style="margin: 6px 0 10px;">Taken: ${dueState.counts.taken} · Remaining: ${dueState.counts.remaining} · Missed: ${dueState.counts.missed}</div>
         ${renderDoseTable(dueState, context)}
       </article>
 
@@ -1489,21 +1506,20 @@ function renderDashboard(root, data, context) {
     </div>
   `;
 
-  root.querySelectorAll("[data-mark-dose]").forEach((button) => {
-    button.addEventListener("click", () => {
+  root.querySelectorAll("[data-dose-action]").forEach((button) => {
+    button.addEventListener("click", async () => {
       if (context.readOnly) return;
-      const [medId, time, status] = button.dataset.markDose.split("|");
-      upsertAdherence(medId, time, status);
-      setStatus(`Dose marked as ${status}.`);
-      renderAll();
+      const occurrenceId = button.dataset.doseOccurrenceId || "";
+      const status = button.dataset.doseStatus || "";
+      await handleDoseAction(occurrenceId, status);
     });
   });
 }
 
 function renderDoseTable(dueState, context) {
-  const items = [...dueState.dueNow, ...dueState.next, ...dueState.taken];
+  const items = [...dueState.dueNow, ...dueState.next];
   if (!items.length) {
-    return `<div class="empty">No scheduled doses configured for active medications.</div>`;
+    return `<div class="empty">All pending doses for today are handled.</div>`;
   }
 
   return `
@@ -1524,8 +1540,8 @@ function renderDoseTable(dueState, context) {
               <td>${escapeHtml(item.time)}</td>
               <td>${escapeHtml(item.statusLabel)}</td>
               ${context.readOnly ? "" : `<td>
-                <button class="btn btn-secondary small" type="button" data-mark-dose="${item.medicationId}|${item.time}|taken">Taken</button>
-                <button class="btn btn-secondary small" type="button" data-mark-dose="${item.medicationId}|${item.time}|skipped">Skipped</button>
+                <button class="btn btn-secondary small" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.TAKEN}" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>${app.ui.pendingDoseActions.has(item.occurrenceId) ? "Saving..." : "Taken"}</button>
+                <button class="btn btn-secondary small" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.SKIPPED}" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>${app.ui.pendingDoseActions.has(item.occurrenceId) ? "Saving..." : "Skipped"}</button>
               </td>`}
             </tr>
           `).join("")}
@@ -1894,7 +1910,7 @@ function renderInterpretationEditor(change) {
 }
 
 function renderCheckins(root, data, context) {
-  const today = isoDate(new Date());
+  const today = getLocalDateKey(new Date());
   const todayCheckin = data.checkins.find((entry) => entry.date === today);
   const sorted = data.checkins.slice().sort((a, b) => b.date.localeCompare(a.date));
 
@@ -3203,73 +3219,47 @@ function generateInterpretationTemplate(values) {
 }
 
 function getDoseState(activeMeds, adherence) {
-  const now = new Date();
-  const today = isoDate(now);
-  const dueNow = [];
-  const next = [];
-  const taken = [];
-
-  for (const med of activeMeds) {
-    const times = med.scheduleTimes || [];
-    for (const time of times) {
-      const existing = adherence.find(
-        (entry) =>
-          entry.date === today &&
-          entry.medicationId === med.id &&
-          entry.scheduleTime === time
-      );
-
-      const scheduleDate = parseDateTime(today, time);
-      const diffMinutes = (scheduleDate.getTime() - now.getTime()) / 60000;
-      const row = {
-        medicationId: med.id,
-        medicationName: med.name,
-        time,
-        statusLabel: existing ? `Marked ${existing.status}` : diffMinutes < -120 ? "Overdue" : diffMinutes <= 45 ? "Due now" : "Upcoming"
-      };
-
-      if (existing) {
-        taken.push(row);
-      } else if (diffMinutes <= 45) {
-        dueNow.push(row);
-      } else {
-        next.push(row);
-      }
-    }
-  }
-
-  dueNow.sort((a, b) => a.time.localeCompare(b.time));
-  next.sort((a, b) => a.time.localeCompare(b.time));
-  taken.sort((a, b) => a.time.localeCompare(b.time));
-
-  return { dueNow, next, taken };
+  return buildDoseState(activeMeds, adherence, new Date());
 }
 
-function upsertAdherence(medicationId, scheduleTime, status) {
-  const med = app.ownerData.medications.find((entry) => entry.id === medicationId);
-  if (!med) return;
-
-  const today = isoDate(new Date());
-  const existing = app.ownerData.adherence.find(
-    (entry) => entry.date === today && entry.medicationId === medicationId && entry.scheduleTime === scheduleTime
-  );
-
-  if (existing) {
-    existing.status = status;
-    existing.createdAt = isoDateTime(new Date());
+function setPendingDoseAction(occurrenceId, pending) {
+  const next = new Set(app.ui.pendingDoseActions);
+  if (pending) {
+    next.add(occurrenceId);
   } else {
-    app.ownerData.adherence.push({
-      id: uid(),
-      date: today,
-      medicationId,
-      medicationName: med.name,
-      scheduleTime,
-      status,
-      createdAt: isoDateTime(new Date())
-    });
+    next.delete(occurrenceId);
+  }
+  app.ui.pendingDoseActions = next;
+}
+
+async function handleDoseAction(occurrenceId, status) {
+  if (!occurrenceId || !status) {
+    setStatus("Dose action is missing required details.", "error");
+    return;
   }
 
-  saveOwnerData(app.ownerData);
+  if (app.ui.pendingDoseActions.has(occurrenceId)) {
+    return;
+  }
+
+  const previousOwnerData = app.ownerData;
+  setPendingDoseAction(occurrenceId, true);
+
+  try {
+    const nextOwnerData = applyDoseAction(previousOwnerData, { occurrenceId, status }, new Date());
+    app.ownerData = nextOwnerData;
+    renderAll();
+
+    saveOwnerData(nextOwnerData);
+    setStatus(`Dose marked as ${normalizeAdherenceStatus(status)}.`);
+  } catch (error) {
+    app.ownerData = previousOwnerData;
+    const message = error instanceof Error ? error.message : "Unknown save error";
+    setStatus(`Could not save dose action. ${message}`, "error");
+  } finally {
+    setPendingDoseAction(occurrenceId, false);
+    renderAll();
+  }
 }
 
 function buildAlerts(data) {
@@ -3289,7 +3279,7 @@ function buildAlerts(data) {
     alerts.push(`${change.medicationName}: monitor ${change.interpretation.monitor}`);
   });
 
-  const today = isoDate(new Date());
+  const today = getLocalDateKey(new Date());
   const hasTodayCheckin = data.checkins.some((entry) => entry.date === today);
   if (!hasTodayCheckin) {
     alerts.push("Today’s wellbeing check-in is still pending.");
