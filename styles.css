@@ -604,6 +604,16 @@ textarea {
   font-size: 0.84rem;
 }
 
+.needs-confirmation {
+  margin-top: 6px;
+  border: 1px solid #efcca4;
+  background: #fff4e8;
+  color: #7d4f17;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 0.8rem;
+}
+
 hr.soft {
   border: 0;
   border-top: 1px solid #e4ebf2;

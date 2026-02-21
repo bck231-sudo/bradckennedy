@@ -1,6 +1,7 @@
 const STORAGE_KEY = "medication_tracker_data_v1";
 const DRAFT_KEY = "medication_tracker_drafts_v2";
 const ACCESS_LOG_KEY = "medication_tracker_access_logs_v1";
+const PROFILE_PATCH_KEY = "medication_tracker_profile_patch_2026_02_21_v1";
 const APP_VERSION = 2;
 
 const SIDE_EFFECT_OPTIONS = [
@@ -17,6 +18,7 @@ const SIDE_EFFECT_OPTIONS = [
 ];
 
 const COMMON_MEDICATION_NAMES = [
+  "Fluvoxamine",
   "Vyvanse",
   "Clonidine",
   "Quetiapine",
@@ -61,6 +63,7 @@ const OWNER_PERMISSIONS = Object.freeze({
 });
 
 const SENSITIVE_TAG_KEYWORDS = ["sensitive", "journal", "libido", "sexual", "substance", "private"];
+const TARGET_MEDICATION_KEYS = ["fluvoxamine", "clonazepam", "vyvanse", "lisdexamfetamine"];
 
 const PRESETS = {
   family: {
@@ -247,19 +250,22 @@ function loadOwnerData() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) {
     const seeded = buildSeedState();
-    saveOwnerData(seeded);
-    return seeded;
+    const patched = applyMedicationProfilePatch(seeded);
+    saveOwnerData(patched);
+    return patched;
   }
 
   try {
     const parsed = JSON.parse(raw);
     const migrated = migrateToV2(parsed);
-    saveOwnerData(migrated);
-    return migrated;
+    const patched = applyMedicationProfilePatch(migrated);
+    saveOwnerData(patched);
+    return patched;
   } catch (_error) {
     const fallback = buildSeedState();
-    saveOwnerData(fallback);
-    return fallback;
+    const patched = applyMedicationProfilePatch(fallback);
+    saveOwnerData(patched);
+    return patched;
   }
 }
 
@@ -277,6 +283,147 @@ function buildSeedState() {
     checkins: [],
     adherence: [],
     shareLinks: []
+  });
+}
+
+function applyMedicationProfilePatch(inputState) {
+  const state = ensureStateShape(inputState);
+  if (localStorage.getItem(PROFILE_PATCH_KEY)) {
+    return state;
+  }
+
+  const now = new Date();
+  const nowIso = isoDateTime(now);
+  const today = isoDate(now);
+
+  upsertMedicationFromProfile(state, {
+    name: "Fluvoxamine",
+    genericName: "fluvoxamine",
+    currentDose: "100 mg daily",
+    schedulePreset: "custom",
+    scheduleTimes: [],
+    route: "oral",
+    indication: "Reduced under psychiatrist Theo with plan to discontinue due to interaction/enzyme profile concerns.",
+    monitor: "Reduction sequence reported as 200 mg -> 150 mg -> 100 mg. Discuss taper pace and interaction implications with prescriber.",
+    questions: "Needs confirmation: exact dates for each dose reduction step.",
+    needsConfirmation: true,
+    confirmationNotes: "Needs confirmation: exact timeline dates for 200 mg -> 150 mg -> 100 mg reduction."
+  }, nowIso, today);
+
+  upsertMedicationFromProfile(state, {
+    name: "Clonazepam",
+    genericName: "clonazepam",
+    currentDose: "2 mg per day",
+    schedulePreset: "am",
+    scheduleTimes: ["08:00"],
+    route: "oral",
+    indication: "Current scheduled dose reported as 2 mg daily at 8am.",
+    monitor: "Maintain timing consistency and review effects with prescriber.",
+    questions: "",
+    needsConfirmation: false,
+    confirmationNotes: ""
+  }, nowIso, today);
+
+  upsertMedicationFromProfile(state, {
+    name: "Vyvanse",
+    genericName: "lisdexamfetamine",
+    currentDose: "70 mg/day split (40 mg at 8am + 30 mg at 2pm)",
+    schedulePreset: "custom",
+    scheduleTimes: ["08:00", "14:00"],
+    route: "oral",
+    indication: "Current dose reported as 70 mg/day split dosing.",
+    monitor: "Dose under review/approval discussion above 70 mg PBS-covered range; do not treat as approved unless confirmed.",
+    questions: "Needs confirmation: conflicting values reported (70 mg/day split vs prior mention of 100 mg/day; possible plan/request for 120 mg).",
+    needsConfirmation: true,
+    confirmationNotes: "Needs confirmation: conflicting reported values are 70 mg/day split, prior mention of 100 mg/day, and possible 120 mg plan/request."
+  }, nowIso, today);
+
+  upsertNoteFromProfile(state, {
+    date: today,
+    noteType: "free_text",
+    severity: "moderate",
+    noteText: "Recent medication changes summary: Fluvoxamine reduced 200 mg -> 150 mg -> 100 mg over time; psychiatrist intent is taper/discontinue due to interaction profile; Vyvanse dose is under review/approval discussion for dose above 70 mg PBS-covered range (not confirmed as approved).",
+    tags: ["medication-summary", "Needs confirmation"],
+    isSensitive: false
+  }, nowIso);
+
+  localStorage.setItem(PROFILE_PATCH_KEY, nowIso);
+  return state;
+}
+
+function upsertMedicationFromProfile(state, values, nowIso, today) {
+  const key = normalizeMedicationKey(values.name);
+  const existing = state.medications.find((med) => {
+    const medKey = normalizeMedicationKey(med.name);
+    const genericKey = normalizeMedicationKey(med.genericName);
+    return medKey === key || genericKey === key;
+  });
+
+  if (existing) {
+    existing.name = values.name;
+    existing.genericName = values.genericName || existing.genericName || "";
+    existing.route = values.route || existing.route || "oral";
+    existing.currentDose = values.currentDose;
+    existing.schedulePreset = normalizeSchedulePresetValue(values.schedulePreset || existing.schedulePreset || "custom");
+    existing.scheduleTimes = normalizeTimes(values.scheduleTimes || existing.scheduleTimes || []);
+    existing.startDate = existing.startDate || today;
+    existing.indication = values.indication || existing.indication || "";
+    existing.monitor = values.monitor || existing.monitor || "";
+    existing.questions = values.questions || existing.questions || "";
+    existing.active = true;
+    existing.needsConfirmation = Boolean(values.needsConfirmation);
+    existing.confirmationNotes = values.confirmationNotes || "";
+    existing.updatedAt = nowIso;
+    return;
+  }
+
+  state.medications.push({
+    id: uid(),
+    name: values.name,
+    genericName: values.genericName || "",
+    brandName: "",
+    route: values.route || "oral",
+    currentDose: values.currentDose,
+    schedulePreset: normalizeSchedulePresetValue(values.schedulePreset || "custom"),
+    scheduleTimes: normalizeTimes(values.scheduleTimes || []),
+    startDate: today,
+    indication: values.indication || "",
+    moaSimple: [],
+    moaTechnical: "",
+    timeCourseNotes: "",
+    adjustmentAcute: "",
+    adjustmentChronic: "",
+    interactionsNotes: "",
+    contraindicationsNotes: "",
+    commonSideEffects: "",
+    monitor: values.monitor || "",
+    questions: values.questions || "",
+    active: true,
+    needsConfirmation: Boolean(values.needsConfirmation),
+    confirmationNotes: values.confirmationNotes || "",
+    createdAt: nowIso,
+    updatedAt: nowIso
+  });
+}
+
+function upsertNoteFromProfile(state, values, nowIso) {
+  const exists = state.notes.some((note) => normalizeMedicationKey(note.noteText || "") === normalizeMedicationKey(values.noteText || ""));
+  if (exists) {
+    return;
+  }
+  state.notes.push({
+    id: uid(),
+    date: values.date,
+    medicationId: "",
+    medicationName: "",
+    noteType: values.noteType || "free_text",
+    severity: values.severity || "moderate",
+    checklist: [],
+    tags: Array.isArray(values.tags) ? values.tags : [],
+    noteText: values.noteText || "",
+    trainingNotes: "",
+    isSensitive: Boolean(values.isSensitive),
+    createdAt: nowIso
   });
 }
 
@@ -364,6 +511,8 @@ function migrateToV2(input) {
       commonSideEffects: med.commonSideEffects || "",
       monitor: med.monitor || "",
       questions: med.questions || "",
+      needsConfirmation: Boolean(med.needsConfirmation),
+      confirmationNotes: med.confirmationNotes || "",
       active: med.status ? med.status === "active" : med.active !== false,
       createdAt: med.createdAt || now,
       updatedAt: med.updatedAt || med.createdAt || now
@@ -472,6 +621,8 @@ function ensureStateShape(input) {
       commonSideEffects: med.commonSideEffects || "",
       monitor: med.monitor || "",
       questions: med.questions || "",
+      needsConfirmation: Boolean(med.needsConfirmation),
+      confirmationNotes: med.confirmationNotes || "",
       active: med.active !== false,
       createdAt: med.createdAt || isoDateTime(new Date()),
       updatedAt: med.updatedAt || med.createdAt || isoDateTime(new Date())
@@ -1168,11 +1319,13 @@ function resolveCurrentMedications(data) {
       .sort((a, b) => changeSortValue(b) - changeSortValue(a))[0];
 
     const fallbackScheduleSource = activeRecords.find((entry) => (entry.scheduleTimes || []).length) || latestRecord;
+    const isTargetMedication = isTargetMedicationRecord(canonical);
     resolved.push({
       ...canonical,
       scheduleTimes: normalizeTimes((canonical.scheduleTimes || []).length ? canonical.scheduleTimes : fallbackScheduleSource?.scheduleTimes || []),
       currentDose: latestChange?.newDose || canonical.currentDose || "",
       isCurrent: activeRecords.length > 0,
+      isTargetMedication,
       sourceCount: sorted.length,
       latestChangeDate: latestChange?.date || ""
     });
@@ -1180,8 +1333,43 @@ function resolveCurrentMedications(data) {
 
   return resolved.sort((a, b) => {
     if (Number(b.isCurrent) !== Number(a.isCurrent)) return Number(b.isCurrent) - Number(a.isCurrent);
+    if (Number(b.isTargetMedication) !== Number(a.isTargetMedication)) return Number(b.isTargetMedication) - Number(a.isTargetMedication);
     return (a.name || "").localeCompare(b.name || "");
   });
+}
+
+function isTargetMedicationRecord(medication) {
+  const medKey = normalizeMedicationKey(medication?.name);
+  const genericKey = normalizeMedicationKey(medication?.genericName);
+  return TARGET_MEDICATION_KEYS.includes(medKey) || TARGET_MEDICATION_KEYS.includes(genericKey);
+}
+
+function resolveCurrentMedsLastUpdatedDate(data) {
+  const resolved = resolveCurrentMedications(data).filter((med) => med.isCurrent);
+  const target = resolved.filter((med) => {
+    const medKey = normalizeMedicationKey(med.name);
+    const genericKey = normalizeMedicationKey(med.genericName);
+    return TARGET_MEDICATION_KEYS.includes(medKey) || TARGET_MEDICATION_KEYS.includes(genericKey);
+  });
+  const source = target.length ? target : resolved;
+  const latest = source
+    .map((med) => parseSortableDate(med.updatedAt))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((a, b) => b - a)[0];
+  if (!latest) {
+    return isoDate(new Date());
+  }
+  return isoDate(new Date(latest));
+}
+
+function renderRecentMedicationSummary() {
+  return `
+    <ul class="timeline-list">
+      <li>Fluvoxamine reduced from 200 mg -> 150 mg -> 100 mg over time.</li>
+      <li>Psychiatrist intent: taper/discontinue fluvoxamine due to interaction/enzyme profile concerns.</li>
+      <li>Vyvanse dose is under review / approval discussion for dose above 70 mg PBS-covered range. <strong>Needs confirmation</strong> and not listed as approved.</li>
+    </ul>
+  `;
 }
 
 function normalizeMedicationKey(value) {
@@ -1214,6 +1402,7 @@ function parseSortableDate(value) {
 function renderDashboard(root, data, context) {
   const resolvedMeds = resolveCurrentMedications(data);
   const activeMeds = resolvedMeds.filter((med) => med.isCurrent);
+  const currentMedsLastUpdated = resolveCurrentMedsLastUpdatedDate(data);
   const today = isoDate(new Date());
   const todayCheckin = data.checkins.find((entry) => entry.date === today);
   const recentChanges = data.changes
@@ -1233,6 +1422,7 @@ function renderDashboard(root, data, context) {
         <div class="label">Current meds (resolved)</div>
         <strong class="value">${activeMeds.length}</strong>
         <div class="meta">${activeMeds.slice(0, 3).map((med) => med.name).join(", ") || "No active medications yet"}</div>
+        <div class="subtle" style="margin-top:6px;">Last updated: ${escapeHtml(niceDate(currentMedsLastUpdated))}</div>
       </article>
       <article class="card">
         <div class="label">Today doses</div>
@@ -1266,7 +1456,7 @@ function renderDashboard(root, data, context) {
         <h3>Current Medications</h3>
         ${activeMeds.length ? `
           <ul class="timeline-list">
-            ${activeMeds.map((med) => `<li><strong>${escapeHtml(med.name)}</strong> · ${escapeHtml(med.currentDose || "-")} · ${escapeHtml(formatSchedule(med))}${med.sourceCount > 1 ? ` <span class="subtle">(resolved from ${med.sourceCount} records)</span>` : ""}</li>`).join("")}
+            ${activeMeds.map((med) => `<li><strong>${escapeHtml(med.name)}</strong> · ${escapeHtml(med.currentDose || "-")} · ${escapeHtml(formatSchedule(med))}${med.sourceCount > 1 ? ` <span class="subtle">(resolved from ${med.sourceCount} records)</span>` : ""}${med.needsConfirmation || !med.isTargetMedication ? `<div class="needs-confirmation">Needs confirmation: ${escapeHtml(formatNeedsConfirmationMessage(med.confirmationNotes || med.questions || (!med.isTargetMedication ? "Additional active record preserved from existing data." : "Conflicting values require confirmation.")))}</div>` : ""}</li>`).join("")}
           </ul>
         ` : `<div class="empty">No active medications recorded yet.</div>`}
       </article>
@@ -1291,6 +1481,11 @@ function renderDashboard(root, data, context) {
         <h3>Shared links panel</h3>
         ${renderSharePanelPreview(context)}
       </article>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
+      <h3>Recent medication changes summary</h3>
+      ${renderRecentMedicationSummary()}
     </div>
   `;
 
@@ -1370,6 +1565,7 @@ function renderMedications(root, data, context) {
   const recordCount = data.medications.length;
   const current = resolved.filter((med) => med.isCurrent);
   const historical = resolved.filter((med) => !med.isCurrent);
+  const currentMedsLastUpdated = resolveCurrentMedsLastUpdatedDate(data);
 
   root.innerHTML = resolved.length
     ? `
@@ -1378,6 +1574,7 @@ function renderMedications(root, data, context) {
         <div class="subtle">
           If multiple records conflict, this list shows the most recently updated active/current record while preserving all history.
         </div>
+        <div class="subtle" style="margin-top:6px;"><strong>Last updated:</strong> ${escapeHtml(niceDate(currentMedsLastUpdated))}</div>
       </div>
       <div class="table-wrap">
         <table>
@@ -1400,6 +1597,7 @@ function renderMedications(root, data, context) {
                   <strong>${escapeHtml(med.name)}</strong>
                   ${med.genericName ? `<div class="subtle">${escapeHtml(med.genericName)}</div>` : ""}
                   ${med.brandName ? `<div class="subtle">${escapeHtml(med.brandName)}</div>` : ""}
+                  ${med.needsConfirmation || !med.isTargetMedication ? `<div class="needs-confirmation">Needs confirmation: ${escapeHtml(formatNeedsConfirmationMessage(med.confirmationNotes || med.questions || (!med.isTargetMedication ? "Additional active record preserved from existing data." : "Conflicting values require confirmation.")))}</div>` : ""}
                 </td>
                 <td>${escapeHtml(med.currentDose || "-")}</td>
                 <td>${escapeHtml(formatSchedule(med))}</td>
@@ -1484,6 +1682,10 @@ function openMedicationModal(medicationId, context) {
             <label>Schedule times (comma separated)</label>
             <input id="modalMedTimes" value="${escapeHtml((med.scheduleTimes || []).join(", "))}" ${editable ? "" : "disabled"}>
           </div>
+          <div style="grid-column: 1 / -1;">
+            <label>Needs confirmation note</label>
+            <textarea id="modalMedConfirmation" ${editable ? "" : "disabled"}>${escapeHtml(med.confirmationNotes || "")}</textarea>
+          </div>
         </div>
         <label style="margin-top:10px;">Indication (why taken)</label>
         <textarea id="modalMedIndication" ${editable ? "" : "disabled"}>${escapeHtml(med.indication || "")}</textarea>
@@ -1557,6 +1759,8 @@ function openMedicationModal(medicationId, context) {
       if (invalidTime) {
         return setStatus(`Schedule time "${invalidTime}" is invalid. Use HH:MM (24-hour).`, "error");
       }
+      target.confirmationNotes = valueOf("modalMedConfirmation");
+      target.needsConfirmation = Boolean(target.confirmationNotes);
       target.indication = valueOf("modalMedIndication");
       target.moaSimple = valueOf("modalMedMoaSimple").split("\n").map((line) => line.trim()).filter(Boolean);
       target.moaTechnical = valueOf("modalMedMoaTechnical");
@@ -1594,6 +1798,10 @@ function renderChanges(root, data, context) {
   }
 
   root.innerHTML = `
+    <div class="card" style="margin-bottom:12px;">
+      <h3>Recent medication changes summary</h3>
+      ${renderRecentMedicationSummary()}
+    </div>
     <div class="table-wrap">
       <table>
         <thead>
@@ -3434,6 +3642,12 @@ function deepClone(value) {
 
 function valueOrDefault(value, fallback) {
   return value === undefined || value === null || value === "" ? fallback : value;
+}
+
+function formatNeedsConfirmationMessage(value) {
+  const text = String(value || "").trim();
+  const stripped = text.replace(/^Needs confirmation:\s*/i, "").trim();
+  return stripped || "Conflicting values require confirmation.";
 }
 
 function normalizeTags(value) {
