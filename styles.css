@@ -195,6 +195,12 @@ h4 {
   color: #ffffff;
 }
 
+.top-navbar .top-nav-link:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 .app-brand {
   width: auto;
   justify-content: center;

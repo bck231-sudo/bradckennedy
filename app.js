@@ -86,10 +86,38 @@ const MOBILE_TABS = [
 ];
 
 const TOP_NAV_ITEMS = [
-  { id: "dashboard", label: "Dashboard", icon: "home", target: "dashboard" },
-  { id: "history", label: "History", icon: "chart", target: "timeline", fallback: "changes" },
-  { id: "settings", label: "Settings", icon: "plus", target: "exports", fallback: "sharing" },
-  { id: "share", label: "Share", icon: "share", target: "sharing", fallback: "exports" }
+  {
+    id: "dashboard",
+    label: "Dashboard",
+    icon: "home",
+    primarySection: "dashboard",
+    fallbackSections: [],
+    preferredModes: ["daily", "clinical", "personal"]
+  },
+  {
+    id: "history",
+    label: "History",
+    icon: "chart",
+    primarySection: "timeline",
+    fallbackSections: ["changes"],
+    preferredModes: ["clinical", "personal"]
+  },
+  {
+    id: "settings",
+    label: "Settings",
+    icon: "plus",
+    primarySection: "exports",
+    fallbackSections: ["sharing"],
+    preferredModes: ["personal", "clinical"]
+  },
+  {
+    id: "share",
+    label: "Share",
+    icon: "share",
+    primarySection: "sharing",
+    fallbackSections: ["exports"],
+    preferredModes: ["clinical", "personal"]
+  }
 ];
 
 const OWNER_PERMISSIONS = Object.freeze({
@@ -1718,6 +1746,40 @@ function availableSections(context, mode) {
   });
 }
 
+function findModeForSection(context, sectionId, preferredModes = []) {
+  const modeCandidates = [...new Set([...preferredModes, ...context.allowedModes])];
+
+  for (const mode of modeCandidates) {
+    if (!context.allowedModes.includes(mode)) continue;
+    const sections = availableSections(context, mode);
+    if (sections.some((section) => section.id === sectionId)) {
+      return mode;
+    }
+  }
+
+  return "";
+}
+
+function navigateToSection(sectionId, options = {}) {
+  const context = getActiveContext();
+  const preferredModes = Array.isArray(options.preferredModes) ? options.preferredModes : [];
+  const fallbackSections = Array.isArray(options.fallbackSections) ? options.fallbackSections : [];
+  const candidates = [sectionId, ...fallbackSections];
+
+  for (const candidate of candidates) {
+    const mode = findModeForSection(context, candidate, preferredModes);
+    if (!mode) continue;
+    app.ui.activeViewMode = mode;
+    app.ui.activeSection = candidate;
+    return true;
+  }
+
+  const currentSections = availableSections(context, app.ui.activeViewMode);
+  app.ui.activeSection = currentSections[0]?.id || "dashboard";
+  setStatus("That section is not available in this viewer context.", "error");
+  return false;
+}
+
 function renderNavigation(context) {
   const sections = availableSections(context, app.ui.activeViewMode);
   if (!sections.find((section) => section.id === app.ui.activeSection)) {
@@ -1746,28 +1808,22 @@ function renderNavigation(context) {
   });
 }
 
-function resolveTopNavTarget(item, sections) {
-  const available = new Set(sections.map((section) => section.id));
-  if (item.target && available.has(item.target)) return item.target;
-  if (item.fallback && available.has(item.fallback)) return item.fallback;
-  if (available.has("dashboard")) return "dashboard";
-  return sections[0]?.id || "";
-}
-
 function renderTopNav(sections) {
   if (!dom.topNavLinks) return;
-  const available = sections.length ? sections : [{ id: "dashboard" }];
+  const context = getActiveContext();
 
   dom.topNavLinks.innerHTML = TOP_NAV_ITEMS.map((item) => {
-    const target = resolveTopNavTarget(item, available);
-    const active = app.ui.activeSection === target;
-    if (!target) return "";
+    const allItemSections = [item.primarySection, ...(item.fallbackSections || [])];
+    const active = allItemSections.includes(app.ui.activeSection);
+    const firstAvailableSection = allItemSections.find((sectionId) => findModeForSection(context, sectionId, item.preferredModes));
+    const disabled = !firstAvailableSection;
     return `
       <button
         type="button"
         class="top-nav-link nav-link ${active ? "active" : ""}"
-        data-topnav-target="${target}"
+        data-topnav-id="${item.id}"
         aria-label="Open ${escapeHtml(item.label)}"
+        ${disabled ? "disabled" : ""}
       >
         ${renderIcon(item.icon || "home", "top-nav-icon")}
         <span>${escapeHtml(item.label)}</span>
@@ -1775,9 +1831,15 @@ function renderTopNav(sections) {
     `;
   }).join("");
 
-  dom.topNavLinks.querySelectorAll("[data-topnav-target]").forEach((button) => {
+  dom.topNavLinks.querySelectorAll("[data-topnav-id]").forEach((button) => {
     button.addEventListener("click", () => {
-      app.ui.activeSection = button.dataset.topnavTarget || "dashboard";
+      const navId = button.dataset.topnavId || "";
+      const item = TOP_NAV_ITEMS.find((entry) => entry.id === navId);
+      if (!item) return;
+      navigateToSection(item.primarySection, {
+        preferredModes: item.preferredModes,
+        fallbackSections: item.fallbackSections
+      });
       renderAll();
     });
   });
@@ -2232,18 +2294,29 @@ function renderDashboard(root, data, context) {
     button.addEventListener("click", () => {
       const action = button.dataset.iconAction || "";
       if (action === "medications") {
-        app.ui.activeSection = "medications";
+        navigateToSection("medications", {
+          preferredModes: ["daily", "clinical", "personal"],
+          fallbackSections: ["dashboard"]
+        });
       } else if (action === "trends") {
-        app.ui.activeSection = "timeline";
+        navigateToSection("timeline", {
+          preferredModes: ["clinical", "personal"],
+          fallbackSections: ["changes"]
+        });
       } else if (action === "reminders") {
         if (context.readOnly) return;
-        app.ui.activeSection = "sharing";
+        navigateToSection("sharing", {
+          preferredModes: ["clinical", "personal"],
+          fallbackSections: ["exports"]
+        });
       } else if (action === "change") {
         if (context.readOnly) return;
-        app.ui.activeSection = "entry";
+        navigateToSection("entry", {
+          preferredModes: ["daily", "clinical", "personal"],
+          fallbackSections: ["dashboard"]
+        });
         app.ui.entryWorkflow = "change";
       }
-      ensureSectionForCurrentMode();
       renderAll();
     });
   });
