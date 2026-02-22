@@ -231,6 +231,9 @@ h4 {
   min-height: 40px;
   padding: 0 var(--space-3);
   text-align: left;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   font: inherit;
   cursor: pointer;
   transition: transform var(--motion-base), border-color var(--motion-fast), background var(--motion-fast), color var(--motion-fast);
@@ -246,6 +249,34 @@ h4 {
   color: var(--color-accent-strong);
   border-color: #b5c8ef;
   font-weight: 700;
+}
+
+.nav-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #edf2fb;
+  color: var(--color-accent-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.nav-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.section-nav button.active .nav-icon {
+  background: #dde8ff;
+}
+
+.nav-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar-footnote {
@@ -461,6 +492,24 @@ h4 {
   flex-wrap: wrap;
 }
 
+.icon-dock {
+  display: flex;
+  gap: var(--space-3);
+  margin: -2px 0 var(--space-2);
+}
+
+.icon-chip {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: var(--border-subtle);
+  box-shadow: 0 4px 12px rgba(16, 36, 62, 0.08);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .kpi-strip {
   display: flex;
   gap: var(--space-2);
@@ -546,6 +595,45 @@ tbody tr:hover {
   display: flex;
   gap: var(--space-2);
   flex-wrap: wrap;
+}
+
+.mini-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-accent-strong);
+  flex: 0 0 auto;
+}
+
+.mini-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.mini-icon.soft {
+  background: #edf2fb;
+  border: 1px solid #d8e3f4;
+}
+
+.mini-icon.accent {
+  color: #d92f4f;
+}
+
+.list-with-icon {
+  list-style: none;
+  margin-left: -2px;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.dose-med-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .field-grid {
@@ -987,7 +1075,8 @@ button:focus-visible {
 }
 
 .compact-list {
-  padding-left: 18px;
+  list-style: none;
+  padding-left: 0;
 }
 
 .compact-list li {
@@ -1170,9 +1259,15 @@ body.app-ready .skeleton-shell {
   font-weight: 700;
 }
 
-.mobile-nav button .icon {
-  font-size: var(--font-3);
-  line-height: 1;
+.mobile-nav button .mobile-icon {
+  width: 24px;
+  height: 24px;
+  color: currentColor;
+}
+
+.mobile-nav button .mobile-icon svg {
+  width: 18px;
+  height: 18px;
 }
 
 .mobile-nav button.active {

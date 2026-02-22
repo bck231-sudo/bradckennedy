@@ -79,10 +79,10 @@ const VIEWER_BADGES = {
 };
 
 const MOBILE_TABS = [
-  { id: "today", label: "Today", icon: "▦", section: "dashboard" },
-  { id: "medications", label: "Medications", icon: "◉", section: "medications" },
-  { id: "trends", label: "Trends", icon: "∿", section: "timeline" },
-  { id: "settings", label: "Settings / Share", icon: "⋯", section: "sharing", fallback: "exports" }
+  { id: "today", label: "Today", icon: "home", section: "dashboard" },
+  { id: "medications", label: "Medications", icon: "capsule", section: "medications" },
+  { id: "trends", label: "Trends", icon: "chart", section: "timeline" },
+  { id: "settings", label: "Settings / Share", icon: "share", section: "sharing", fallback: "exports" }
 ];
 
 const OWNER_PERMISSIONS = Object.freeze({
@@ -167,6 +167,7 @@ const SECTION_META = [
   {
     id: "dashboard",
     label: "Dashboard",
+    icon: "home",
     title: "Dashboard",
     subtitle: "Today’s priorities, changes, trends, and sharing status.",
     viewModes: ["daily", "clinical", "personal"]
@@ -174,6 +175,7 @@ const SECTION_META = [
   {
     id: "medications",
     label: "Current Medications",
+    icon: "capsule",
     title: "Current Medications",
     subtitle: "Medication list with dose, schedule, and detail pages.",
     viewModes: ["daily", "clinical", "personal"]
@@ -181,6 +183,7 @@ const SECTION_META = [
   {
     id: "changes",
     label: "Medication Changes",
+    icon: "syringe",
     title: "Medication Change Log",
     subtitle: "What changed, why, and interpretation cards.",
     viewModes: ["clinical", "personal"]
@@ -188,6 +191,7 @@ const SECTION_META = [
   {
     id: "checkins",
     label: "Wellbeing Check-ins",
+    icon: "heart",
     title: "Daily Wellbeing Check-ins",
     subtitle: "Structured daily symptom and wellbeing tracking.",
     viewModes: ["daily", "clinical", "personal"]
@@ -195,6 +199,7 @@ const SECTION_META = [
   {
     id: "notes",
     label: "Effects Notes",
+    icon: "note",
     title: "Effects and Side Effects Notes",
     subtitle: "Detailed notes across effects, side effects, and personal observations.",
     viewModes: ["clinical", "personal"]
@@ -202,6 +207,7 @@ const SECTION_META = [
   {
     id: "timeline",
     label: "Charts & Timeline",
+    icon: "chart",
     title: "Charts and Timeline",
     subtitle: "Trends over time with medication change markers.",
     viewModes: ["clinical", "personal"]
@@ -209,6 +215,7 @@ const SECTION_META = [
   {
     id: "entry",
     label: "Add Entries",
+    icon: "plus",
     title: "Add Entry Workflows",
     subtitle: "Separate structured workflows for clean data capture.",
     viewModes: ["daily", "clinical", "personal"],
@@ -217,6 +224,7 @@ const SECTION_META = [
   {
     id: "sharing",
     label: "Sharing",
+    icon: "share",
     title: "Sharing and Permissions",
     subtitle: "Create and manage read-only links with role presets.",
     viewModes: ["clinical", "personal"],
@@ -225,11 +233,27 @@ const SECTION_META = [
   {
     id: "exports",
     label: "Exports",
+    icon: "download",
     title: "Exports",
     subtitle: "Clinician summary and backup exports.",
     viewModes: ["clinical", "personal"]
   }
 ];
+
+const ICON_SVG_PATHS = Object.freeze({
+  home: `<path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10.5V20h13V10.5"/>`,
+  capsule: `<path d="m10.5 20.5-7-7a5 5 0 0 1 7-7l7 7a5 5 0 0 1-7 7Z"/><path d="m8 8 8 8"/>`,
+  syringe: `<path d="m18 3 3 3"/><path d="m16.5 7.5 3-3"/><path d="m11 13 6-6"/><path d="m4.5 19.5 6-6"/><path d="m3 22 2.5-2.5"/><path d="m13.5 10.5 4 4"/>`,
+  heart: `<path d="m12 20-1.2-1.1C6 14.6 3 11.8 3 8.5A4.5 4.5 0 0 1 7.5 4 5 5 0 0 1 12 6.3 5 5 0 0 1 16.5 4 4.5 4.5 0 0 1 21 8.5c0 3.3-3 6.1-7.8 10.4Z"/>`,
+  note: `<path d="M6 3h9l5 5v13H6z"/><path d="M15 3v5h5"/><path d="M9 13h8"/><path d="M9 17h6"/>`,
+  chart: `<path d="M4 20V4"/><path d="M4 20h16"/><path d="m7 14 3-3 3 2 4-5"/>`,
+  plus: `<circle cx="12" cy="12" r="9"/><path d="M12 8v8"/><path d="M8 12h8"/>`,
+  share: `<path d="M15 8a3 3 0 1 0-2.8-4h-.4A3 3 0 0 0 9 8c0 .3 0 .6.1.9l-4 2.3a3 3 0 1 0 1.4 2.6c0-.3 0-.6-.1-.9l4-2.3A3 3 0 0 0 12 11c1.2 0 2.2-.6 2.8-1.5l4.2 2.4a3 3 0 1 0 .9-1.5L15.5 8z"/>`,
+  download: `<path d="M12 3v11"/><path d="m8 10 4 4 4-4"/><path d="M4 20h16"/>`,
+  bell: `<path d="M15 17h5l-1.5-1.5a2 2 0 0 1-.5-1.3V11a6 6 0 1 0-12 0v3.2c0 .5-.2 1-.5 1.3L4 17h5"/><path d="M9.5 17a2.5 2.5 0 0 0 5 0"/>`,
+  pulse: `<path d="M3 12h4l2.3-4 4.2 8 2.2-4H21"/>`,
+  clock: `<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>`
+});
 
 const dom = {
   viewerModeSegment: document.getElementById("viewerModeSegment"),
@@ -1695,7 +1719,12 @@ function renderNavigation(context) {
   dom.sectionNav.innerHTML = sections
     .map((section) => {
       const activeClass = section.id === app.ui.activeSection ? "active" : "";
-      return `<button type="button" class="${activeClass}" data-section="${section.id}">${escapeHtml(section.label)}</button>`;
+      return `
+        <button type="button" class="${activeClass} nav-item" data-section="${section.id}">
+          ${renderIcon(section.icon || "home", "nav-icon")}
+          <span class="nav-label">${escapeHtml(section.label)}</span>
+        </button>
+      `;
     })
     .join("");
 
@@ -1728,7 +1757,7 @@ function renderMobileNav(context) {
     const active = app.ui.activeSection === target;
     return `
       <button type="button" class="${active ? "active" : ""}" data-mobile-section="${target}" aria-label="${escapeHtml(tab.label)}">
-        <span class="icon" aria-hidden="true">${escapeHtml(tab.icon)}</span>
+        ${renderIcon(tab.icon || "home", "mobile-icon")}
         <span>${escapeHtml(tab.label)}</span>
       </button>
     `;
@@ -1973,6 +2002,20 @@ function parseSortableDate(value) {
   return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
 }
 
+function renderIcon(name, className = "mini-icon", label = "") {
+  const icon = ICON_SVG_PATHS[name] || ICON_SVG_PATHS.capsule;
+  const aria = label
+    ? ` role="img" aria-label="${escapeHtml(label)}"`
+    : ` aria-hidden="true"`;
+  return `
+    <span class="${className}"${aria}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+        ${icon}
+      </svg>
+    </span>
+  `;
+}
+
 function renderDashboard(root, data, context) {
   pruneExpiredDoseSnoozes();
   const resolvedMeds = resolveCurrentMedications(data);
@@ -2017,6 +2060,13 @@ function renderDashboard(root, data, context) {
       </div>
     </article>
 
+    <div class="icon-dock" aria-hidden="true">
+      <span class="icon-chip">${renderIcon("bell", "mini-icon accent")}</span>
+      <span class="icon-chip">${renderIcon("pulse", "mini-icon accent")}</span>
+      <span class="icon-chip">${renderIcon("syringe", "mini-icon accent")}</span>
+      <span class="icon-chip">${renderIcon("capsule", "mini-icon accent")}</span>
+    </div>
+
     <div class="grid dashboard-grid">
       <article class="card">
         <h3>Today’s Doses</h3>
@@ -2027,10 +2077,10 @@ function renderDashboard(root, data, context) {
       <article class="card">
         <h3>Today snapshot</h3>
         <ul class="timeline-list compact-list">
-          <li><strong>Check-in:</strong> ${todayCheckin ? `Completed · Mood ${todayCheckin.mood}/10 · Anxiety ${todayCheckin.anxiety}/10` : "Not completed yet"}</li>
-          <li><strong>Active medications:</strong> ${activeMeds.length}</li>
-          <li><strong>Recent changes:</strong> ${recentChanges.length} in the last 14 days</li>
-          <li><strong>Trend:</strong> Mood ${trendMood.arrow} · Anxiety ${trendAnxiety.arrow} · Focus ${trendFocus.arrow}</li>
+          <li class="list-with-icon">${renderIcon("clock", "mini-icon soft")}<span><strong>Check-in:</strong> ${todayCheckin ? `Completed · Mood ${todayCheckin.mood}/10 · Anxiety ${todayCheckin.anxiety}/10` : "Not completed yet"}</span></li>
+          <li class="list-with-icon">${renderIcon("capsule", "mini-icon soft")}<span><strong>Active medications:</strong> ${activeMeds.length}</span></li>
+          <li class="list-with-icon">${renderIcon("syringe", "mini-icon soft")}<span><strong>Recent changes:</strong> ${recentChanges.length} in the last 14 days</span></li>
+          <li class="list-with-icon">${renderIcon("pulse", "mini-icon soft")}<span><strong>Trend:</strong> Mood ${trendMood.arrow} · Anxiety ${trendAnxiety.arrow} · Focus ${trendFocus.arrow}</span></li>
         </ul>
         ${dashboardAlerts.length ? `
           <div class="stack-tight">
@@ -2141,7 +2191,12 @@ function renderDoseTable(dueState, context, medications) {
         <tbody>
           ${items.map((item) => `
             <tr>
-              <td>${escapeHtml(item.medicationName)}</td>
+              <td>
+                <div class="dose-med-cell">
+                  ${renderIcon("capsule", "mini-icon soft")}
+                  <span>${escapeHtml(item.medicationName)}</span>
+                </div>
+              </td>
               <td>${escapeHtml(doseByMedicationId.get(item.medicationId) || "-")}</td>
               <td>${escapeHtml(item.time)}</td>
               <td><span class="status-chip ${escapeHtml(statusChipClass(item.statusLabel))}">${escapeHtml(item.statusLabel)}</span></td>
