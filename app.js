@@ -2040,7 +2040,7 @@ function renderDashboard(root, data, context) {
   const topChanges = recentChanges.slice(0, 6);
 
   root.innerHTML = `
-    <article class="card today-hero">
+    <article class="card card-accent card-accent-ocean today-hero">
       <div class="today-hero-head">
         <div>
           <div class="label">Today</div>
@@ -2086,13 +2086,13 @@ function renderDashboard(root, data, context) {
     </article>
 
     <div class="grid dashboard-grid">
-      <article class="card">
+      <article class="card card-accent card-accent-sky card-doses">
         <h3>Today’s Doses</h3>
         <div class="subtle" style="margin: 6px 0 10px;">Pending doses only.</div>
         ${renderDoseTable(dueState, context, activeMeds)}
       </article>
 
-      <article class="card">
+      <article class="card card-accent card-accent-teal card-snapshot">
         <h3>Today snapshot</h3>
         <ul class="timeline-list compact-list today-snapshot-list">
           <li class="list-with-icon today-snapshot-item">${renderIcon("clock", "mini-icon soft")}<span><strong>Check-in:</strong> ${todayCheckin ? `Completed · Mood ${todayCheckin.mood}/10 · Anxiety ${todayCheckin.anxiety}/10` : "Not completed yet"}</span></li>
@@ -2113,7 +2113,7 @@ function renderDashboard(root, data, context) {
     </div>
 
     <div class="grid dashboard-grid">
-      <article class="card">
+      <article class="card card-accent card-accent-violet">
         <h3>Recent medication changes (14 days)</h3>
         ${topChanges.length ? `
           <ul class="timeline-list">
@@ -2122,7 +2122,7 @@ function renderDashboard(root, data, context) {
         ` : `<div class="empty">No medication changes logged in the last 14 days. ${context.readOnly ? "" : `<button class="btn btn-secondary small" type="button" data-dashboard-new-change="1">Log a change</button>`}</div>`}
       </article>
 
-      <article class="card">
+      <article class="card card-accent card-accent-rose">
         <h3>Shared links panel</h3>
         ${renderSharePanelPreview(context)}
       </article>
