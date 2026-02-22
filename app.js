@@ -63,10 +63,10 @@ const SCHEDULE_PRESETS = {
 const SCHEDULE_PRESET_ORDER = ["am", "pm", "bid", "tid", "prn", "custom"];
 
 const VIEWER_MODE_OPTIONS = {
-  my: { label: "Owner" },
-  clinician: { label: "Clinician" },
-  family: { label: "Family" },
-  preview_link: { label: "Shared Preview" }
+  my: { label: "Owner", shortLabel: "Owner" },
+  clinician: { label: "Clinician", shortLabel: "Clinician" },
+  family: { label: "Family", shortLabel: "Family" },
+  preview_link: { label: "Shared Preview", shortLabel: "Shared" }
 };
 const VIEWER_MODE_ORDER = ["my", "family", "clinician", "preview_link"];
 
@@ -1588,7 +1588,7 @@ function renderViewModeSelector(context) {
       .map((value) => {
         const meta = VIEWER_MODE_OPTIONS[value];
         const active = app.ui.viewerMode === value;
-        return `<button type="button" role="tab" aria-selected="${active ? "true" : "false"}" class="${active ? "active" : ""}" data-viewer-mode="${value}">${escapeHtml(meta.label)}</button>`;
+        return `<button type="button" role="tab" aria-selected="${active ? "true" : "false"}" class="${active ? "active" : ""}" data-viewer-mode="${value}" title="${escapeHtml(meta.label)}">${escapeHtml(meta.shortLabel || meta.label)}</button>`;
       })
       .join("");
 
@@ -1805,10 +1805,8 @@ function renderUtilityPanel(context, data) {
 
 function renderSectionMeta(context) {
   const meta = SECTION_META.find((section) => section.id === app.ui.activeSection) || SECTION_META[0];
-  const modeMeta = VIEW_MODE_META[app.ui.activeViewMode];
-  const permissionHint = context.readOnly ? "Read-only preview." : "Editable owner workspace.";
   dom.sectionTitle.textContent = meta.title;
-  dom.sectionSubtitle.textContent = `${meta.subtitle} ${modeMeta ? modeMeta.description : ""} ${permissionHint}`.trim();
+  dom.sectionSubtitle.textContent = meta.subtitle;
 }
 
 function renderSections(context, visibleData) {
@@ -1995,14 +1993,16 @@ function renderDashboard(root, data, context) {
   const pendingItems = [...dueState.dueNow, ...dueState.next].sort((left, right) => left.time.localeCompare(right.time));
   const nextDose = pendingItems[0] || null;
   const overdueCount = dueState.dueNow.filter((item) => String(item.statusLabel).toLowerCase().includes("overdue")).length;
+  const dashboardAlerts = alerts.slice(0, 2);
+  const topChanges = recentChanges.slice(0, 6);
 
   root.innerHTML = `
     <article class="card today-hero">
       <div class="today-hero-head">
         <div>
-          <div class="label">Today summary</div>
-          <h3>Medication and wellbeing at a glance</h3>
-          <div class="subtle" style="margin-top:6px;">Last updated meds: ${escapeHtml(niceDate(currentMedsLastUpdated))}</div>
+          <div class="label">Today</div>
+          <h3>${escapeHtml(niceDate(today))}</h3>
+          <div class="subtle" style="margin-top:6px;">Current meds last updated: ${escapeHtml(niceDate(currentMedsLastUpdated))}</div>
         </div>
         <div class="kpi-strip">
           <div class="kpi-box"><span>Taken</span><strong>${dueState.counts.taken}</strong></div>
@@ -2011,72 +2011,53 @@ function renderDashboard(root, data, context) {
           <div class="kpi-box"><span>Overdue</span><strong>${overdueCount}</strong></div>
         </div>
       </div>
-      <div class="grid cards">
-        <article class="card">
-          <div class="label">Next dose</div>
-          <strong class="value">${nextDose ? escapeHtml(nextDose.time) : "Done"}</strong>
-          <div class="meta">${nextDose ? `${escapeHtml(nextDose.medicationName)}` : "No scheduled doses remaining for today"}</div>
-        </article>
-        <article class="card">
-          <div class="label">Quick check-in</div>
-          <strong class="value">${todayCheckin ? "Done" : "Pending"}</strong>
-          <div class="meta">${todayCheckin ? `Mood ${todayCheckin.mood}/10 · Anxiety ${todayCheckin.anxiety}/10` : "Complete your quick check-in (30 seconds)"}</div>
-          ${context.readOnly ? "" : `<button class="btn btn-secondary small" type="button" data-dashboard-checkin="1">Open check-in</button>`}
-        </article>
-        <article class="card">
-          <div class="label">Recent changes</div>
-          <strong class="value">${recentChanges.length}</strong>
-          <div class="meta">Medication changes in the last 14 days</div>
-        </article>
-        <article class="card">
-          <div class="label">Weekly trend</div>
-          <strong class="value">Mood ${trendMood.arrow}</strong>
-          <div class="meta">Anxiety ${trendAnxiety.arrow} · Focus ${trendFocus.arrow}</div>
-        </article>
+      <div class="today-summary-line">
+        <div class="subtle">${nextDose ? `Next dose: <strong>${escapeHtml(nextDose.medicationName)}</strong> at ${escapeHtml(nextDose.time)}` : "No scheduled doses remaining for today."}</div>
+        ${context.readOnly ? "" : `<div class="row"><button class="btn btn-secondary small" type="button" data-dashboard-checkin="1">${todayCheckin ? "Edit check-in" : "Quick check-in"}</button></div>`}
       </div>
     </article>
 
-    <div class="grid" style="grid-template-columns: 1.3fr 1fr;">
+    <div class="grid dashboard-grid">
       <article class="card">
         <h3>Today’s Doses</h3>
-        <div class="subtle" style="margin: 6px 0 10px;">Action list: Taken / Skip / Snooze / Note</div>
+        <div class="subtle" style="margin: 6px 0 10px;">Pending doses only.</div>
         ${renderDoseTable(dueState, context, activeMeds)}
       </article>
 
       <article class="card">
-        <h3>Current Medications</h3>
-        ${activeMeds.length ? `
-          <ul class="timeline-list">
-            ${activeMeds.map((med) => `<li><strong>${escapeHtml(med.name)}</strong> · ${escapeHtml(med.currentDose || "-")} · ${escapeHtml(formatSchedule(med))}${med.sourceCount > 1 ? ` <span class="subtle">(resolved from ${med.sourceCount} records)</span>` : ""}${med.needsConfirmation || !med.isTargetMedication ? `<div class="needs-confirmation">Needs confirmation: ${escapeHtml(formatNeedsConfirmationMessage(med.confirmationNotes || med.questions || (!med.isTargetMedication ? "Additional active record preserved from existing data." : "Conflicting values require confirmation.")))}</div>` : ""}</li>`).join("")}
-          </ul>
-        ` : `<div class="empty">No active medications recorded yet.</div>`}
-      </article>
-
-      <article class="card">
-        <h3>Recent medication changes (14 days)</h3>
-        ${recentChanges.length ? `
-          <ul class="timeline-list">
-            ${recentChanges.map((entry) => `<li><strong>${escapeHtml(niceDate(entry.date))}</strong> · ${escapeHtml(entry.medicationName || "Medication")}: ${escapeHtml(entry.oldDose || "-")} → ${escapeHtml(entry.newDose || "-")}</li>`).join("")}
-          </ul>
-        ` : `<div class="empty">No medication changes logged in the last 14 days. ${context.readOnly ? "" : `<button class="btn btn-secondary small" type="button" data-dashboard-new-change="1">Log a change</button>`}</div>`}
+        <h3>Today snapshot</h3>
+        <ul class="timeline-list compact-list">
+          <li><strong>Check-in:</strong> ${todayCheckin ? `Completed · Mood ${todayCheckin.mood}/10 · Anxiety ${todayCheckin.anxiety}/10` : "Not completed yet"}</li>
+          <li><strong>Active medications:</strong> ${activeMeds.length}</li>
+          <li><strong>Recent changes:</strong> ${recentChanges.length} in the last 14 days</li>
+          <li><strong>Trend:</strong> Mood ${trendMood.arrow} · Anxiety ${trendAnxiety.arrow} · Focus ${trendFocus.arrow}</li>
+        </ul>
+        ${dashboardAlerts.length ? `
+          <div class="stack-tight">
+            <div class="label">Monitoring alerts</div>
+            <ul class="timeline-list compact-list">
+              ${dashboardAlerts.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+            </ul>
+          </div>
+        ` : `<div class="subtle">No active monitoring alerts.</div>`}
+        ${context.readOnly ? "" : `<div class="row"><button class="btn btn-ghost small" type="button" data-dashboard-open-meds="1">Open medications</button></div>`}
       </article>
     </div>
 
-    <div class="grid" style="grid-template-columns: 1fr 1fr; margin-top: 12px;">
+    <div class="grid dashboard-grid">
       <article class="card">
-        <h3>Alerts / monitoring reminders</h3>
-        ${alerts.length ? `<ul class="timeline-list">${alerts.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : `<div class="empty">No active reminders.</div>`}
+        <h3>Recent medication changes (14 days)</h3>
+        ${topChanges.length ? `
+          <ul class="timeline-list">
+            ${topChanges.map((entry) => `<li><strong>${escapeHtml(niceDate(entry.date))}</strong> · ${escapeHtml(entry.medicationName || "Medication")}: ${escapeHtml(entry.oldDose || "-")} → ${escapeHtml(entry.newDose || "-")}</li>`).join("")}
+          </ul>
+        ` : `<div class="empty">No medication changes logged in the last 14 days. ${context.readOnly ? "" : `<button class="btn btn-secondary small" type="button" data-dashboard-new-change="1">Log a change</button>`}</div>`}
       </article>
 
       <article class="card">
         <h3>Shared links panel</h3>
         ${renderSharePanelPreview(context)}
       </article>
-    </div>
-
-    <div class="card" style="margin-top:12px;">
-      <h3>Recent medication changes summary</h3>
-      ${renderRecentMedicationSummary()}
     </div>
   `;
 
@@ -2120,6 +2101,14 @@ function renderDashboard(root, data, context) {
       if (context.readOnly) return;
       app.ui.activeSection = "entry";
       app.ui.entryWorkflow = "change";
+      renderAll();
+    });
+  });
+
+  root.querySelectorAll("[data-dashboard-open-meds]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (context.readOnly) return;
+      app.ui.activeSection = "medications";
       renderAll();
     });
   });
