@@ -17,6 +17,7 @@ const PROFILE_PATCH_KEY = "medication_tracker_profile_patch_2026_02_21_v1";
 const APP_VERSION = 2;
 const DOSE_SNOOZE_MINUTES = 30;
 const REMOTE_SYNC_DEBOUNCE_MS = 800;
+const PRODUCTION_SYNC_ENDPOINT = "https://medication-tracker-api.onrender.com";
 
 const SIDE_EFFECT_OPTIONS = [
   "headache",
@@ -1022,25 +1023,43 @@ function saveDrafts() {
 function defaultSyncConfig() {
   return {
     enabled: false,
-    endpoint: "",
+    endpoint: inferDefaultSyncEndpoint(),
     accountId: "default",
     ownerKey: ""
   };
 }
 
+function inferDefaultSyncEndpoint() {
+  if (typeof window === "undefined") return "";
+  const meta = document.querySelector("meta[name='mt-sync-endpoint']")?.getAttribute("content")?.trim();
+  if (meta) return meta;
+  const host = String(window.location.hostname || "").toLowerCase();
+  if (host === "localhost" || host === "127.0.0.1") {
+    return window.location.origin;
+  }
+  if (host.endsWith(".onrender.com")) {
+    return window.location.origin;
+  }
+  if (host === "bradckennedy.org" || host === "www.bradckennedy.org") {
+    return PRODUCTION_SYNC_ENDPOINT;
+  }
+  return "";
+}
+
 function loadSyncConfig() {
+  const defaults = defaultSyncConfig();
   const raw = localStorage.getItem(SYNC_CONFIG_KEY);
-  if (!raw) return defaultSyncConfig();
+  if (!raw) return defaults;
   try {
     const parsed = JSON.parse(raw);
     return {
       enabled: Boolean(parsed.enabled),
-      endpoint: String(parsed.endpoint || "").trim(),
+      endpoint: String(parsed.endpoint || defaults.endpoint || "").trim(),
       accountId: String(parsed.accountId || "default").trim() || "default",
       ownerKey: String(parsed.ownerKey || "")
     };
   } catch (_error) {
-    return defaultSyncConfig();
+    return defaults;
   }
 }
 

@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: medication-tracker-api
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm run start
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CORS_ORIGIN
+        value: https://bradckennedy.org
+      - key: MT_DATA_DIR
+        value: /var/data/medication-tracker
+      - key: MT_OWNER_KEY
+        value: change-me-before-use
+    disk:
+      name: medication-tracker-data
+      mountPath: /var/data
+      sizeGB: 1

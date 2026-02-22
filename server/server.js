@@ -6,7 +6,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
-const dataDir = path.join(__dirname, "data");
+const dataDir = process.env.MT_DATA_DIR
+  ? path.resolve(process.env.MT_DATA_DIR)
+  : path.join(__dirname, "data");
 const storePath = path.join(dataDir, "store.json");
 
 const port = Number(process.env.PORT || 8080);

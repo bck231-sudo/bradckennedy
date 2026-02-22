@@ -11,6 +11,32 @@ This site is local-first by default and now supports optional backend persistenc
 3. Open:
    - `http://127.0.0.1:8080`
 
+## Deploy API to Render
+
+Use the included blueprint file:
+
+- `/Users/brad/Documents/New project/bradckennedy/render.yaml`
+
+Quick path:
+
+1. Open Render Blueprint:
+   - `https://dashboard.render.com/blueprint/new?repo=https://github.com/bck231-sudo/bradckennedy`
+2. Create the `medication-tracker-api` service.
+3. In Render env vars, set:
+   - `MT_OWNER_KEY` to a strong secret (replace placeholder value).
+4. After deploy, confirm:
+   - `https://<your-render-service>.onrender.com/api/health`
+5. On `https://bradckennedy.org`, go to `Sharing`:
+   - save `Cloud sync` settings using:
+     - endpoint: your Render URL (prefilled from meta default)
+     - account ID: choose one (for example `brad`)
+     - owner API key: same value as `MT_OWNER_KEY`
+
+Notes:
+
+- Render service CORS is scoped to `https://bradckennedy.org` by default.
+- Persistent disk is configured in `render.yaml` to keep state across restarts/deploys.
+
 ### Optional server security
 
 - Set an owner API key before starting:
