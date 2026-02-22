@@ -207,7 +207,7 @@ h4 {
 
 .segmented-control {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2);
 }
 
@@ -221,9 +221,10 @@ h4 {
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.1;
   text-align: center;
   transition: border-color var(--motion-fast), background var(--motion-fast), color var(--motion-fast), transform var(--motion-fast);
 }

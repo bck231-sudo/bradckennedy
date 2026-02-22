@@ -64,9 +64,9 @@ const SCHEDULE_PRESET_ORDER = ["am", "pm", "bid", "tid", "prn", "custom"];
 
 const VIEWER_MODE_OPTIONS = {
   my: { label: "Owner", shortLabel: "Owner" },
-  clinician: { label: "Clinician", shortLabel: "Clin" },
+  clinician: { label: "Clinician", shortLabel: "Clinician" },
   family: { label: "Family", shortLabel: "Family" },
-  preview_link: { label: "Shared Preview", shortLabel: "Preview" }
+  preview_link: { label: "Shared Preview", shortLabel: "Shared Preview" }
 };
 const VIEWER_MODE_ORDER = ["my", "family", "clinician", "preview_link"];
 
