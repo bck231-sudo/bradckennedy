@@ -66,11 +66,7 @@ body {
   font-family: "Manrope", "Avenir Next", "Segoe UI", sans-serif;
   font-size: var(--font-2);
   color: var(--color-text);
-  background:
-    radial-gradient(circle at 88% 8%, rgba(179, 216, 238, 0.55) 0, rgba(179, 216, 238, 0) 42%),
-    radial-gradient(circle at 10% 92%, rgba(247, 231, 205, 0.45) 0, rgba(247, 231, 205, 0) 38%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.65), rgba(255, 255, 255, 0)),
-    var(--color-bg);
+  background: #f4f7fb;
   padding: var(--space-5);
   line-height: 1.5;
 }
@@ -114,7 +110,7 @@ h4 {
   background: var(--color-surface);
   border: var(--border-subtle);
   border-radius: var(--radius-3);
-  box-shadow: var(--shadow-light);
+  box-shadow: 0 1px 2px rgba(15, 31, 50, 0.04);
 }
 
 .sidebar {
@@ -123,8 +119,7 @@ h4 {
   padding: var(--space-4);
   display: grid;
   gap: var(--space-3);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 251, 255, 0.95));
+  background: #ffffff;
 }
 
 .brand-block h1 {
@@ -133,10 +128,7 @@ h4 {
 }
 
 .brand-block p {
-  margin: var(--space-2) 0 0;
-  color: var(--color-text-muted);
-  line-height: 1.45;
-  font-size: var(--font-2);
+  display: none;
 }
 
 .brand-lockup {
@@ -180,36 +172,34 @@ h4 {
 }
 
 .segmented-control {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-2);
 }
 
 .segmented-control button {
-  flex: 1 1 calc(50% - var(--space-2));
-  min-width: 0;
-  max-width: 100%;
   border: var(--border-subtle);
-  background: var(--color-surface-soft);
+  background: #f5f8fc;
   color: var(--color-text-muted);
   border-radius: var(--radius-1);
-  min-height: 42px;
-  padding: 6px var(--space-2);
-  font-size: 13px;
+  min-height: 40px;
+  padding: 0 var(--space-2);
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-  white-space: normal;
-  word-break: break-word;
-  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1;
   text-align: center;
   transition: border-color var(--motion-fast), background var(--motion-fast), color var(--motion-fast), transform var(--motion-fast);
 }
 
 .segmented-control button.active {
-  background: var(--color-accent-soft);
+  background: #e8f2fc;
   color: var(--color-accent-strong);
-  border-color: #99bfd9;
-  transform: translateY(-1px);
+  border-color: #9fbfda;
+  transform: none;
 }
 
 .segmented-control button:disabled {
@@ -232,10 +222,10 @@ h4 {
 
 .section-nav button {
   border: var(--border-subtle);
-  background: var(--color-surface-soft);
+  background: #f8fafd;
   color: var(--color-text);
   border-radius: var(--radius-2);
-  min-height: 42px;
+  min-height: 40px;
   padding: 0 var(--space-3);
   text-align: left;
   font: inherit;
@@ -244,12 +234,12 @@ h4 {
 }
 
 .section-nav button:hover {
-  transform: translateY(-1px);
+  transform: none;
   border-color: var(--color-border-strong);
 }
 
 .section-nav button.active {
-  background: linear-gradient(180deg, #ecf6fd, #e4f0fb);
+  background: #eaf3fb;
   color: var(--color-accent-strong);
   border-color: #9fc2da;
   font-weight: 700;
@@ -277,9 +267,7 @@ h4 {
   padding: var(--space-5);
   min-height: 76vh;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 96% 2%, rgba(209, 231, 246, 0.45), rgba(209, 231, 246, 0) 38%),
-    var(--color-surface);
+  background: #ffffff;
 }
 
 .main-header {
@@ -293,7 +281,7 @@ h4 {
 }
 
 .main-header h2 {
-  font-size: 28px;
+  font-size: 30px;
   letter-spacing: -0.02em;
 }
 
@@ -399,14 +387,14 @@ h4 {
   border-radius: var(--radius-2);
   padding: var(--space-4);
   background: var(--color-surface);
-  box-shadow: var(--shadow-light);
+  box-shadow: 0 1px 2px rgba(15, 31, 50, 0.04);
   transition: transform var(--motion-base), box-shadow var(--motion-base), border-color var(--motion-fast);
 }
 
 .card:hover {
-  transform: translateY(-1px);
-  border-color: var(--color-border-strong);
-  box-shadow: var(--shadow-medium);
+  transform: none;
+  border-color: var(--color-border-subtle);
+  box-shadow: 0 1px 2px rgba(15, 31, 50, 0.04);
 }
 
 .card h3,
@@ -443,7 +431,7 @@ h4 {
 }
 
 .today-hero .card {
-  background: linear-gradient(160deg, #fafdff, #f3f8fd);
+  background: #f9fbfe;
   box-shadow: none;
   border-color: #cfe0ef;
 }
@@ -479,9 +467,9 @@ h4 {
   min-width: 112px;
   border: var(--border-subtle);
   border-radius: var(--radius-2);
-  background: linear-gradient(180deg, #ffffff, #f5f9fd);
+  background: #ffffff;
   padding: var(--space-2) var(--space-3);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  box-shadow: none;
 }
 
 .kpi-box span {
@@ -504,13 +492,13 @@ h4 {
   border-radius: var(--radius-2);
   overflow: auto;
   background: var(--color-surface);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  box-shadow: none;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 760px;
+  min-width: 680px;
 }
 
 th,
@@ -675,11 +663,38 @@ button:focus-visible {
 }
 
 .btn:hover:not(:disabled) {
-  transform: translateY(-1px);
+  transform: none;
 }
 
 .btn.btn-primary:hover:not(:disabled) {
-  box-shadow: 0 10px 20px rgba(17, 128, 190, 0.3);
+  box-shadow: 0 8px 14px rgba(17, 128, 190, 0.22);
+}
+
+.dose-actions-primary {
+  align-items: center;
+}
+
+.dose-actions-more {
+  margin-left: auto;
+}
+
+.dose-actions-more summary {
+  list-style: none;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: var(--border-subtle);
+  background: #f7fafd;
+}
+
+.dose-actions-more summary::-webkit-details-marker {
+  display: none;
+}
+
+.dose-actions-more[open] summary {
+  margin-bottom: 6px;
 }
 
 .btn.is-loading::before {
@@ -1130,7 +1145,7 @@ body.app-ready .skeleton-shell {
   z-index: 45;
   display: none;
   border-top: var(--border-subtle);
-  background: rgba(252, 254, 255, 0.98);
+  background: rgba(255, 255, 255, 0.98);
   backdrop-filter: blur(12px);
   grid-template-columns: repeat(4, 1fr);
   padding: var(--space-1) var(--space-2) calc(var(--space-1) + env(safe-area-inset-bottom));
@@ -1185,8 +1200,13 @@ body.app-ready .skeleton-shell {
   }
 
   .segmented-control {
-    display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .segmented-control button {
+    white-space: normal;
+    min-height: 42px;
+    line-height: 1.15;
   }
 
   .main {

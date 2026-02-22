@@ -64,9 +64,9 @@ const SCHEDULE_PRESET_ORDER = ["am", "pm", "bid", "tid", "prn", "custom"];
 
 const VIEWER_MODE_OPTIONS = {
   my: { label: "Owner", shortLabel: "Owner" },
-  clinician: { label: "Clinician", shortLabel: "Clinician" },
+  clinician: { label: "Clinician", shortLabel: "Clin" },
   family: { label: "Family", shortLabel: "Family" },
-  preview_link: { label: "Shared Preview", shortLabel: "Shared" }
+  preview_link: { label: "Shared Preview", shortLabel: "Preview" }
 };
 const VIEWER_MODE_ORDER = ["my", "family", "clinician", "preview_link"];
 
@@ -1646,8 +1646,8 @@ function renderContextElements(context) {
     dom.readOnlyBanner.classList.remove("hidden");
     dom.readOnlyBanner.innerHTML = `<strong>Preview mode:</strong> You are previewing ${escapeHtml(context.label)} permissions in read-only mode.`;
   } else {
-    dom.readOnlyBanner.classList.remove("hidden");
-    dom.readOnlyBanner.innerHTML = `<strong>Owner View:</strong> Full data and editing access is active.`;
+    dom.readOnlyBanner.classList.add("hidden");
+    dom.readOnlyBanner.innerHTML = "";
   }
 
   if (context.blockedReason) {
@@ -2146,11 +2146,16 @@ function renderDoseTable(dueState, context, medications) {
               <td>${escapeHtml(item.time)}</td>
               <td><span class="status-chip ${escapeHtml(statusChipClass(item.statusLabel))}">${escapeHtml(item.statusLabel)}</span></td>
               ${context.readOnly ? "" : `<td>
-                <div class="row">
+                <div class="row dose-actions-primary">
                   <button class="btn btn-secondary small ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "is-loading" : ""}" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.TAKEN}" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>${app.ui.pendingDoseActions.has(item.occurrenceId) ? "Saving" : "Taken"}</button>
                   <button class="btn btn-secondary small ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "is-loading" : ""}" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.SKIPPED}" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>${app.ui.pendingDoseActions.has(item.occurrenceId) ? "Saving" : "Skip"}</button>
-                  <button class="btn btn-ghost small" type="button" data-dose-snooze="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>Snooze</button>
-                  <button class="btn btn-ghost small" type="button" data-dose-note="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-medication-name="${escapeHtml(item.medicationName)}">Note</button>
+                  <details class="dose-actions-more">
+                    <summary>More</summary>
+                    <div class="row">
+                      <button class="btn btn-ghost small" type="button" data-dose-snooze="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>Snooze</button>
+                      <button class="btn btn-ghost small" type="button" data-dose-note="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-medication-name="${escapeHtml(item.medicationName)}">Note</button>
+                    </div>
+                  </details>
                 </div>
               </td>`}
             </tr>
