@@ -1,6 +1,41 @@
 # Medication Tracker (bradckennedy.org)
 
-This site is a static, client-side medication and wellbeing tracker with local-first storage and shareable read-only links.
+This site is local-first by default and now supports optional backend persistence (API sync), share-security defaults, and reminder settings.
+
+## Run (Frontend + API)
+
+1. Install dependencies:
+   - `npm install`
+2. Start the app + API server:
+   - `npm run dev`
+3. Open:
+   - `http://127.0.0.1:8080`
+
+### Optional server security
+
+- Set an owner API key before starting:
+  - `MT_OWNER_KEY=\"your-strong-key\" npm run dev`
+- In the app, go to `Sharing` and save:
+  - `Enable cloud sync`
+  - API endpoint (for local: `http://127.0.0.1:8080`)
+  - Account ID
+  - Owner API key
+
+When sync is enabled, state remains local-first and is also pushed to the backend for multi-device use.
+
+## What Changed (Phase 1)
+
+- Added API server at `/Users/brad/Documents/New project/bradckennedy/server/server.js`
+  - `GET /api/health`
+  - `GET /api/state`
+  - `PUT /api/state` (owner-key protected when `MT_OWNER_KEY` is set)
+  - `POST /api/share-access`
+  - `GET /api/share-access` (owner-key protected)
+- Added cloud-sync controls to the Sharing page.
+- Added reminder settings (lead time + optional desktop notifications).
+- Added secure sharing defaults:
+  - 30-day default link expiry
+  - stronger random share tokens
 
 ## Second-Round Upgrade Summary
 

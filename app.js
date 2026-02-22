@@ -11,9 +11,12 @@ import {
 const STORAGE_KEY = "medication_tracker_data_v1";
 const DRAFT_KEY = "medication_tracker_drafts_v2";
 const ACCESS_LOG_KEY = "medication_tracker_access_logs_v1";
+const SYNC_CONFIG_KEY = "medication_tracker_sync_config_v1";
+const REMINDER_LOG_KEY = "medication_tracker_reminder_log_v1";
 const PROFILE_PATCH_KEY = "medication_tracker_profile_patch_2026_02_21_v1";
 const APP_VERSION = 2;
 const DOSE_SNOOZE_MINUTES = 30;
+const REMOTE_SYNC_DEBOUNCE_MS = 800;
 
 const SIDE_EFFECT_OPTIONS = [
   "headache",
@@ -265,6 +268,8 @@ const app = {
   shareSession: parseSharePayload(),
   drafts: loadDrafts(),
   accessLogs: loadAccessLogs(),
+  syncConfig: loadSyncConfig(),
+  reminderLog: loadReminderLog(),
   ui: {
     viewerMode: "my",
     activeViewMode: "daily",
@@ -282,8 +287,19 @@ const app = {
       toDate: ""
     }
   },
-  statusTimeout: null
+  statusTimeout: null,
+  syncDebounceTimeout: null,
+  reminderIntervalId: null,
+  sync: {
+    status: "local-only",
+    lastSyncedAt: "",
+    lastError: "",
+    inFlight: false
+  },
+  queueRemoteSync: () => {}
 };
+
+window.__medicationTrackerApp = app;
 
 if (app.shareSession) {
   handleShareSessionInit();
@@ -292,7 +308,9 @@ if (app.shareSession) {
 hydrateMedicationNameOptions();
 bindGlobalHandlers();
 bindShareHashListener();
+app.queueRemoteSync = scheduleRemoteSync;
 renderAll();
+initializeBackgroundServices();
 
 function loadOwnerData() {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -317,20 +335,38 @@ function loadOwnerData() {
   }
 }
 
-function saveOwnerData(nextData) {
+function saveOwnerData(nextData, options = {}) {
   const payload = ensureStateShape(nextData);
+  if (!options.keepTimestamp) {
+    payload.stateUpdatedAt = isoDateTime(new Date());
+  }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  if (!options.skipRemote && typeof window !== "undefined") {
+    queueMicrotask(() => {
+      const runtimeApp = window.__medicationTrackerApp;
+      if (runtimeApp && typeof runtimeApp.queueRemoteSync === "function") {
+        runtimeApp.queueRemoteSync();
+      }
+    });
+  }
+  return payload;
 }
 
 function buildSeedState() {
   return ensureStateShape({
     version: APP_VERSION,
+    stateUpdatedAt: isoDateTime(new Date()),
     medications: [],
     changes: [],
     notes: [],
     checkins: [],
     adherence: [],
     doseSnoozes: [],
+    reminderSettings: {
+      enabled: false,
+      leadMinutes: 15,
+      desktopNotifications: false
+    },
     shareLinks: []
   });
 }
@@ -527,12 +563,14 @@ function migrateToV2(input) {
 
   const migrated = {
     version: APP_VERSION,
+    stateUpdatedAt: input.stateUpdatedAt || now,
     medications: [],
     changes: [],
     notes: [],
     checkins: [],
     adherence: [],
     doseSnoozes: [],
+    reminderSettings: normalizeReminderSettings(input.reminderSettings),
     shareLinks: []
   };
 
@@ -648,12 +686,14 @@ function migrateToV2(input) {
 function ensureStateShape(input) {
   const state = {
     version: APP_VERSION,
+    stateUpdatedAt: input.stateUpdatedAt || isoDateTime(new Date()),
     medications: [],
     changes: [],
     notes: [],
     checkins: [],
     adherence: [],
     doseSnoozes: [],
+    reminderSettings: normalizeReminderSettings(input.reminderSettings),
     shareLinks: []
   };
 
@@ -809,6 +849,16 @@ function normalizeDoseSnooze(input) {
     occurrenceId,
     untilAt: parsed.toISOString(),
     createdAt: input?.createdAt || isoDateTime(new Date())
+  };
+}
+
+function normalizeReminderSettings(input) {
+  const source = input || {};
+  const leadMinutes = Number(source.leadMinutes);
+  return {
+    enabled: Boolean(source.enabled),
+    leadMinutes: Number.isFinite(leadMinutes) ? Math.min(120, Math.max(0, Math.round(leadMinutes))) : 15,
+    desktopNotifications: Boolean(source.desktopNotifications)
   };
 }
 
@@ -969,6 +1019,50 @@ function saveDrafts() {
   app.ui.lastDraftSavedAt = isoDateTime(new Date());
 }
 
+function defaultSyncConfig() {
+  return {
+    enabled: false,
+    endpoint: "",
+    accountId: "default",
+    ownerKey: ""
+  };
+}
+
+function loadSyncConfig() {
+  const raw = localStorage.getItem(SYNC_CONFIG_KEY);
+  if (!raw) return defaultSyncConfig();
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      enabled: Boolean(parsed.enabled),
+      endpoint: String(parsed.endpoint || "").trim(),
+      accountId: String(parsed.accountId || "default").trim() || "default",
+      ownerKey: String(parsed.ownerKey || "")
+    };
+  } catch (_error) {
+    return defaultSyncConfig();
+  }
+}
+
+function saveSyncConfig() {
+  localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify(app.syncConfig));
+}
+
+function loadReminderLog() {
+  const raw = localStorage.getItem(REMINDER_LOG_KEY);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (_error) {
+    return {};
+  }
+}
+
+function saveReminderLog() {
+  localStorage.setItem(REMINDER_LOG_KEY, JSON.stringify(app.reminderLog));
+}
+
 function loadAccessLogs() {
   const raw = localStorage.getItem(ACCESS_LOG_KEY);
   if (!raw) {
@@ -1003,6 +1097,10 @@ function recordAccess(token) {
     match.lastOpenedAt = current.lastOpenedAt;
     match.totalOpens = current.totalOpens;
     saveOwnerData(app.ownerData);
+  }
+
+  if (!app.shareSession && canUseRemoteSync()) {
+    void postShareAccessEvent(token);
   }
 }
 
@@ -1191,9 +1289,243 @@ function bindShareHashListener() {
     } else {
       app.ui.viewerMode = "my";
     }
+    restartReminderLoop();
     ensureSectionForCurrentMode();
     renderAll();
   });
+}
+
+function initializeBackgroundServices() {
+  if (app.shareSession) return;
+  if (canUseRemoteSync()) {
+    void pullRemoteStateOnBoot();
+  } else {
+    app.sync.status = "local-only";
+  }
+  restartReminderLoop();
+}
+
+function canUseRemoteSync() {
+  return Boolean(app.syncConfig.enabled && String(app.syncConfig.endpoint || "").trim());
+}
+
+function normalizedApiBase() {
+  return String(app.syncConfig.endpoint || "").trim().replace(/\/+$/, "");
+}
+
+function remoteHeaders() {
+  const headers = {
+    "content-type": "application/json",
+    "x-account-id": String(app.syncConfig.accountId || "default")
+  };
+  if (app.syncConfig.ownerKey) {
+    headers["x-owner-key"] = app.syncConfig.ownerKey;
+  }
+  return headers;
+}
+
+async function remoteRequest(path, init = {}) {
+  const base = normalizedApiBase();
+  if (!base) {
+    throw new Error("Remote sync endpoint is not configured.");
+  }
+  return fetch(`${base}${path}`, {
+    ...init,
+    headers: {
+      ...remoteHeaders(),
+      ...(init.headers || {})
+    }
+  });
+}
+
+async function postShareAccessEvent(token) {
+  try {
+    await remoteRequest("/api/share-access", {
+      method: "POST",
+      body: JSON.stringify({
+        token,
+        openedAt: isoDateTime(new Date())
+      })
+    });
+  } catch (_error) {
+    // Access logging should not block UI.
+  }
+}
+
+function scheduleRemoteSync() {
+  if (!canUseRemoteSync() || app.shareSession) return;
+  clearTimeout(app.syncDebounceTimeout);
+  app.syncDebounceTimeout = window.setTimeout(() => {
+    void flushRemoteSync();
+  }, REMOTE_SYNC_DEBOUNCE_MS);
+}
+
+async function flushRemoteSync() {
+  if (!canUseRemoteSync() || app.shareSession || app.sync.inFlight) return;
+  app.sync.inFlight = true;
+  app.sync.status = "syncing";
+  renderAll();
+  try {
+    const payload = ensureStateShape(app.ownerData);
+    const response = await remoteRequest("/api/state", {
+      method: "PUT",
+      body: JSON.stringify({ state: payload })
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `Sync failed (${response.status})`);
+    }
+    const result = await response.json().catch(() => ({}));
+    app.sync.status = "connected";
+    app.sync.lastSyncedAt = result.updatedAt || isoDateTime(new Date());
+    app.sync.lastError = "";
+  } catch (error) {
+    app.sync.status = "error";
+    app.sync.lastError = error instanceof Error ? error.message : "Unknown sync error";
+  } finally {
+    app.sync.inFlight = false;
+    renderAll();
+  }
+}
+
+async function pullRemoteStateOnBoot() {
+  if (!canUseRemoteSync() || app.shareSession) return;
+  app.sync.status = "syncing";
+  renderAll();
+  try {
+    const response = await remoteRequest("/api/state", { method: "GET" });
+    if (response.status === 404) {
+      app.sync.status = "connected";
+      app.sync.lastSyncedAt = "";
+      app.sync.lastError = "";
+      scheduleRemoteSync();
+      renderAll();
+      return;
+    }
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `Sync fetch failed (${response.status})`);
+    }
+    const payload = await response.json();
+    const remoteState = payload?.state ? ensureStateShape(migrateToV2(payload.state)) : null;
+    if (remoteState) {
+      const localUpdatedAt = parseSortableDate(app.ownerData.stateUpdatedAt);
+      const remoteUpdatedAt = parseSortableDate(remoteState.stateUpdatedAt);
+      if (remoteUpdatedAt > localUpdatedAt) {
+        app.ownerData = remoteState;
+        saveOwnerData(app.ownerData, { skipRemote: true, keepTimestamp: true });
+        setStatus("Synced latest data from cloud.");
+      } else if (localUpdatedAt > remoteUpdatedAt) {
+        scheduleRemoteSync();
+      }
+    }
+    await pullRemoteShareAccess();
+    app.sync.status = "connected";
+    app.sync.lastSyncedAt = payload?.updatedAt || isoDateTime(new Date());
+    app.sync.lastError = "";
+  } catch (error) {
+    app.sync.status = "error";
+    app.sync.lastError = error instanceof Error ? error.message : "Unknown sync error";
+  } finally {
+    renderAll();
+  }
+}
+
+async function pullRemoteShareAccess() {
+  if (!canUseRemoteSync()) return;
+  try {
+    const response = await remoteRequest("/api/share-access", { method: "GET" });
+    if (!response.ok) return;
+    const payload = await response.json();
+    const remoteMap = payload?.shareAccess || {};
+    for (const [token, access] of Object.entries(remoteMap)) {
+      app.accessLogs[token] = {
+        totalOpens: Number(access.opens || 0),
+        lastOpenedAt: String(access.lastOpenedAt || "")
+      };
+    }
+    saveAccessLogs();
+    if (app.ownerData.shareLinks.length) {
+      for (const link of app.ownerData.shareLinks) {
+        const access = app.accessLogs[link.token];
+        if (!access) continue;
+        link.totalOpens = access.totalOpens;
+        link.lastOpenedAt = access.lastOpenedAt;
+      }
+      saveOwnerData(app.ownerData, { skipRemote: true, keepTimestamp: true });
+    }
+  } catch (_error) {
+    // Optional enrichment only.
+  }
+}
+
+function restartReminderLoop() {
+  if (app.reminderIntervalId) {
+    window.clearInterval(app.reminderIntervalId);
+    app.reminderIntervalId = null;
+  }
+  if (!app.ownerData.reminderSettings?.enabled || app.shareSession) return;
+  app.reminderIntervalId = window.setInterval(() => {
+    runReminderSweep();
+  }, 60 * 1000);
+  runReminderSweep();
+}
+
+function runReminderSweep() {
+  if (!app.ownerData.reminderSettings?.enabled || app.shareSession) return;
+  const leadMinutes = Number(app.ownerData.reminderSettings.leadMinutes || 0);
+  const now = new Date();
+  const today = getLocalDateKey(now);
+  let reminderLogChanged = false;
+  for (const [key, value] of Object.entries(app.reminderLog)) {
+    if (!value?.date) continue;
+    if (value.date < shiftDateKey(today, -7)) {
+      delete app.reminderLog[key];
+      reminderLogChanged = true;
+    }
+  }
+  if (reminderLogChanged) {
+    saveReminderLog();
+  }
+  const activeMeds = resolveCurrentMedications(app.ownerData).filter((med) => med.isCurrent);
+  const dueState = getDoseState(activeMeds, app.ownerData.adherence, app.ownerData.doseSnoozes);
+  const candidates = [...dueState.dueNow, ...dueState.next].filter((item) => {
+    const scheduled = parseDateTime(today, item.time);
+    const diffMinutes = (scheduled.getTime() - now.getTime()) / 60000;
+    return diffMinutes <= leadMinutes;
+  });
+
+  for (const item of candidates) {
+    const log = app.reminderLog[item.occurrenceId];
+    if (log?.date === today) continue;
+    const scheduled = parseDateTime(today, item.time);
+    const diffMinutes = Math.round((scheduled.getTime() - now.getTime()) / 60000);
+    const message = diffMinutes <= 0
+      ? `Dose due now: ${item.medicationName} at ${item.time}`
+      : `Dose due in ${diffMinutes}m: ${item.medicationName} at ${item.time}`;
+
+    app.reminderLog[item.occurrenceId] = {
+      date: today,
+      firedAt: isoDateTime(now)
+    };
+    saveReminderLog();
+    pushToast(message, "success");
+    if (app.ownerData.reminderSettings.desktopNotifications && "Notification" in window && Notification.permission === "granted") {
+      new Notification("Medication reminder", { body: message });
+    }
+  }
+}
+
+async function requestNotificationPermission() {
+  if (!("Notification" in window)) {
+    setStatus("Browser notifications are not supported in this browser.", "error");
+    return;
+  }
+  const permission = await Notification.requestPermission();
+  app.ownerData.reminderSettings.desktopNotifications = permission === "granted";
+  saveOwnerData(app.ownerData);
+  setStatus(permission === "granted" ? "Desktop notifications enabled." : "Notification permission not granted.", permission === "granted" ? "ok" : "error");
+  restartReminderLoop();
 }
 
 function renderAll() {
@@ -1426,6 +1758,8 @@ function renderUtilityPanel(context, data) {
     <div class="utility-section">
       <h3>Share status</h3>
       <div class="subtle">${context.readOnly ? "Read-only session active." : `${app.ownerData.shareLinks.length} shared links configured.`}</div>
+      ${context.readOnly ? "" : `<div class="subtle">Sync: ${escapeHtml(app.sync.status === "connected" ? "Connected" : app.sync.status === "syncing" ? "Syncing" : app.sync.status === "error" ? "Error" : "Local-only")}</div>`}
+      ${context.readOnly ? "" : `<div class="subtle">Reminders: ${app.ownerData.reminderSettings?.enabled ? `On (${app.ownerData.reminderSettings.leadMinutes || 0}m)` : "Off"}</div>`}
       ${context.readOnly ? "" : `<button class="btn btn-ghost small" type="button" data-utility-action="sharing">Manage sharing</button>`}
     </div>
   `;
@@ -3138,8 +3472,83 @@ function renderSharing(root, _data, context) {
   const draftShare = app.drafts.share || {};
   const selectedPresetKey = draftShare.preset || "family";
   const selectedPreset = PRESETS[selectedPresetKey] || PRESETS.family;
+  const today = getLocalDateKey(new Date());
+  const defaultExpiry = draftShare.expiresAt || shiftDateKey(today, 30);
+  const reminderSettings = normalizeReminderSettings(app.ownerData.reminderSettings);
+  const syncStatus = app.sync.status === "connected"
+    ? `Connected${app.sync.lastSyncedAt ? ` · last sync ${niceDateTime(app.sync.lastSyncedAt)}` : ""}`
+    : app.sync.status === "syncing"
+      ? "Syncing..."
+      : app.sync.status === "error"
+        ? `Error: ${app.sync.lastError || "Unable to sync"}`
+        : "Local-only mode";
 
   root.innerHTML = `
+    <div class="card">
+      <h3>Cloud sync + reminders</h3>
+      <div class="field-grid">
+        <div>
+          <label>Enable cloud sync</label>
+          <label class="check-item">
+            <input type="checkbox" id="syncEnabled" ${app.syncConfig.enabled ? "checked" : ""}>
+            <span>Use backend persistence for multi-device access</span>
+          </label>
+        </div>
+        <div>
+          <label>Sync status</label>
+          <div class="subtle">${escapeHtml(syncStatus)}</div>
+        </div>
+        <div>
+          <label for="syncEndpoint">API endpoint</label>
+          <input id="syncEndpoint" value="${escapeHtml(app.syncConfig.endpoint || "")}" placeholder="https://your-api.example.com">
+          <p class="helper-text">Example: https://api.yourdomain.com</p>
+        </div>
+        <div>
+          <label for="syncAccountId">Account ID</label>
+          <input id="syncAccountId" value="${escapeHtml(app.syncConfig.accountId || "default")}">
+        </div>
+        <div style="grid-column: 1 / -1;">
+          <label for="syncOwnerKey">Owner API key</label>
+          <input id="syncOwnerKey" type="password" value="${escapeHtml(app.syncConfig.ownerKey || "")}" placeholder="Owner key for write access">
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn btn-secondary" type="button" id="saveSyncConfigButton">Save sync settings</button>
+        <button class="btn btn-ghost" type="button" id="syncNowButton">Sync now</button>
+      </div>
+
+      <hr class="soft">
+
+      <div class="field-grid">
+        <div>
+          <label class="check-item">
+            <input type="checkbox" id="remindersEnabled" ${reminderSettings.enabled ? "checked" : ""}>
+            <span>Enable dose reminders</span>
+          </label>
+        </div>
+        <div>
+          <label for="reminderLeadMinutes">Reminder lead time</label>
+          <select id="reminderLeadMinutes">
+            ${[0, 5, 10, 15, 30, 45, 60].map((mins) => `<option value="${mins}" ${Number(reminderSettings.leadMinutes) === mins ? "selected" : ""}>${mins === 0 ? "At scheduled time" : `${mins} minutes before`}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label class="check-item">
+            <input type="checkbox" id="desktopNotificationsEnabled" ${reminderSettings.desktopNotifications ? "checked" : ""}>
+            <span>Desktop notifications</span>
+          </label>
+        </div>
+        <div>
+          <label>Notification permission</label>
+          <div class="subtle">${"Notification" in window ? Notification.permission : "Not supported in this browser"}</div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn btn-secondary" type="button" id="saveReminderSettingsButton">Save reminder settings</button>
+        <button class="btn btn-ghost" type="button" id="requestReminderPermissionButton">Request notification permission</button>
+      </div>
+    </div>
+
     <div class="card">
       <h3>Create read-only link</h3>
       <form id="shareForm">
@@ -3152,7 +3561,7 @@ function renderSharing(root, _data, context) {
               ${Object.entries(PRESETS).map(([key, preset]) => `<option value="${key}" ${draftShare.preset === key ? "selected" : ""}>${escapeHtml(preset.label)}</option>`).join("")}
             </select>
           </div>
-          <div><label>Link expiry (optional)</label><input name="expiresAt" type="date" value="${escapeHtml(draftShare.expiresAt || "")}"></div>
+          <div><label>Link expiry</label><input name="expiresAt" type="date" value="${escapeHtml(defaultExpiry)}"><p class="helper-text">Secure default is 30 days from today.</p></div>
         </div>
 
         <div class="card" style="margin-top:10px;">
@@ -3191,6 +3600,55 @@ function renderSharing(root, _data, context) {
 
   const shareForm = root.querySelector("#shareForm");
   const presetSelect = root.querySelector("#sharePresetSelect");
+  const syncEnabled = root.querySelector("#syncEnabled");
+  const syncEndpoint = root.querySelector("#syncEndpoint");
+  const syncAccountId = root.querySelector("#syncAccountId");
+  const syncOwnerKey = root.querySelector("#syncOwnerKey");
+  const remindersEnabled = root.querySelector("#remindersEnabled");
+  const reminderLeadMinutes = root.querySelector("#reminderLeadMinutes");
+  const desktopNotificationsEnabled = root.querySelector("#desktopNotificationsEnabled");
+
+  root.querySelector("#saveSyncConfigButton")?.addEventListener("click", () => {
+    app.syncConfig = {
+      enabled: Boolean(syncEnabled?.checked),
+      endpoint: String(syncEndpoint?.value || "").trim(),
+      accountId: String(syncAccountId?.value || "default").trim() || "default",
+      ownerKey: String(syncOwnerKey?.value || "")
+    };
+    saveSyncConfig();
+    app.sync.status = canUseRemoteSync() ? "syncing" : "local-only";
+    app.sync.lastError = "";
+    if (canUseRemoteSync()) {
+      void pullRemoteStateOnBoot();
+    }
+    setStatus("Sync settings saved.");
+    renderAll();
+  });
+
+  root.querySelector("#syncNowButton")?.addEventListener("click", () => {
+    if (!canUseRemoteSync()) {
+      setStatus("Enable sync and set API endpoint first.", "error");
+      return;
+    }
+    void flushRemoteSync();
+    setStatus("Sync requested.");
+  });
+
+  root.querySelector("#saveReminderSettingsButton")?.addEventListener("click", () => {
+    app.ownerData.reminderSettings = normalizeReminderSettings({
+      enabled: remindersEnabled?.checked,
+      leadMinutes: Number(reminderLeadMinutes?.value || 15),
+      desktopNotifications: desktopNotificationsEnabled?.checked
+    });
+    saveOwnerData(app.ownerData);
+    restartReminderLoop();
+    setStatus("Reminder settings saved.");
+    renderAll();
+  });
+
+  root.querySelector("#requestReminderPermissionButton")?.addEventListener("click", () => {
+    void requestNotificationPermission();
+  });
 
   presetSelect.addEventListener("change", () => {
     const preset = PRESETS[presetSelect.value] || PRESETS.family;
@@ -3222,9 +3680,15 @@ function renderSharing(root, _data, context) {
     event.preventDefault();
     const values = formToObject(shareForm);
     const allowedModes = checkedValues(shareForm, "allowedModes");
+    const requestedExpiry = String(values.expiresAt || "").trim();
+    const expiresAt = requestedExpiry || shiftDateKey(getLocalDateKey(new Date()), 30);
 
     if (!allowedModes.length) {
       return setStatus("Select at least one allowed view mode.", "error");
+    }
+
+    if (expiresAt && expiresAt < getLocalDateKey(new Date())) {
+      return setStatus("Expiry date cannot be in the past.", "error");
     }
 
     const permissions = normalizePermissions({
@@ -3236,7 +3700,7 @@ function renderSharing(root, _data, context) {
       showFreeText: shareForm.elements.showFreeText.checked
     });
 
-    const token = uid();
+    const token = createSecureShareToken();
     const linkId = uid();
     const createdAt = isoDateTime(new Date());
 
@@ -3253,7 +3717,7 @@ function renderSharing(root, _data, context) {
       preset: values.preset || "family",
       permissions,
       allowedModes,
-      expiresAt: values.expiresAt || "",
+      expiresAt,
       createdAt,
       snapshot
     };
@@ -3268,7 +3732,7 @@ function renderSharing(root, _data, context) {
       preset: values.preset || "family",
       permissions,
       allowedModes,
-      expiresAt: values.expiresAt || "",
+      expiresAt,
       revoked: false,
       createdAt,
       token,
@@ -3350,7 +3814,7 @@ function renderShareList() {
           <div class="subtle">${escapeHtml(link.email || "No email")}</div>
           <div class="subtle">Preset: ${escapeHtml(PRESETS[link.preset]?.label || "Custom")}</div>
           <div class="subtle">Status: ${status}${link.expiresAt ? ` · Expires ${escapeHtml(niceDate(link.expiresAt))}` : ""}</div>
-          <div class="subtle">Access log (local): opens ${access.totalOpens || 0}${access.lastOpenedAt ? ` · last opened ${escapeHtml(niceDateTime(access.lastOpenedAt))}` : ""}</div>
+          <div class="subtle">Access log: opens ${access.totalOpens || 0}${access.lastOpenedAt ? ` · last opened ${escapeHtml(niceDateTime(access.lastOpenedAt))}` : ""}</div>
           <textarea class="share-url" readonly>${escapeHtml(link.url)}</textarea>
           <div class="row" style="margin-top:8px;">
             <button class="btn btn-secondary" type="button" data-copy-link="${link.id}">Copy</button>
@@ -3665,6 +4129,8 @@ function handleDoseSnooze(occurrenceId, minutes = DOSE_SNOOZE_MINUTES) {
     ...app.ownerData,
     doseSnoozes: nextSnoozes
   };
+  delete app.reminderLog[occurrenceId];
+  saveReminderLog();
   saveOwnerData(app.ownerData);
   setStatus(`Dose snoozed until ${formatClockTime(until)}.`);
   renderAll();
@@ -3725,6 +4191,8 @@ async function handleDoseAction(occurrenceId, status) {
       ...nextOwnerDataRaw,
       doseSnoozes: (nextOwnerDataRaw.doseSnoozes || []).filter((entry) => entry.occurrenceId !== occurrenceId)
     };
+    delete app.reminderLog[occurrenceId];
+    saveReminderLog();
     app.ownerData = nextOwnerData;
     renderAll();
 
@@ -4171,6 +4639,15 @@ function uid() {
     return window.crypto.randomUUID();
   }
   return `id-${Math.random().toString(36).slice(2, 11)}`;
+}
+
+function createSecureShareToken() {
+  if (window.crypto?.getRandomValues) {
+    const bytes = new Uint8Array(24);
+    window.crypto.getRandomValues(bytes);
+    return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  }
+  return `${uid()}${Math.random().toString(36).slice(2, 14)}`;
 }
 
 function escapeHtml(value) {
