@@ -109,6 +109,34 @@ h4 {
   min-height: calc(100vh - (var(--space-5) * 2));
 }
 
+.app-topbar {
+  max-width: 1580px;
+  margin: 0 auto var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  align-items: center;
+  background: linear-gradient(180deg, #ffffff, #f9fbff);
+}
+
+.app-brand {
+  width: 100%;
+  align-items: center;
+  grid-template-columns: 50px minmax(0, 1fr);
+}
+
+.app-brand h1 {
+  font-size: clamp(24px, 2.3vw, 30px);
+  letter-spacing: -0.02em;
+  line-height: 1.04;
+}
+
+.app-brand p {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-1);
+  line-height: 1.4;
+}
+
 .panel {
   background: var(--color-surface);
   border: var(--border-subtle);
@@ -142,17 +170,20 @@ h4 {
 }
 
 .logo-mark {
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
+  width: 50px;
+  height: 50px;
+  border-radius: var(--radius-2);
   border: var(--border-subtle);
-  background: linear-gradient(145deg, #eef3ff, #dee9ff);
+  background: linear-gradient(145deg, #f0f5ff, #e2ebff);
   color: var(--color-accent-strong);
-  font-size: var(--font-2);
-  font-weight: 800;
   display: grid;
   place-items: center;
-  letter-spacing: 0.03em;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.logo-mark svg {
+  width: 27px;
+  height: 27px;
 }
 
 .sidebar-control {
@@ -185,15 +216,14 @@ h4 {
   background: #f4f7fd;
   color: var(--color-text-muted);
   border-radius: var(--radius-1);
-  min-height: 40px;
-  padding: 0 var(--space-2);
-  font-size: 12px;
+  min-height: 44px;
+  padding: var(--space-1) var(--space-2);
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.2;
   text-align: center;
   transition: border-color var(--motion-fast), background var(--motion-fast), color var(--motion-fast), transform var(--motion-fast);
 }
@@ -677,6 +707,44 @@ tbody tr:hover {
   gap: var(--space-2);
 }
 
+.today-snapshot-list {
+  margin-top: var(--space-3);
+  display: grid;
+  gap: var(--space-3);
+}
+
+.today-snapshot-item {
+  margin: 0;
+  padding: var(--space-3);
+  border: var(--border-subtle);
+  border-radius: var(--radius-2);
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+  gap: var(--space-3);
+}
+
+.today-snapshot-item span {
+  display: block;
+  line-height: 1.55;
+  color: var(--color-text-muted);
+}
+
+.today-snapshot-item strong {
+  color: var(--color-text);
+  font-weight: 700;
+  margin-right: 2px;
+}
+
+.today-snapshot-item .mini-icon {
+  width: 24px;
+  height: 24px;
+  margin-top: 1px;
+}
+
+.today-snapshot-item .mini-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
 .dose-med-cell {
   display: flex;
   align-items: center;
@@ -1131,9 +1199,18 @@ button:focus-visible {
 }
 
 .stack-tight {
-  margin-top: var(--space-3);
-  padding-top: var(--space-2);
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
   border-top: var(--border-subtle);
+}
+
+.stack-tight .timeline-list {
+  margin-top: var(--space-2);
+}
+
+.stack-tight .compact-list li {
+  margin-bottom: var(--space-2);
+  line-height: 1.45;
 }
 
 .share-card {
@@ -1337,6 +1414,20 @@ body.app-ready .skeleton-shell {
     padding: var(--space-3);
   }
 
+  .app-topbar {
+    margin-bottom: var(--space-3);
+    padding: var(--space-3);
+  }
+
+  .app-brand {
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+
+  .app-brand p {
+    max-width: 100%;
+  }
+
   .layout {
     grid-template-columns: 1fr;
   }
@@ -1374,6 +1465,18 @@ body.app-ready .skeleton-shell {
 }
 
 @media (max-width: 760px) {
+  .app-topbar {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .app-brand h1 {
+    font-size: 26px;
+  }
+
+  .app-brand p {
+    display: none;
+  }
+
   .main-header {
     flex-direction: column;
     align-items: stretch;
@@ -1391,6 +1494,11 @@ body.app-ready .skeleton-shell {
   .today-summary-line {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .today-snapshot-item {
+    padding: var(--space-3);
+    gap: var(--space-2);
   }
 
   .dashboard-grid {

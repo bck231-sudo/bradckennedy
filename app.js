@@ -2094,11 +2094,11 @@ function renderDashboard(root, data, context) {
 
       <article class="card">
         <h3>Today snapshot</h3>
-        <ul class="timeline-list compact-list">
-          <li class="list-with-icon">${renderIcon("clock", "mini-icon soft")}<span><strong>Check-in:</strong> ${todayCheckin ? `Completed · Mood ${todayCheckin.mood}/10 · Anxiety ${todayCheckin.anxiety}/10` : "Not completed yet"}</span></li>
-          <li class="list-with-icon">${renderIcon("capsule", "mini-icon soft")}<span><strong>Active medications:</strong> ${activeMeds.length}</span></li>
-          <li class="list-with-icon">${renderIcon("syringe", "mini-icon soft")}<span><strong>Recent changes:</strong> ${recentChanges.length} in the last 14 days</span></li>
-          <li class="list-with-icon">${renderIcon("pulse", "mini-icon soft")}<span><strong>Trend:</strong> Mood ${trendMood.arrow} · Anxiety ${trendAnxiety.arrow} · Focus ${trendFocus.arrow}</span></li>
+        <ul class="timeline-list compact-list today-snapshot-list">
+          <li class="list-with-icon today-snapshot-item">${renderIcon("clock", "mini-icon soft")}<span><strong>Check-in:</strong> ${todayCheckin ? `Completed · Mood ${todayCheckin.mood}/10 · Anxiety ${todayCheckin.anxiety}/10` : "Not completed yet"}</span></li>
+          <li class="list-with-icon today-snapshot-item">${renderIcon("capsule", "mini-icon soft")}<span><strong>Active medications:</strong> ${activeMeds.length}</span></li>
+          <li class="list-with-icon today-snapshot-item">${renderIcon("syringe", "mini-icon soft")}<span><strong>Recent changes:</strong> ${recentChanges.length} in the last 14 days</span></li>
+          <li class="list-with-icon today-snapshot-item">${renderIcon("pulse", "mini-icon soft")}<span><strong>Trend:</strong> Mood ${trendMood.arrow} · Anxiety ${trendAnxiety.arrow} · Focus ${trendFocus.arrow}</span></li>
         </ul>
         ${dashboardAlerts.length ? `
           <div class="stack-tight">
