@@ -492,22 +492,69 @@ h4 {
   flex-wrap: wrap;
 }
 
+.icon-dock-wrap {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: var(--border-subtle);
+}
+
 .icon-dock {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
   gap: var(--space-3);
-  margin: -2px 0 var(--space-2);
+  margin: var(--space-2) 0 0;
 }
 
 .icon-chip {
-  width: 42px;
-  height: 42px;
-  border-radius: 999px;
+  min-height: 84px;
+  border-radius: var(--radius-3);
   background: #ffffff;
   border: var(--border-subtle);
-  box-shadow: 0 4px 12px rgba(16, 36, 62, 0.08);
+  box-shadow: 0 6px 14px rgba(16, 36, 62, 0.08);
   display: inline-flex;
+  flex-direction: column;
+  gap: 8px;
   align-items: center;
   justify-content: center;
+  padding: 10px 8px;
+}
+
+.icon-chip-btn {
+  cursor: pointer;
+  transition: border-color var(--motion-fast), box-shadow var(--motion-fast), transform var(--motion-fast), background var(--motion-fast);
+}
+
+.icon-chip-btn:hover {
+  border-color: #b8c9eb;
+  box-shadow: 0 10px 20px rgba(16, 36, 62, 0.12);
+  transform: translateY(-1px);
+}
+
+.icon-chip-btn:active {
+  transform: translateY(0);
+}
+
+.icon-chip-btn:focus-visible {
+  outline: none;
+  border-color: #a9bfe7;
+  box-shadow: 0 0 0 3px rgba(44, 110, 234, 0.2);
+}
+
+.icon-chip .mini-icon {
+  width: 30px;
+  height: 30px;
+}
+
+.icon-chip .mini-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.icon-chip-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #4f6786;
+  line-height: 1;
 }
 
 .kpi-strip {
@@ -1348,6 +1395,14 @@ body.app-ready .skeleton-shell {
 
   .dashboard-grid {
     grid-template-columns: 1fr;
+  }
+
+  .icon-dock {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .icon-chip {
+    min-height: 76px;
   }
 
   .field-grid {

@@ -2058,14 +2058,32 @@ function renderDashboard(root, data, context) {
         <div class="subtle">${nextDose ? `Next dose: <strong>${escapeHtml(nextDose.medicationName)}</strong> at ${escapeHtml(nextDose.time)}` : "No scheduled doses remaining for today."}</div>
         ${context.readOnly ? "" : `<div class="row"><button class="btn btn-secondary small" type="button" data-dashboard-checkin="1">${todayCheckin ? "Edit check-in" : "Quick check-in"}</button></div>`}
       </div>
+      <div class="icon-dock-wrap">
+        <div class="label">Quick actions</div>
+        <div class="icon-dock" role="toolbar" aria-label="Quick actions">
+          ${context.readOnly ? "" : `
+            <button class="icon-chip icon-chip-btn" type="button" data-icon-action="reminders">
+              ${renderIcon("bell", "mini-icon accent")}
+              <span class="icon-chip-label">Reminders</span>
+            </button>
+          `}
+          <button class="icon-chip icon-chip-btn" type="button" data-icon-action="trends">
+            ${renderIcon("pulse", "mini-icon accent")}
+            <span class="icon-chip-label">Trends</span>
+          </button>
+          ${context.readOnly ? "" : `
+            <button class="icon-chip icon-chip-btn" type="button" data-icon-action="change">
+              ${renderIcon("syringe", "mini-icon accent")}
+              <span class="icon-chip-label">Log change</span>
+            </button>
+          `}
+          <button class="icon-chip icon-chip-btn" type="button" data-icon-action="medications">
+            ${renderIcon("capsule", "mini-icon accent")}
+            <span class="icon-chip-label">Meds</span>
+          </button>
+        </div>
+      </div>
     </article>
-
-    <div class="icon-dock" aria-hidden="true">
-      <span class="icon-chip">${renderIcon("bell", "mini-icon accent")}</span>
-      <span class="icon-chip">${renderIcon("pulse", "mini-icon accent")}</span>
-      <span class="icon-chip">${renderIcon("syringe", "mini-icon accent")}</span>
-      <span class="icon-chip">${renderIcon("capsule", "mini-icon accent")}</span>
-    </div>
 
     <div class="grid dashboard-grid">
       <article class="card">
@@ -2159,6 +2177,26 @@ function renderDashboard(root, data, context) {
     button.addEventListener("click", () => {
       if (context.readOnly) return;
       app.ui.activeSection = "medications";
+      renderAll();
+    });
+  });
+
+  root.querySelectorAll("[data-icon-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const action = button.dataset.iconAction || "";
+      if (action === "medications") {
+        app.ui.activeSection = "medications";
+      } else if (action === "trends") {
+        app.ui.activeSection = "timeline";
+      } else if (action === "reminders") {
+        if (context.readOnly) return;
+        app.ui.activeSection = "sharing";
+      } else if (action === "change") {
+        if (context.readOnly) return;
+        app.ui.activeSection = "entry";
+        app.ui.entryWorkflow = "change";
+      }
+      ensureSectionForCurrentMode();
       renderAll();
     });
   });
