@@ -1,63 +1,36 @@
 # Medication Tracker (bradckennedy.org)
 
-This site is local-first by default and now supports optional backend persistence (API sync), share-security defaults, and reminder settings.
+This site now runs in **local-only mode** by default (no login, no backend required, no API setup).
 
-## Run (Frontend + API)
+## Run Locally (No Backend)
 
-1. Install dependencies:
-   - `npm install`
-2. Start the app + API server:
-   - `npm run dev`
-3. Open:
+1. In this folder, start a static web server:
+   - `python3 -m http.server 8080`
+2. Open:
    - `http://127.0.0.1:8080`
 
-## Deploy API to Render
+All data is stored in your browser `localStorage` on that device/browser profile.
 
-Use the included blueprint file:
+## Publish Online (No Payment Required)
 
-- `/Users/brad/Documents/New project/bradckennedy/render.yaml`
+Use any static host:
 
-Quick path:
+1. Netlify Free
+2. Vercel Hobby
+3. GitHub Pages
 
-1. Open Render Blueprint:
-   - `https://dashboard.render.com/blueprint/new?repo=https://github.com/bck231-sudo/bradckennedy`
-2. Create the `medication-tracker-api` service.
-3. In Render env vars, set:
-   - `MT_OWNER_KEY` to a strong secret (replace placeholder value).
-4. After deploy, confirm:
-   - `https://<your-render-service>.onrender.com/api/health`
-5. On `https://bradckennedy.org`, go to `Sharing`:
-   - save `Cloud sync` settings using:
-     - endpoint: your Render URL (prefilled from meta default)
-     - account ID: choose one (for example `brad`)
-     - owner API key: same value as `MT_OWNER_KEY`
+Deploy the contents of this folder as a static site (`index.html`, `app.js`, `styles.css`, etc).
 
-Notes:
+## Sharing In Local-Only Mode
 
-- Render service CORS is scoped to `https://bradckennedy.org` by default.
-- Persistent disk is configured in `render.yaml` to keep state across restarts/deploys.
-
-### Optional server security
-
-- Set an owner API key before starting:
-  - `MT_OWNER_KEY=\"your-strong-key\" npm run dev`
-- In the app, go to `Sharing` and save:
-  - `Enable cloud sync`
-  - API endpoint (for local: `http://127.0.0.1:8080`)
-  - Account ID
-  - Owner API key
-
-When sync is enabled, state remains local-first and is also pushed to the backend for multi-device use.
+- Read-only links still work (they contain a signed snapshot in the URL hash).
+- No server sync is used.
+- Cloud sync controls are intentionally disabled in this build.
 
 ## What Changed (Phase 1)
 
-- Added API server at `/Users/brad/Documents/New project/bradckennedy/server/server.js`
-  - `GET /api/health`
-  - `GET /api/state`
-  - `PUT /api/state` (owner-key protected when `MT_OWNER_KEY` is set)
-  - `POST /api/share-access`
-  - `GET /api/share-access` (owner-key protected)
-- Added cloud-sync controls to the Sharing page.
+- Added API server scaffold at `/Users/brad/Documents/New project/bradckennedy/server/server.js` (kept for future optional use).
+- Cloud sync controls are now disabled by default for no-backend operation.
 - Added reminder settings (lead time + optional desktop notifications).
 - Added secure sharing defaults:
   - 30-day default link expiry

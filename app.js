@@ -18,6 +18,7 @@ const APP_VERSION = 2;
 const DOSE_SNOOZE_MINUTES = 30;
 const REMOTE_SYNC_DEBOUNCE_MS = 800;
 const PRODUCTION_SYNC_ENDPOINT = "https://medication-tracker-api.onrender.com";
+const LOCAL_ONLY_MODE = true;
 
 const SIDE_EFFECT_OPTIONS = [
   "headache",
@@ -1023,13 +1024,14 @@ function saveDrafts() {
 function defaultSyncConfig() {
   return {
     enabled: false,
-    endpoint: inferDefaultSyncEndpoint(),
+    endpoint: LOCAL_ONLY_MODE ? "" : inferDefaultSyncEndpoint(),
     accountId: "default",
     ownerKey: ""
   };
 }
 
 function inferDefaultSyncEndpoint() {
+  if (LOCAL_ONLY_MODE) return "";
   if (typeof window === "undefined") return "";
   const meta = document.querySelector("meta[name='mt-sync-endpoint']")?.getAttribute("content")?.trim();
   if (meta) return meta;
@@ -1048,6 +1050,7 @@ function inferDefaultSyncEndpoint() {
 
 function loadSyncConfig() {
   const defaults = defaultSyncConfig();
+  if (LOCAL_ONLY_MODE) return defaults;
   const raw = localStorage.getItem(SYNC_CONFIG_KEY);
   if (!raw) return defaults;
   try {
@@ -1325,10 +1328,12 @@ function initializeBackgroundServices() {
 }
 
 function canUseRemoteSync() {
+  if (LOCAL_ONLY_MODE) return false;
   return Boolean(app.syncConfig.enabled && String(app.syncConfig.endpoint || "").trim());
 }
 
 function normalizedApiBase() {
+  if (LOCAL_ONLY_MODE) return "";
   return String(app.syncConfig.endpoint || "").trim().replace(/\/+$/, "");
 }
 
@@ -3501,6 +3506,10 @@ function renderSharing(root, _data, context) {
       : app.sync.status === "error"
         ? `Error: ${app.sync.lastError || "Unable to sync"}`
         : "Local-only mode";
+  const syncDisabledAttr = LOCAL_ONLY_MODE ? "disabled" : "";
+  const syncHelperText = LOCAL_ONLY_MODE
+    ? "Cloud sync is disabled in this build. Your data stays in this browser."
+    : "Example: https://api.yourdomain.com";
 
   root.innerHTML = `
     <div class="card">
@@ -3509,7 +3518,7 @@ function renderSharing(root, _data, context) {
         <div>
           <label>Enable cloud sync</label>
           <label class="check-item">
-            <input type="checkbox" id="syncEnabled" ${app.syncConfig.enabled ? "checked" : ""}>
+            <input type="checkbox" id="syncEnabled" ${app.syncConfig.enabled ? "checked" : ""} ${syncDisabledAttr}>
             <span>Use backend persistence for multi-device access</span>
           </label>
         </div>
@@ -3519,21 +3528,21 @@ function renderSharing(root, _data, context) {
         </div>
         <div>
           <label for="syncEndpoint">API endpoint</label>
-          <input id="syncEndpoint" value="${escapeHtml(app.syncConfig.endpoint || "")}" placeholder="https://your-api.example.com">
-          <p class="helper-text">Example: https://api.yourdomain.com</p>
+          <input id="syncEndpoint" value="${escapeHtml(app.syncConfig.endpoint || "")}" placeholder="https://your-api.example.com" ${syncDisabledAttr}>
+          <p class="helper-text">${escapeHtml(syncHelperText)}</p>
         </div>
         <div>
           <label for="syncAccountId">Account ID</label>
-          <input id="syncAccountId" value="${escapeHtml(app.syncConfig.accountId || "default")}">
+          <input id="syncAccountId" value="${escapeHtml(app.syncConfig.accountId || "default")}" ${syncDisabledAttr}>
         </div>
         <div style="grid-column: 1 / -1;">
           <label for="syncOwnerKey">Owner API key</label>
-          <input id="syncOwnerKey" type="password" value="${escapeHtml(app.syncConfig.ownerKey || "")}" placeholder="Owner key for write access">
+          <input id="syncOwnerKey" type="password" value="${escapeHtml(app.syncConfig.ownerKey || "")}" placeholder="Owner key for write access" ${syncDisabledAttr}>
         </div>
       </div>
       <div class="row" style="margin-top:10px;">
-        <button class="btn btn-secondary" type="button" id="saveSyncConfigButton">Save sync settings</button>
-        <button class="btn btn-ghost" type="button" id="syncNowButton">Sync now</button>
+        <button class="btn btn-secondary" type="button" id="saveSyncConfigButton" ${syncDisabledAttr}>Save sync settings</button>
+        <button class="btn btn-ghost" type="button" id="syncNowButton" ${syncDisabledAttr}>Sync now</button>
       </div>
 
       <hr class="soft">
@@ -3628,6 +3637,15 @@ function renderSharing(root, _data, context) {
   const desktopNotificationsEnabled = root.querySelector("#desktopNotificationsEnabled");
 
   root.querySelector("#saveSyncConfigButton")?.addEventListener("click", () => {
+    if (LOCAL_ONLY_MODE) {
+      app.syncConfig = defaultSyncConfig();
+      saveSyncConfig();
+      app.sync.status = "local-only";
+      app.sync.lastError = "";
+      setStatus("Cloud sync is disabled. Local-only mode is active.");
+      renderAll();
+      return;
+    }
     app.syncConfig = {
       enabled: Boolean(syncEnabled?.checked),
       endpoint: String(syncEndpoint?.value || "").trim(),
@@ -3645,6 +3663,10 @@ function renderSharing(root, _data, context) {
   });
 
   root.querySelector("#syncNowButton")?.addEventListener("click", () => {
+    if (LOCAL_ONLY_MODE) {
+      setStatus("Cloud sync is disabled. Local-only mode is active.");
+      return;
+    }
     if (!canUseRemoteSync()) {
       setStatus("Enable sync and set API endpoint first.", "error");
       return;
