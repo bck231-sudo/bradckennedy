@@ -85,6 +85,13 @@ const MOBILE_TABS = [
   { id: "settings", label: "Settings / Share", icon: "share", section: "sharing", fallback: "exports" }
 ];
 
+const TOP_NAV_ITEMS = [
+  { id: "dashboard", label: "Dashboard", icon: "home", target: "dashboard" },
+  { id: "history", label: "History", icon: "chart", target: "timeline", fallback: "changes" },
+  { id: "settings", label: "Settings", icon: "plus", target: "exports", fallback: "sharing" },
+  { id: "share", label: "Share", icon: "share", target: "sharing", fallback: "exports" }
+];
+
 const OWNER_PERMISSIONS = Object.freeze({
   showSensitiveNotes: true,
   showSensitiveTags: true,
@@ -256,6 +263,7 @@ const ICON_SVG_PATHS = Object.freeze({
 });
 
 const dom = {
+  topNavLinks: document.getElementById("topNavLinks"),
   viewerModeSegment: document.getElementById("viewerModeSegment"),
   viewerModeSelect: document.getElementById("viewerModeSelect"),
   viewModeSelect: document.getElementById("viewModeSelect"),
@@ -1716,6 +1724,8 @@ function renderNavigation(context) {
     app.ui.activeSection = sections[0]?.id || "dashboard";
   }
 
+  renderTopNav(sections);
+
   dom.sectionNav.innerHTML = sections
     .map((section) => {
       const activeClass = section.id === app.ui.activeSection ? "active" : "";
@@ -1731,6 +1741,43 @@ function renderNavigation(context) {
   dom.sectionNav.querySelectorAll("button[data-section]").forEach((button) => {
     button.addEventListener("click", () => {
       app.ui.activeSection = button.dataset.section;
+      renderAll();
+    });
+  });
+}
+
+function resolveTopNavTarget(item, sections) {
+  const available = new Set(sections.map((section) => section.id));
+  if (item.target && available.has(item.target)) return item.target;
+  if (item.fallback && available.has(item.fallback)) return item.fallback;
+  if (available.has("dashboard")) return "dashboard";
+  return sections[0]?.id || "";
+}
+
+function renderTopNav(sections) {
+  if (!dom.topNavLinks) return;
+  const available = sections.length ? sections : [{ id: "dashboard" }];
+
+  dom.topNavLinks.innerHTML = TOP_NAV_ITEMS.map((item) => {
+    const target = resolveTopNavTarget(item, available);
+    const active = app.ui.activeSection === target;
+    if (!target) return "";
+    return `
+      <button
+        type="button"
+        class="top-nav-link nav-link ${active ? "active" : ""}"
+        data-topnav-target="${target}"
+        aria-label="Open ${escapeHtml(item.label)}"
+      >
+        ${renderIcon(item.icon || "home", "top-nav-icon")}
+        <span>${escapeHtml(item.label)}</span>
+      </button>
+    `;
+  }).join("");
+
+  dom.topNavLinks.querySelectorAll("[data-topnav-target]").forEach((button) => {
+    button.addEventListener("click", () => {
+      app.ui.activeSection = button.dataset.topnavTarget || "dashboard";
       renderAll();
     });
   });
@@ -2062,22 +2109,22 @@ function renderDashboard(root, data, context) {
         <div class="label">Quick actions</div>
         <div class="icon-dock" role="toolbar" aria-label="Quick actions">
           ${context.readOnly ? "" : `
-            <button class="icon-chip icon-chip-btn" type="button" data-icon-action="reminders">
+            <button class="icon-chip icon-chip-btn" type="button" data-icon-action="reminders" aria-label="Open reminder settings">
               ${renderIcon("bell", "mini-icon accent")}
               <span class="icon-chip-label">Reminders</span>
             </button>
           `}
-          <button class="icon-chip icon-chip-btn" type="button" data-icon-action="trends">
+          <button class="icon-chip icon-chip-btn" type="button" data-icon-action="trends" aria-label="Open trend charts">
             ${renderIcon("pulse", "mini-icon accent")}
             <span class="icon-chip-label">Trends</span>
           </button>
           ${context.readOnly ? "" : `
-            <button class="icon-chip icon-chip-btn" type="button" data-icon-action="change">
+            <button class="icon-chip icon-chip-btn" type="button" data-icon-action="change" aria-label="Log medication change">
               ${renderIcon("syringe", "mini-icon accent")}
               <span class="icon-chip-label">Log change</span>
             </button>
           `}
-          <button class="icon-chip icon-chip-btn" type="button" data-icon-action="medications">
+          <button class="icon-chip icon-chip-btn" type="button" data-icon-action="medications" aria-label="Open medications list">
             ${renderIcon("capsule", "mini-icon accent")}
             <span class="icon-chip-label">Meds</span>
           </button>
@@ -2240,13 +2287,13 @@ function renderDoseTable(dueState, context, medications) {
               <td><span class="status-chip ${escapeHtml(statusChipClass(item.statusLabel))}">${escapeHtml(item.statusLabel)}</span></td>
               ${context.readOnly ? "" : `<td>
                 <div class="row dose-actions-primary">
-                  <button class="btn btn-secondary small ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "is-loading" : ""}" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.TAKEN}" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>${app.ui.pendingDoseActions.has(item.occurrenceId) ? "Saving" : "Taken"}</button>
-                  <button class="btn btn-secondary small ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "is-loading" : ""}" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.SKIPPED}" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>${app.ui.pendingDoseActions.has(item.occurrenceId) ? "Saving" : "Skip"}</button>
+                  <button class="btn btn-secondary small ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "is-loading" : ""}" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.TAKEN}" aria-label="Mark ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)} as taken" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>${app.ui.pendingDoseActions.has(item.occurrenceId) ? "Saving" : "Taken"}</button>
+                  <button class="btn btn-secondary small ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "is-loading" : ""}" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.SKIPPED}" aria-label="Mark ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)} as skipped" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>${app.ui.pendingDoseActions.has(item.occurrenceId) ? "Saving" : "Skip"}</button>
                   <details class="dose-actions-more">
                     <summary>More</summary>
                     <div class="row">
-                      <button class="btn btn-ghost small" type="button" data-dose-snooze="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>Snooze</button>
-                      <button class="btn btn-ghost small" type="button" data-dose-note="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-medication-name="${escapeHtml(item.medicationName)}">Note</button>
+                      <button class="btn btn-ghost small" type="button" data-dose-snooze="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" aria-label="Snooze ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)}" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>Snooze</button>
+                      <button class="btn btn-ghost small" type="button" data-dose-note="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-medication-name="${escapeHtml(item.medicationName)}" aria-label="Add note for ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)}">Note</button>
                     </div>
                   </details>
                 </div>
@@ -4325,6 +4372,9 @@ async function handleDoseAction(occurrenceId, status) {
     renderAll();
 
     saveOwnerData(nextOwnerData);
+    if (canUseRemoteSync()) {
+      void flushRemoteSync();
+    }
     setStatus(`Dose marked as ${normalizeAdherenceStatus(status)}.`);
   } catch (error) {
     app.ownerData = previousOwnerData;
