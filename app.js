@@ -17,6 +17,7 @@ const PROFILE_PATCH_KEY = "medication_tracker_profile_patch_2026_02_21_v1";
 const APP_VERSION = 2;
 const DOSE_SNOOZE_MINUTES = 30;
 const REMOTE_SYNC_DEBOUNCE_MS = 800;
+const DASHBOARD_DOSE_PAGE_SIZE = 8;
 const PRODUCTION_SYNC_ENDPOINT = "https://medication-tracker-api.onrender.com";
 const LOCAL_ONLY_MODE = true;
 
@@ -79,10 +80,46 @@ const VIEWER_BADGES = {
 };
 
 const MOBILE_TABS = [
-  { id: "today", label: "Today", icon: "home", section: "dashboard" },
-  { id: "medications", label: "Medications", icon: "capsule", section: "medications" },
-  { id: "trends", label: "Trends", icon: "chart", section: "timeline" },
-  { id: "settings", label: "Settings / Share", icon: "share", section: "sharing", fallback: "exports" }
+  {
+    id: "dashboard",
+    label: "Dashboard",
+    icon: "home",
+    primarySection: "dashboard",
+    fallbackSections: [],
+    preferredModes: ["daily", "clinical", "personal"]
+  },
+  {
+    id: "medications",
+    label: "Medications",
+    icon: "capsule",
+    primarySection: "medications",
+    fallbackSections: ["dashboard"],
+    preferredModes: ["daily", "clinical", "personal"]
+  },
+  {
+    id: "history",
+    label: "History",
+    icon: "chart",
+    primarySection: "timeline",
+    fallbackSections: ["changes"],
+    preferredModes: ["clinical", "personal"]
+  },
+  {
+    id: "share",
+    label: "Share",
+    icon: "share",
+    primarySection: "sharing",
+    fallbackSections: ["exports"],
+    preferredModes: ["clinical", "personal"]
+  },
+  {
+    id: "settings",
+    label: "Settings",
+    icon: "plus",
+    primarySection: "exports",
+    fallbackSections: ["sharing"],
+    preferredModes: ["personal", "clinical"]
+  }
 ];
 
 const TOP_NAV_ITEMS = [
@@ -342,6 +379,17 @@ const app = {
     pendingDoseActions: new Set(),
     lastDraftSavedAt: "",
     hasRendered: false,
+    dashboardDoseView: "cards",
+    dashboardDoseFilter: "all",
+    dashboardDosePage: 1,
+    dashboardDoseSearch: "",
+    dashboardEdits: {
+      summary: false,
+      alerts: false,
+      changes: false
+    },
+    dashboardTrendView: "simple",
+    dashboardTrendRangeDays: "7",
     timelineFilters: {
       medicationId: "all",
       rangeDays: "14",
@@ -350,6 +398,8 @@ const app = {
     }
   },
   statusTimeout: null,
+  doseUndoTimeout: null,
+  lastDoseUndo: null,
   syncDebounceTimeout: null,
   reminderIntervalId: null,
   sync: {
@@ -429,7 +479,9 @@ function buildSeedState() {
       leadMinutes: 15,
       desktopNotifications: false
     },
-    shareLinks: []
+    shareLinks: [],
+    profile: defaultOwnerProfile(),
+    dashboardConfig: defaultDashboardConfig()
   });
 }
 
@@ -623,6 +675,7 @@ function migrateToV2(input) {
     return ensureStateShape(input);
   }
 
+  const now = isoDateTime(new Date());
   const migrated = {
     version: APP_VERSION,
     stateUpdatedAt: input.stateUpdatedAt || now,
@@ -633,10 +686,10 @@ function migrateToV2(input) {
     adherence: [],
     doseSnoozes: [],
     reminderSettings: normalizeReminderSettings(input.reminderSettings),
-    shareLinks: []
+    shareLinks: [],
+    profile: normalizeOwnerProfile(input.profile),
+    dashboardConfig: normalizeDashboardConfig(input.dashboardConfig)
   };
-
-  const now = isoDateTime(new Date());
 
   // Compatibility layer for older versions where dose/time lived directly on medication rows.
   for (const med of Array.isArray(input.medications) ? input.medications : []) {
@@ -756,7 +809,9 @@ function ensureStateShape(input) {
     adherence: [],
     doseSnoozes: [],
     reminderSettings: normalizeReminderSettings(input.reminderSettings),
-    shareLinks: []
+    shareLinks: [],
+    profile: normalizeOwnerProfile(input.profile),
+    dashboardConfig: normalizeDashboardConfig(input.dashboardConfig)
   };
 
   for (const med of Array.isArray(input.medications) ? input.medications : []) {
@@ -896,6 +951,9 @@ function normalizeAdherence(input) {
     medicationName: input?.medicationName || "",
     scheduleTime,
     status: normalizeAdherenceStatus(input?.status),
+    actionAt: input?.actionAt || input?.updatedAt || input?.createdAt || "",
+    takenAt: input?.takenAt || "",
+    skippedAt: input?.skippedAt || "",
     createdAt: input?.createdAt || isoDateTime(new Date()),
     updatedAt: input?.updatedAt || input?.createdAt || isoDateTime(new Date())
   };
@@ -1079,6 +1137,39 @@ function loadDrafts() {
 function saveDrafts() {
   localStorage.setItem(DRAFT_KEY, JSON.stringify(app.drafts));
   app.ui.lastDraftSavedAt = isoDateTime(new Date());
+}
+
+function defaultOwnerProfile() {
+  return {
+    displayName: "",
+    personalizationEnabled: true
+  };
+}
+
+function normalizeOwnerProfile(input) {
+  return {
+    displayName: String(input?.displayName || "").trim(),
+    personalizationEnabled: input?.personalizationEnabled !== false
+  };
+}
+
+function defaultDashboardConfig() {
+  return {
+    summaryNote: "",
+    monitoringReminders: []
+  };
+}
+
+function normalizeDashboardConfig(input) {
+  const defaults = defaultDashboardConfig();
+  const reminders = Array.isArray(input?.monitoringReminders)
+    ? input.monitoringReminders.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 12)
+    : defaults.monitoringReminders;
+
+  return {
+    summaryNote: String(input?.summaryNote || "").trim(),
+    monitoringReminders: reminders
+  };
 }
 
 function defaultSyncConfig() {
@@ -1845,36 +1936,35 @@ function renderTopNav(sections) {
   });
 }
 
-function resolveMobileTabTarget(tab, sections) {
-  const available = new Set(sections.map((section) => section.id));
-  if (available.has(tab.section)) return tab.section;
-  if (tab.fallback && available.has(tab.fallback)) return tab.fallback;
-  if (tab.id === "settings") {
-    if (available.has("sharing")) return "sharing";
-    if (available.has("exports")) return "exports";
-  }
-  return sections[0]?.id || "dashboard";
-}
-
 function renderMobileNav(context) {
   if (!dom.mobileNav) return;
-  const sections = availableSections(context, app.ui.activeViewMode);
-  const available = sections.length ? sections : [{ id: "dashboard" }];
-
   dom.mobileNav.innerHTML = MOBILE_TABS.map((tab) => {
-    const target = resolveMobileTabTarget(tab, available);
-    const active = app.ui.activeSection === target;
+    const allTabSections = [tab.primarySection, ...(tab.fallbackSections || [])];
+    const active = allTabSections.includes(app.ui.activeSection);
+    const enabled = Boolean(findModeForSection(context, tab.primarySection, tab.preferredModes) || (tab.fallbackSections || []).some((sectionId) => findModeForSection(context, sectionId, tab.preferredModes)));
     return `
-      <button type="button" class="${active ? "active" : ""}" data-mobile-section="${target}" aria-label="${escapeHtml(tab.label)}">
+      <button
+        type="button"
+        class="${active ? "active" : ""}"
+        data-mobile-tab="${tab.id}"
+        aria-label="${escapeHtml(tab.label)}"
+        ${enabled ? "" : "disabled"}
+      >
         ${renderIcon(tab.icon || "home", "mobile-icon")}
         <span>${escapeHtml(tab.label)}</span>
       </button>
     `;
   }).join("");
 
-  dom.mobileNav.querySelectorAll("[data-mobile-section]").forEach((button) => {
+  dom.mobileNav.querySelectorAll("[data-mobile-tab]").forEach((button) => {
     button.addEventListener("click", () => {
-      app.ui.activeSection = button.dataset.mobileSection || "dashboard";
+      const tabId = button.dataset.mobileTab || "";
+      const tab = MOBILE_TABS.find((entry) => entry.id === tabId);
+      if (!tab) return;
+      navigateToSection(tab.primarySection, {
+        preferredModes: tab.preferredModes,
+        fallbackSections: tab.fallbackSections
+      });
       renderAll();
     });
   });
@@ -2125,8 +2215,262 @@ function renderIcon(name, className = "mini-icon", label = "") {
   `;
 }
 
+function isOverdueDose(item) {
+  return String(item?.statusLabel || "").toLowerCase().includes("overdue");
+}
+
+function splitPendingDoseGroups(dueState) {
+  const overdue = [];
+  const dueNow = [];
+
+  for (const item of dueState.dueNow || []) {
+    if (isOverdueDose(item)) {
+      overdue.push(item);
+    } else {
+      dueNow.push(item);
+    }
+  }
+
+  return {
+    overdue,
+    dueNow,
+    upcoming: dueState.next || []
+  };
+}
+
+function matchesDoseSearch(item, query) {
+  const normalized = String(query || "").trim().toLowerCase();
+  if (!normalized) return true;
+  const haystack = `${item.medicationName || ""} ${item.time || ""} ${item.statusLabel || ""}`.toLowerCase();
+  return haystack.includes(normalized);
+}
+
+function getDashboardDoseItems(groups, filterKey) {
+  if (filterKey === "due_now") return groups.dueNow || [];
+  if (filterKey === "upcoming") return groups.upcoming || [];
+  if (filterKey === "all") return [...(groups.overdue || []), ...(groups.dueNow || []), ...(groups.upcoming || [])];
+  return groups.overdue || [];
+}
+
+function renderDashboardDoseCards(items, context, medications) {
+  const doseByMedicationId = new Map((medications || []).map((med) => [med.id, med.currentDose || "-"]));
+
+  return `
+    <div class="dose-card-list">
+      ${items.map((item) => {
+        const stateClass = isOverdueDose(item)
+          ? "is-overdue"
+          : String(item.statusLabel || "").toLowerCase().includes("due")
+            ? "is-due-now"
+            : "is-upcoming";
+        const isPending = app.ui.pendingDoseActions.has(item.occurrenceId);
+        return `
+          <details class="dose-card-item ${stateClass}" ${isOverdueDose(item) ? "open" : ""}>
+            <summary>
+              <div class="dose-card-main">
+                ${renderIcon("capsule", "mini-icon soft", "Medication dose")}
+                <div>
+                  <strong>${escapeHtml(item.medicationName)}</strong>
+                  <div class="subtle">${escapeHtml(doseByMedicationId.get(item.medicationId) || "-")}</div>
+                </div>
+              </div>
+              <div class="dose-card-time">${escapeHtml(item.time)}</div>
+            </summary>
+            <div class="dose-card-body">
+              <div class="dose-card-status">
+                <span class="status-chip ${escapeHtml(statusChipClass(item.statusLabel))}">${escapeHtml(item.statusLabel)}</span>
+              </div>
+              ${context.readOnly ? "" : `
+                <div class="inline-row dose-actions-primary">
+                  <button class="btn btn-secondary small ${isPending ? "is-loading" : ""}" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.TAKEN}" aria-label="Mark ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)} as taken" ${isPending ? "disabled" : ""}>${isPending ? "Saving" : "Taken"}</button>
+                  <button class="btn btn-secondary small ${isPending ? "is-loading" : ""}" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.SKIPPED}" aria-label="Mark ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)} as skipped" ${isPending ? "disabled" : ""}>${isPending ? "Saving" : "Skip"}</button>
+                  <button class="btn btn-ghost small" type="button" data-dose-snooze="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" aria-label="Snooze ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)}" ${isPending ? "disabled" : ""}>Snooze</button>
+                  <button class="btn btn-ghost small" type="button" data-dose-note="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-medication-name="${escapeHtml(item.medicationName)}" aria-label="Add note for ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)}">Note</button>
+                </div>
+              `}
+            </div>
+          </details>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderDashboardDoseQueue(dueState, context, medications) {
+  const groups = splitPendingDoseGroups(dueState);
+  const filterOptions = [
+    { key: "overdue", label: "Overdue", count: groups.overdue.length },
+    { key: "due_now", label: "Due now", count: groups.dueNow.length },
+    { key: "upcoming", label: "Upcoming", count: groups.upcoming.length },
+    { key: "all", label: "All", count: groups.overdue.length + groups.dueNow.length + groups.upcoming.length }
+  ];
+
+  if (!filterOptions.some((item) => item.key === app.ui.dashboardDoseFilter)) {
+    app.ui.dashboardDoseFilter = "all";
+  }
+  if (!["cards", "table"].includes(app.ui.dashboardDoseView)) {
+    app.ui.dashboardDoseView = "cards";
+  }
+
+  const filteredBase = getDashboardDoseItems(groups, app.ui.dashboardDoseFilter);
+  const filtered = filteredBase.filter((item) => matchesDoseSearch(item, app.ui.dashboardDoseSearch));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / DASHBOARD_DOSE_PAGE_SIZE));
+  const currentPage = Math.min(Math.max(1, Number(app.ui.dashboardDosePage || 1)), totalPages);
+  app.ui.dashboardDosePage = currentPage;
+  const start = (currentPage - 1) * DASHBOARD_DOSE_PAGE_SIZE;
+  const pagedItems = filtered.slice(start, start + DASHBOARD_DOSE_PAGE_SIZE);
+
+  const emptyMessage = app.ui.dashboardDoseFilter === "overdue"
+    ? "No overdue doses right now. Great work staying on track."
+    : "No doses match this filter right now.";
+
+  return `
+    <div class="dose-queue-controls">
+      <div class="chip-group">
+        ${filterOptions.map((filter) => `
+          <button type="button" class="chip ${app.ui.dashboardDoseFilter === filter.key ? "active" : ""}" data-dashboard-dose-filter="${filter.key}">
+            ${escapeHtml(filter.label)} (${filter.count})
+          </button>
+        `).join("")}
+      </div>
+      <div class="dose-queue-actions">
+        <input
+          type="search"
+          class="dose-search-input"
+          placeholder="Filter by medication or time"
+          value="${escapeHtml(app.ui.dashboardDoseSearch)}"
+          data-dashboard-dose-search="1"
+          aria-label="Filter today's doses"
+        >
+        <div class="chip-group">
+          <button type="button" class="chip ${app.ui.dashboardDoseView === "cards" ? "active" : ""}" data-dashboard-dose-view="cards">Cards</button>
+          <button type="button" class="chip ${app.ui.dashboardDoseView === "table" ? "active" : ""}" data-dashboard-dose-view="table">Table</button>
+        </div>
+      </div>
+    </div>
+    ${pagedItems.length
+      ? app.ui.dashboardDoseView === "table"
+        ? renderDoseTable(dueState, context, medications, pagedItems)
+        : renderDashboardDoseCards(pagedItems, context, medications)
+      : `<div class="empty">${escapeHtml(emptyMessage)}</div>`
+    }
+    ${filtered.length > DASHBOARD_DOSE_PAGE_SIZE ? `
+      <div class="dose-pagination">
+        <button class="btn btn-ghost small" type="button" data-dashboard-dose-page="-1" ${currentPage <= 1 ? "disabled" : ""}>Previous</button>
+        <span class="subtle">Page ${currentPage} of ${totalPages}</span>
+        <button class="btn btn-ghost small" type="button" data-dashboard-dose-page="1" ${currentPage >= totalPages ? "disabled" : ""}>Next</button>
+      </div>
+    ` : ""}
+  `;
+}
+
+function renderDashboardTrendPreview(data, recentChanges, context) {
+  const rangeDays = Number(app.ui.dashboardTrendRangeDays || 7) === 30 ? 30 : 7;
+  const sortedCheckins = (data.checkins || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+  const windowed = sortedCheckins.slice(-rangeDays);
+
+  if (!windowed.length) {
+    return `<div class="empty">No wellbeing check-ins yet.${context.readOnly ? "" : ` <button class="btn btn-secondary small" type="button" data-dashboard-checkin="1">Add check-in</button>`}</div>`;
+  }
+
+  if (app.ui.dashboardTrendView === "simple") {
+    const moodAvg = average(windowed.map((entry) => toNumber(entry.mood)));
+    const anxietyAvg = average(windowed.map((entry) => toNumber(entry.anxiety)));
+    const focusAvg = average(windowed.map((entry) => toNumber(entry.focus)));
+    const sleepAvg = average(windowed.map((entry) => toNumber(entry.sleepHours)));
+
+    return `
+      <div class="dashboard-trend-simple">
+        <div class="kpi-badge">Mood avg: ${Number.isFinite(moodAvg) ? roundNumber(moodAvg, 1) : "-"}</div>
+        <div class="kpi-badge">Anxiety avg: ${Number.isFinite(anxietyAvg) ? roundNumber(anxietyAvg, 1) : "-"}</div>
+        <div class="kpi-badge">Focus avg: ${Number.isFinite(focusAvg) ? roundNumber(focusAvg, 1) : "-"}</div>
+        <div class="kpi-badge">Sleep avg: ${Number.isFinite(sleepAvg) ? roundNumber(sleepAvg, 1) : "-"}h</div>
+      </div>
+    `;
+  }
+
+  const changeDates = (recentChanges || []).map((change) => change.date).slice(0, 10);
+  return renderLineChart(
+    [
+      {
+        label: "Mood",
+        color: CHART_COLORS.mood,
+        points: windowed.map((entry) => ({ date: entry.date, value: toNumber(entry.mood) }))
+      },
+      {
+        label: "Anxiety",
+        color: CHART_COLORS.anxiety,
+        points: windowed.map((entry) => ({ date: entry.date, value: toNumber(entry.anxiety) }))
+      },
+      {
+        label: "Focus",
+        color: CHART_COLORS.focus,
+        points: windowed.map((entry) => ({ date: entry.date, value: toNumber(entry.focus) }))
+      }
+    ],
+    { yMin: 0, yMax: 10, changeDates }
+  );
+}
+
+function dashboardGreetingLabel(context, profile) {
+  if (context.readOnly || !profile.personalizationEnabled) {
+    return "Today";
+  }
+  const hour = new Date().getHours();
+  const base = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  return profile.displayName ? `${base}, ${profile.displayName}` : base;
+}
+
+function computeCheckinStreak(checkins, todayKey) {
+  const recordedDates = new Set((checkins || []).map((entry) => String(entry?.date || "")).filter(Boolean));
+  let streak = 0;
+  let cursor = todayKey;
+  while (recordedDates.has(cursor)) {
+    streak += 1;
+    cursor = shiftDateKey(cursor, -1);
+  }
+  return streak;
+}
+
+function dashboardConsistencyMessage(data, dueState, todayKey, profile) {
+  if (!profile.personalizationEnabled) return "";
+  const streak = computeCheckinStreak(data.checkins, todayKey);
+  if (streak >= 3) {
+    return `You have logged ${streak} check-in days in a row.`;
+  }
+
+  const weeklyCheckins = (data.checkins || []).filter((entry) => dateDiffDays(entry.date, todayKey) <= 6).length;
+  if (weeklyCheckins >= 5) {
+    return `Strong consistency this week: ${weeklyCheckins} check-ins recorded.`;
+  }
+
+  if (dueState.counts.remaining === 0 && dueState.counts.taken > 0) {
+    return "Nice work completing your scheduled doses today.";
+  }
+
+  return "Keep entries short and consistent for cleaner weekly trends.";
+}
+
 function renderDashboard(root, data, context) {
   pruneExpiredDoseSnoozes();
+  if (!["simple", "visual"].includes(app.ui.dashboardTrendView)) {
+    app.ui.dashboardTrendView = "simple";
+  }
+  if (!["7", "30"].includes(app.ui.dashboardTrendRangeDays)) {
+    app.ui.dashboardTrendRangeDays = "7";
+  }
+  if (!app.ui.dashboardEdits || typeof app.ui.dashboardEdits !== "object") {
+    app.ui.dashboardEdits = { summary: false, alerts: false, changes: false };
+  }
+
+  const ownerEditable = context.type === "owner" && !context.readOnly;
+  if (!ownerEditable) {
+    app.ui.dashboardEdits = { summary: false, alerts: false, changes: false };
+  }
+
+  const dashboardConfig = normalizeDashboardConfig(app.ownerData.dashboardConfig || data.dashboardConfig);
+  const summaryNote = dashboardConfig.summaryNote;
+
   const resolvedMeds = resolveCurrentMedications(data);
   const activeMeds = resolvedMeds.filter((med) => med.isCurrent);
   const currentMedsLastUpdated = resolveCurrentMedsLastUpdatedDate(data);
@@ -2145,16 +2489,30 @@ function renderDashboard(root, data, context) {
   const pendingItems = [...dueState.dueNow, ...dueState.next].sort((left, right) => left.time.localeCompare(right.time));
   const nextDose = pendingItems[0] || null;
   const overdueCount = dueState.dueNow.filter((item) => String(item.statusLabel).toLowerCase().includes("overdue")).length;
-  const dashboardAlerts = alerts.slice(0, 2);
+  const dashboardAlerts = alerts.slice(0, 6);
   const topChanges = recentChanges.slice(0, 6);
+  const profile = normalizeOwnerProfile(app.ownerData.profile);
+  const greetingLabel = dashboardGreetingLabel(context, profile);
+  const consistencyMessage = dashboardConsistencyMessage(data, dueState, today, profile);
+  const checkinStreak = computeCheckinStreak(data.checkins, today);
+  const nextDueLabel = nextDose
+    ? `Next dose: ${nextDose.medicationName} at ${nextDose.time}`
+    : "No scheduled doses remaining for today.";
+  const checkinSleepHours = toNumber(todayCheckin?.sleepHours);
+  const undoActive = Boolean(app.lastDoseUndo && Number(app.lastDoseUndo.expiresAt) > Date.now());
 
   root.innerHTML = `
-    <article class="card card-accent card-accent-ocean today-hero">
-      <div class="today-hero-head">
-        <div>
-          <div class="label">Today</div>
-          <h3>${escapeHtml(niceDate(today))}</h3>
-          <div class="subtle" style="margin-top:6px;">Current meds last updated: ${escapeHtml(niceDate(currentMedsLastUpdated))}</div>
+    <div class="grid dashboard-flow">
+      <article class="card card-accent card-accent-sky card-doses dashboard-priority-card">
+        <div class="card-head-row">
+          <div>
+            <h3>Today’s Doses</h3>
+            <div class="subtle">${escapeHtml(greetingLabel)} · ${escapeHtml(niceDate(today))}</div>
+          </div>
+          <div class="dashboard-readonly-wrap">
+            ${context.readOnly ? `<span class="readonly-badge">Read-only</span>` : ""}
+            <span class="subtle">Updated ${escapeHtml(niceDate(currentMedsLastUpdated))}</span>
+          </div>
         </div>
         <div class="kpi-strip">
           <div class="kpi-box"><span>Taken</span><strong>${dueState.counts.taken}</strong></div>
@@ -2162,81 +2520,358 @@ function renderDashboard(root, data, context) {
           <div class="kpi-box"><span>Missed</span><strong>${dueState.counts.missed}</strong></div>
           <div class="kpi-box"><span>Overdue</span><strong>${overdueCount}</strong></div>
         </div>
-      </div>
-      <div class="today-summary-line">
-        <div class="subtle">${nextDose ? `Next dose: <strong>${escapeHtml(nextDose.medicationName)}</strong> at ${escapeHtml(nextDose.time)}` : "No scheduled doses remaining for today."}</div>
-        ${context.readOnly ? "" : `<div class="row"><button class="btn btn-secondary small" type="button" data-dashboard-checkin="1">${todayCheckin ? "Edit check-in" : "Quick check-in"}</button></div>`}
-      </div>
-      <div class="icon-dock-wrap">
-        <div class="label">Quick actions</div>
-        <div class="icon-dock" role="toolbar" aria-label="Quick actions">
-          ${context.readOnly ? "" : `
-            <button class="icon-chip icon-chip-btn" type="button" data-icon-action="reminders" aria-label="Open reminder settings">
-              ${renderIcon("bell", "mini-icon accent")}
-              <span class="icon-chip-label">Reminders</span>
-            </button>
-          `}
-          <button class="icon-chip icon-chip-btn" type="button" data-icon-action="trends" aria-label="Open trend charts">
-            ${renderIcon("pulse", "mini-icon accent")}
-            <span class="icon-chip-label">Trends</span>
-          </button>
-          ${context.readOnly ? "" : `
-            <button class="icon-chip icon-chip-btn" type="button" data-icon-action="change" aria-label="Log medication change">
-              ${renderIcon("syringe", "mini-icon accent")}
-              <span class="icon-chip-label">Log change</span>
-            </button>
-          `}
-          <button class="icon-chip icon-chip-btn" type="button" data-icon-action="medications" aria-label="Open medications list">
-            ${renderIcon("capsule", "mini-icon accent")}
-            <span class="icon-chip-label">Meds</span>
-          </button>
+        <div class="today-summary-line">
+          <div class="today-summary-copy">
+            <div class="subtle">${escapeHtml(nextDueLabel)}</div>
+            ${profile.personalizationEnabled ? `<div class="subtle">${escapeHtml(consistencyMessage)} ${checkinStreak ? `(${checkinStreak}d streak)` : ""}</div>` : ""}
+          </div>
+          ${ownerEditable ? `
+            <div class="inline-row">
+              <button class="btn btn-secondary small" type="button" data-dashboard-checkin="1">${todayCheckin ? "Edit check-in" : "Quick check-in"}</button>
+              <button class="btn btn-ghost small" type="button" data-dashboard-new-change="1">Log change</button>
+              <button class="btn btn-ghost small" type="button" data-dashboard-add-med="1">Add medication</button>
+            </div>
+          ` : ""}
+        </div>
+        ${ownerEditable && undoActive ? `
+          <div class="dose-undo-banner">
+            <span>Dose marked ${escapeHtml(app.lastDoseUndo.status)}.</span>
+            <button class="btn btn-ghost small" type="button" data-dose-undo="1">Undo</button>
+          </div>
+        ` : ""}
+        <div class="subtle" style="margin: 8px 0 10px;">Actions update immediately. Use filters to focus overdue doses.</div>
+        ${renderDashboardDoseQueue(dueState, context, activeMeds)}
+      </article>
+
+      <article class="card card-accent card-accent-teal card-quick-checkin">
+        <div class="card-head-row">
+          <div>
+            <h3>Quick check-in</h3>
+            <div class="subtle">${todayCheckin ? "Today’s check-in completed." : "No check-in recorded yet today."}</div>
+          </div>
+          ${ownerEditable ? `<button class="btn btn-secondary small" type="button" data-dashboard-checkin="1">${todayCheckin ? "Update" : "Start"}</button>` : ""}
+        </div>
+        ${todayCheckin ? `
+          <div class="today-snapshot-grid compact-kpi-grid">
+            <article class="snapshot-tile">
+              <div class="snapshot-tile-head">${renderIcon("heart", "mini-icon soft")}<span>Mood</span></div>
+              <strong class="snapshot-value">${todayCheckin.mood}/10</strong>
+            </article>
+            <article class="snapshot-tile">
+              <div class="snapshot-tile-head">${renderIcon("pulse", "mini-icon soft")}<span>Anxiety</span></div>
+              <strong class="snapshot-value">${todayCheckin.anxiety}/10</strong>
+            </article>
+            <article class="snapshot-tile">
+              <div class="snapshot-tile-head">${renderIcon("chart", "mini-icon soft")}<span>Focus</span></div>
+              <strong class="snapshot-value">${todayCheckin.focus}/10</strong>
+            </article>
+            <article class="snapshot-tile">
+              <div class="snapshot-tile-head">${renderIcon("clock", "mini-icon soft")}<span>Sleep</span></div>
+              <strong class="snapshot-value">${Number.isFinite(checkinSleepHours) ? `${roundNumber(checkinSleepHours, 1)}h` : "-"}</strong>
+            </article>
+          </div>
+        ` : `<div class="empty">Complete your quick check-in to generate daily trend signals.</div>`}
+        <div class="dashboard-summary-note">
+          <div class="card-head-row">
+            <div class="label">Summary note</div>
+            ${ownerEditable ? `<button class="btn btn-ghost small" type="button" data-dashboard-edit="summary">${app.ui.dashboardEdits.summary ? "Editing" : "Edit"}</button>` : ""}
+          </div>
+          ${ownerEditable && app.ui.dashboardEdits.summary ? `
+            <form id="dashboardSummaryForm" class="edit-inline-form">
+              <label for="dashboardSummaryNote">Owner summary note</label>
+              <textarea id="dashboardSummaryNote" name="summaryNote" maxlength="420" placeholder="Add a short summary for this dashboard view.">${escapeHtml(summaryNote)}</textarea>
+              <div class="inline-row">
+                <button class="btn btn-primary small" type="submit">Save</button>
+                <button class="btn btn-ghost small" type="button" data-dashboard-edit-cancel="summary">Cancel</button>
+              </div>
+            </form>
+          ` : `<div class="subtle">${summaryNote ? escapeHtml(summaryNote) : "No summary note set."}</div>`}
+        </div>
+      </article>
+
+      <article class="card card-accent card-accent-rose card-alerts">
+        <div class="card-head-row">
+          <div>
+            <h3>Alerts / monitoring reminders</h3>
+            <div class="subtle">Prioritised alerts from notes, recent changes, and custom reminders.</div>
+          </div>
+          ${ownerEditable ? `<button class="btn btn-ghost small" type="button" data-dashboard-edit="alerts">${app.ui.dashboardEdits.alerts ? "Editing" : "Edit"}</button>` : ""}
+        </div>
+        ${ownerEditable && app.ui.dashboardEdits.alerts ? `
+          <form id="dashboardAlertsForm" class="edit-inline-form">
+            <label for="dashboardMonitoringReminders">Monitoring reminders (one per line)</label>
+            <textarea id="dashboardMonitoringReminders" name="monitoringReminders" placeholder="Example: Check BP before evening clonidine dose.">${escapeHtml(dashboardConfig.monitoringReminders.join("\n"))}</textarea>
+            <div class="inline-row">
+              <button class="btn btn-primary small" type="submit">Save</button>
+              <button class="btn btn-ghost small" type="button" data-dashboard-edit-cancel="alerts">Cancel</button>
+            </div>
+          </form>
+        ` : (
+          dashboardAlerts.length
+            ? `<ul class="alert-list">${dashboardAlerts.map((item) => `<li class="alert-list-item">${renderIcon("bell", "mini-icon soft", "Alert")}<span>${escapeHtml(item)}</span></li>`).join("")}</ul>`
+            : `<div class="empty">No active monitoring alerts right now.</div>`
+        )}
+      </article>
+
+      <article class="card card-accent card-accent-violet card-changes">
+        <div class="card-head-row">
+          <div>
+            <h3>Recent medication changes (14 days)</h3>
+            <div class="subtle">Timeline shown in reverse chronological order.</div>
+          </div>
+          ${ownerEditable ? `<button class="btn btn-ghost small" type="button" data-dashboard-edit="changes">${app.ui.dashboardEdits.changes ? "Editing" : "Edit"}</button>` : ""}
+        </div>
+        ${ownerEditable && app.ui.dashboardEdits.changes ? `
+          ${topChanges.length ? `
+            <form id="dashboardChangesForm" class="edit-inline-form">
+              ${topChanges.map((entry) => `
+                <fieldset class="inline-edit-change">
+                  <legend>${escapeHtml(niceDate(entry.date))} · ${escapeHtml(entry.medicationName || "Medication")}</legend>
+                  <div class="field-grid dashboard-edit-grid">
+                    <div><label>Date</label><input name="date__${entry.id}" type="date" value="${escapeHtml(entry.date)}" required></div>
+                    <div><label>Medication</label><input name="medicationName__${entry.id}" value="${escapeHtml(entry.medicationName || "")}" required></div>
+                    <div><label>Old dose</label><input name="oldDose__${entry.id}" value="${escapeHtml(entry.oldDose || "")}" required></div>
+                    <div><label>New dose</label><input name="newDose__${entry.id}" value="${escapeHtml(entry.newDose || "")}" required></div>
+                    <div style="grid-column: 1 / -1;"><label>Reason</label><textarea name="reason__${entry.id}" required>${escapeHtml(entry.reason || "")}</textarea></div>
+                  </div>
+                </fieldset>
+              `).join("")}
+              <div class="inline-row">
+                <button class="btn btn-primary small" type="submit">Save</button>
+                <button class="btn btn-ghost small" type="button" data-dashboard-edit-cancel="changes">Cancel</button>
+              </div>
+            </form>
+          ` : `<div class="empty">No medication changes in the last 14 days.</div>`}
+        ` : (
+          topChanges.length
+            ? `<ul class="timeline-list">${topChanges.map((entry) => `<li><strong>${escapeHtml(niceDate(entry.date))}</strong> · ${escapeHtml(entry.medicationName || "Medication")}: ${escapeHtml(entry.oldDose || "-")} → ${escapeHtml(entry.newDose || "-")}<br><span class="subtle">${escapeHtml(entry.reason || "")}</span></li>`).join("")}</ul>`
+            : `<div class="empty">No medication changes logged in the last 14 days.${ownerEditable ? ` <button class="btn btn-secondary small" type="button" data-dashboard-new-change="1">Log a change</button>` : ""}</div>`
+        )}
+      </article>
+
+      <article class="card card-accent card-accent-sky card-medication-details">
+        <div class="card-head-row">
+          <div>
+            <h3>Medication details</h3>
+            <div class="subtle">Current medications, doses, and schedules.</div>
+          </div>
+          <button class="btn btn-ghost small" type="button" data-dashboard-open-meds="1">Open full medications</button>
+        </div>
+        ${activeMeds.length ? `
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Medication</th>
+                  <th>Dose</th>
+                  <th>Schedule</th>
+                  <th>Route</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${activeMeds.map((med) => `
+                  <tr>
+                    <td><span class="table-wrap-text">${escapeHtml(med.name)}</span></td>
+                    <td><span class="table-wrap-text">${escapeHtml(med.currentDose || "-")}</span></td>
+                    <td><span class="table-wrap-text">${escapeHtml(formatSchedule(med))}</span></td>
+                    <td><span class="table-wrap-text">${escapeHtml(med.route || "-")}</span></td>
+                    <td><button class="btn btn-secondary small" type="button" data-med-detail="${escapeHtml(med.id)}">View</button></td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        ` : `<div class="empty">No active medications yet.${ownerEditable ? ` <button class="btn btn-secondary small" type="button" data-dashboard-add-med="1">Add medication</button>` : ""}</div>`}
+      </article>
+
+      <article class="card card-accent card-accent-ocean dashboard-trend-preview">
+      <div class="dashboard-trend-head">
+        <div>
+          <h3>Wellbeing trends preview</h3>
+          <div class="subtle">Use simple stats or visual chart view for quick pattern spotting.</div>
+        </div>
+        <div class="dashboard-trend-controls">
+          <div class="chip-group">
+            <button type="button" class="chip ${app.ui.dashboardTrendView === "simple" ? "active" : ""}" data-dashboard-trend-view="simple">Simple</button>
+            <button type="button" class="chip ${app.ui.dashboardTrendView === "visual" ? "active" : ""}" data-dashboard-trend-view="visual">Visual</button>
+          </div>
+          <div class="chip-group">
+            <button type="button" class="chip ${app.ui.dashboardTrendRangeDays === "7" ? "active" : ""}" data-dashboard-trend-range="7">7d</button>
+            <button type="button" class="chip ${app.ui.dashboardTrendRangeDays === "30" ? "active" : ""}" data-dashboard-trend-range="30">30d</button>
+          </div>
         </div>
       </div>
+      ${renderDashboardTrendPreview(data, recentChanges, context)}
+      <div class="inline-row" style="margin-top:10px;">
+        <button class="btn btn-ghost small" type="button" data-dashboard-open-trends="1">Open full trends</button>
+      </div>
     </article>
-
-    <div class="grid dashboard-grid">
-      <article class="card card-accent card-accent-sky card-doses">
-        <h3>Today’s Doses</h3>
-        <div class="subtle" style="margin: 6px 0 10px;">Pending doses only.</div>
-        ${renderDoseTable(dueState, context, activeMeds)}
-      </article>
-
-      <article class="card card-accent card-accent-teal card-snapshot">
-        <h3>Today snapshot</h3>
-        <ul class="timeline-list compact-list today-snapshot-list">
-          <li class="list-with-icon today-snapshot-item">${renderIcon("clock", "mini-icon soft")}<span><strong>Check-in:</strong> ${todayCheckin ? `Completed · Mood ${todayCheckin.mood}/10 · Anxiety ${todayCheckin.anxiety}/10` : "Not completed yet"}</span></li>
-          <li class="list-with-icon today-snapshot-item">${renderIcon("capsule", "mini-icon soft")}<span><strong>Active medications:</strong> ${activeMeds.length}</span></li>
-          <li class="list-with-icon today-snapshot-item">${renderIcon("syringe", "mini-icon soft")}<span><strong>Recent changes:</strong> ${recentChanges.length} in the last 14 days</span></li>
-          <li class="list-with-icon today-snapshot-item">${renderIcon("pulse", "mini-icon soft")}<span><strong>Trend:</strong> Mood ${trendMood.arrow} · Anxiety ${trendAnxiety.arrow} · Focus ${trendFocus.arrow}</span></li>
-        </ul>
-        ${dashboardAlerts.length ? `
-          <div class="stack-tight">
-            <div class="label">Monitoring alerts</div>
-            <ul class="timeline-list compact-list">
-              ${dashboardAlerts.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
-            </ul>
-          </div>
-        ` : `<div class="subtle">No active monitoring alerts.</div>`}
-        ${context.readOnly ? "" : `<div class="row"><button class="btn btn-ghost small" type="button" data-dashboard-open-meds="1">Open medications</button></div>`}
-      </article>
-    </div>
-
-    <div class="grid dashboard-grid">
-      <article class="card card-accent card-accent-violet">
-        <h3>Recent medication changes (14 days)</h3>
-        ${topChanges.length ? `
-          <ul class="timeline-list">
-            ${topChanges.map((entry) => `<li><strong>${escapeHtml(niceDate(entry.date))}</strong> · ${escapeHtml(entry.medicationName || "Medication")}: ${escapeHtml(entry.oldDose || "-")} → ${escapeHtml(entry.newDose || "-")}</li>`).join("")}
-          </ul>
-        ` : `<div class="empty">No medication changes logged in the last 14 days. ${context.readOnly ? "" : `<button class="btn btn-secondary small" type="button" data-dashboard-new-change="1">Log a change</button>`}</div>`}
-      </article>
-
-      <article class="card card-accent card-accent-rose">
-        <h3>Shared links panel</h3>
-        ${renderSharePanelPreview(context)}
-      </article>
-    </div>
   `;
+
+  root.querySelectorAll("[data-dashboard-edit]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (!ownerEditable) return;
+      const section = button.dataset.dashboardEdit || "";
+      if (!["summary", "alerts", "changes"].includes(section)) return;
+      app.ui.dashboardEdits = { ...app.ui.dashboardEdits, [section]: true };
+      renderAll();
+    });
+  });
+
+  root.querySelectorAll("[data-dashboard-edit-cancel]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const section = button.dataset.dashboardEditCancel || "";
+      if (!["summary", "alerts", "changes"].includes(section)) return;
+      app.ui.dashboardEdits = { ...app.ui.dashboardEdits, [section]: false };
+      renderAll();
+    });
+  });
+
+  root.querySelector("#dashboardSummaryForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!ownerEditable) return;
+    const form = event.currentTarget;
+    const summaryValue = String(form.elements.summaryNote?.value || "").trim();
+    if (summaryValue.length > 420) {
+      setStatus("Summary note is too long. Keep it under 420 characters.", "error");
+      return;
+    }
+    app.ownerData.dashboardConfig = normalizeDashboardConfig({
+      ...(app.ownerData.dashboardConfig || {}),
+      summaryNote: summaryValue
+    });
+    saveOwnerData(app.ownerData);
+    app.ui.dashboardEdits = { ...app.ui.dashboardEdits, summary: false };
+    setStatus("Summary note updated.");
+    renderAll();
+  });
+
+  root.querySelector("#dashboardAlertsForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!ownerEditable) return;
+    const form = event.currentTarget;
+    const lines = String(form.elements.monitoringReminders?.value || "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (lines.some((line) => line.length > 140)) {
+      setStatus("Each monitoring reminder should be 140 characters or fewer.", "error");
+      return;
+    }
+    app.ownerData.dashboardConfig = normalizeDashboardConfig({
+      ...(app.ownerData.dashboardConfig || {}),
+      monitoringReminders: lines
+    });
+    saveOwnerData(app.ownerData);
+    app.ui.dashboardEdits = { ...app.ui.dashboardEdits, alerts: false };
+    setStatus("Monitoring reminders updated.");
+    renderAll();
+  });
+
+  root.querySelector("#dashboardChangesForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!ownerEditable) return;
+    const form = event.currentTarget;
+    const updates = new Map();
+
+    for (const entry of topChanges) {
+      const date = String(form.elements[`date__${entry.id}`]?.value || "").trim();
+      const medicationName = String(form.elements[`medicationName__${entry.id}`]?.value || "").trim();
+      const oldDose = String(form.elements[`oldDose__${entry.id}`]?.value || "").trim();
+      const newDose = String(form.elements[`newDose__${entry.id}`]?.value || "").trim();
+      const reason = String(form.elements[`reason__${entry.id}`]?.value || "").trim();
+
+      if (!date || !medicationName || !reason) {
+        setStatus("Recent changes edit failed: date, medication, and reason are required.", "error");
+        return;
+      }
+      if (!doseLooksValid(oldDose) || !doseLooksValid(newDose)) {
+        setStatus(`Dose format is invalid for ${medicationName}. Use value + unit (e.g. 40 mg).`, "error");
+        return;
+      }
+
+      updates.set(entry.id, {
+        ...entry,
+        date,
+        medicationName,
+        oldDose,
+        newDose,
+        reason
+      });
+    }
+
+    app.ownerData.changes = app.ownerData.changes.map((entry) => updates.get(entry.id) || entry);
+    saveOwnerData(app.ownerData);
+    app.ui.dashboardEdits = { ...app.ui.dashboardEdits, changes: false };
+    setStatus("Recent medication changes updated.");
+    renderAll();
+  });
+
+  root.querySelectorAll("[data-dashboard-dose-filter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      app.ui.dashboardDoseFilter = button.dataset.dashboardDoseFilter || "all";
+      app.ui.dashboardDosePage = 1;
+      renderAll();
+    });
+  });
+
+  root.querySelectorAll("[data-dashboard-dose-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      app.ui.dashboardDoseView = button.dataset.dashboardDoseView === "table" ? "table" : "cards";
+      renderAll();
+    });
+  });
+
+  root.querySelectorAll("[data-dashboard-dose-page]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const direction = Number(button.dataset.dashboardDosePage || 0);
+      if (!Number.isFinite(direction) || direction === 0) return;
+      app.ui.dashboardDosePage = Math.max(1, Number(app.ui.dashboardDosePage || 1) + direction);
+      renderAll();
+    });
+  });
+
+  root.querySelectorAll("[data-dashboard-dose-search]").forEach((input) => {
+    input.addEventListener("input", () => {
+      app.ui.dashboardDoseSearch = String(input.value || "");
+      app.ui.dashboardDosePage = 1;
+      renderAll();
+    });
+  });
+
+  root.querySelectorAll("[data-dashboard-trend-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      app.ui.dashboardTrendView = button.dataset.dashboardTrendView === "visual" ? "visual" : "simple";
+      renderAll();
+    });
+  });
+
+  root.querySelectorAll("[data-dashboard-trend-range]").forEach((button) => {
+    button.addEventListener("click", () => {
+      app.ui.dashboardTrendRangeDays = button.dataset.dashboardTrendRange === "30" ? "30" : "7";
+      renderAll();
+    });
+  });
+
+  root.querySelectorAll("[data-dashboard-open-trends]").forEach((button) => {
+    button.addEventListener("click", () => {
+      navigateToSection("timeline", {
+        preferredModes: ["clinical", "personal"],
+        fallbackSections: ["changes"]
+      });
+      renderAll();
+    });
+  });
+
+  root.querySelectorAll("[data-dashboard-add-med]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (context.readOnly) return;
+      app.ui.activeSection = "entry";
+      app.ui.entryWorkflow = "medication";
+      renderAll();
+    });
+  });
 
   root.querySelectorAll("[data-dose-action]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -2261,6 +2896,13 @@ function renderDashboard(root, data, context) {
       const occurrenceId = button.dataset.doseOccurrenceId || "";
       const medicationName = button.dataset.medicationName || "";
       handleDoseNote(occurrenceId, medicationName);
+    });
+  });
+
+  root.querySelectorAll("[data-dose-undo]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (context.readOnly) return;
+      handleDoseUndo();
     });
   });
 
@@ -2290,41 +2932,20 @@ function renderDashboard(root, data, context) {
     });
   });
 
-  root.querySelectorAll("[data-icon-action]").forEach((button) => {
+  root.querySelectorAll("[data-med-detail]").forEach((button) => {
     button.addEventListener("click", () => {
-      const action = button.dataset.iconAction || "";
-      if (action === "medications") {
-        navigateToSection("medications", {
-          preferredModes: ["daily", "clinical", "personal"],
-          fallbackSections: ["dashboard"]
-        });
-      } else if (action === "trends") {
-        navigateToSection("timeline", {
-          preferredModes: ["clinical", "personal"],
-          fallbackSections: ["changes"]
-        });
-      } else if (action === "reminders") {
-        if (context.readOnly) return;
-        navigateToSection("sharing", {
-          preferredModes: ["clinical", "personal"],
-          fallbackSections: ["exports"]
-        });
-      } else if (action === "change") {
-        if (context.readOnly) return;
-        navigateToSection("entry", {
-          preferredModes: ["daily", "clinical", "personal"],
-          fallbackSections: ["dashboard"]
-        });
-        app.ui.entryWorkflow = "change";
-      }
-      renderAll();
+      const medId = button.dataset.medDetail || "";
+      if (!medId) return;
+      const medication = app.ownerData.medications.find((entry) => entry.id === medId) || data.medications.find((entry) => entry.id === medId);
+      if (!medication) return;
+      openMedicationModal(medId, context);
     });
   });
 }
 
-function renderDoseTable(dueState, context, medications) {
+function renderDoseTable(dueState, context, medications, itemsOverride = null) {
   const doseByMedicationId = new Map((medications || []).map((med) => [med.id, med.currentDose || "-"]));
-  const items = [...dueState.dueNow, ...dueState.next];
+  const items = Array.isArray(itemsOverride) ? itemsOverride : [...dueState.dueNow, ...dueState.next];
   if (!items.length) {
     return `
       <div class="empty">
@@ -2352,19 +2973,19 @@ function renderDoseTable(dueState, context, medications) {
               <td>
                 <div class="dose-med-cell">
                   ${renderIcon("capsule", "mini-icon soft")}
-                  <span>${escapeHtml(item.medicationName)}</span>
+                  <span class="table-wrap-text">${escapeHtml(item.medicationName)}</span>
                 </div>
               </td>
-              <td>${escapeHtml(doseByMedicationId.get(item.medicationId) || "-")}</td>
+              <td><span class="table-wrap-text">${escapeHtml(doseByMedicationId.get(item.medicationId) || "-")}</span></td>
               <td>${escapeHtml(item.time)}</td>
               <td><span class="status-chip ${escapeHtml(statusChipClass(item.statusLabel))}">${escapeHtml(item.statusLabel)}</span></td>
-              ${context.readOnly ? "" : `<td>
-                <div class="row dose-actions-primary">
+              ${context.readOnly ? "" : `<td class="dose-actions-cell">
+                <div class="inline-row dose-actions-primary">
                   <button class="btn btn-secondary small ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "is-loading" : ""}" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.TAKEN}" aria-label="Mark ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)} as taken" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>${app.ui.pendingDoseActions.has(item.occurrenceId) ? "Saving" : "Taken"}</button>
                   <button class="btn btn-secondary small ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "is-loading" : ""}" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.SKIPPED}" aria-label="Mark ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)} as skipped" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>${app.ui.pendingDoseActions.has(item.occurrenceId) ? "Saving" : "Skip"}</button>
                   <details class="dose-actions-more">
                     <summary>More</summary>
-                    <div class="row">
+                    <div class="inline-row">
                       <button class="btn btn-ghost small" type="button" data-dose-snooze="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" aria-label="Snooze ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)}" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>Snooze</button>
                       <button class="btn btn-ghost small" type="button" data-dose-note="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-medication-name="${escapeHtml(item.medicationName)}" aria-label="Add note for ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)}">Note</button>
                     </div>
@@ -2577,7 +3198,7 @@ function openMedicationModal(medicationId, context) {
     </div>
 
     ${editable ? `
-      <div class="row" style="margin-top: 12px;">
+      <div class="inline-row" style="margin-top: 12px;">
         <button class="btn btn-primary" type="button" id="saveMedicationModal">Save medication detail</button>
       </div>
     ` : ""}
@@ -2746,7 +3367,7 @@ function renderCheckins(root, data, context) {
     <div class="card">
       <h3>Today’s check-in summary</h3>
       ${todayCheckin ? `
-        <div class="row">
+        <div class="inline-row">
           <span class="kpi-badge">Mood ${todayCheckin.mood}/10</span>
           <span class="kpi-badge">Anxiety ${todayCheckin.anxiety}/10</span>
           <span class="kpi-badge">Focus ${todayCheckin.focus}/10</span>
@@ -3196,7 +3817,8 @@ function renderWorkflowForm(data) {
         <div class="field-grid">
           <div>
             <label>Medication name</label>
-            <input name="name" list="commonMedicationNames" value="${escapeHtml(draft.name || "")}" required>
+            <input name="name" list="commonMedicationNames" value="${escapeHtml(draft.name || "")}" placeholder="Start typing medication name" required>
+            <p class="helper-text">Autocomplete shows names already used in your tracker.</p>
           </div>
           <div>
             <label>Generic name</label>
@@ -3209,6 +3831,7 @@ function renderWorkflowForm(data) {
           <div>
             <label>Current dose</label>
             <input name="currentDose" placeholder="e.g. 40 mg" value="${escapeHtml(draft.currentDose || "")}" required>
+            <p class="helper-text">Include number and unit, for example 100 mg.</p>
           </div>
           <div>
             <label>Route</label>
@@ -3248,8 +3871,8 @@ function renderWorkflowForm(data) {
             <textarea name="monitor">${escapeHtml(draft.monitor || "")}</textarea>
           </div>
         </div>
-        <div class="row" style="margin-top:10px;">
-          <button class="btn btn-primary" type="submit">Add medication</button>
+        <div class="inline-row" style="margin-top:10px;">
+          <button class="btn btn-primary btn-large" type="submit">Add medication</button>
           <button class="btn btn-secondary" type="button" data-reset-draft="medication">Clear draft</button>
         </div>
         <p class="safety-footnote">MOA and interpretation text is informational. Discuss with prescriber.</p>
@@ -3270,6 +3893,7 @@ function renderWorkflowForm(data) {
           <div>
             <label>Medication</label>
             <input name="medicationName" list="commonMedicationNames" value="${escapeHtml(draft.medicationName || "")}" required>
+            <p class="helper-text">Pick or type the medication name exactly.</p>
           </div>
           <div>
             <label>Old dose</label>
@@ -3278,6 +3902,7 @@ function renderWorkflowForm(data) {
           <div>
             <label>New dose</label>
             <input name="newDose" value="${escapeHtml(draft.newDose || "")}" required>
+            <p class="helper-text">Example format: 40 mg daily.</p>
           </div>
           <div style="grid-column: 1 / -1;">
             <label>Reason</label>
@@ -3296,9 +3921,9 @@ function renderWorkflowForm(data) {
             <div style="grid-column: 1 / -1;"><label>Uncertainty note</label><textarea name="uncertainty">${escapeHtml(draft.uncertainty || "")}</textarea></div>
           </div>
         </div>
-        <div class="row" style="margin-top:10px;">
+        <div class="inline-row" style="margin-top:10px;">
           <button class="btn btn-secondary" type="button" id="fillInterpretationTemplate">Apply template</button>
-          <button class="btn btn-primary" type="submit">Log medication change</button>
+          <button class="btn btn-primary btn-large" type="submit">Log medication change</button>
           <button class="btn btn-secondary" type="button" data-reset-draft="change">Clear draft</button>
         </div>
         <p class="safety-footnote">Interpretation language uses probabilities only and does not replace prescriber advice.</p>
@@ -3369,8 +3994,8 @@ function renderWorkflowForm(data) {
             </label>
           </div>
         </div>
-        <div class="row" style="margin-top:10px;">
-          <button class="btn btn-primary" type="submit">Log note</button>
+        <div class="inline-row" style="margin-top:10px;">
+          <button class="btn btn-primary btn-large" type="submit">Log note</button>
           <button class="btn btn-secondary" type="button" data-reset-draft="note">Clear draft</button>
         </div>
       </form>
@@ -3414,8 +4039,8 @@ function renderWorkflowForm(data) {
         <div><label>HR (optional)</label><input name="hr" value="${escapeHtml(draft.hr || "")}"></div>
       </div>
 
-      <div class="row" style="margin-top:10px;">
-        <button class="btn btn-primary" type="submit">Save daily check-in</button>
+      <div class="inline-row" style="margin-top:10px;">
+        <button class="btn btn-primary btn-large" type="submit">Save daily check-in</button>
         <button class="btn btn-secondary" type="button" data-reset-draft="checkin">Clear draft</button>
       </div>
     </form>
@@ -3706,6 +4331,7 @@ function renderSharing(root, _data, context) {
   const today = getLocalDateKey(new Date());
   const defaultExpiry = draftShare.expiresAt || shiftDateKey(today, 30);
   const reminderSettings = normalizeReminderSettings(app.ownerData.reminderSettings);
+  const ownerProfile = normalizeOwnerProfile(app.ownerData.profile);
   const syncStatus = app.sync.status === "connected"
     ? `Connected${app.sync.lastSyncedAt ? ` · last sync ${niceDateTime(app.sync.lastSyncedAt)}` : ""}`
     : app.sync.status === "syncing"
@@ -3720,7 +4346,26 @@ function renderSharing(root, _data, context) {
 
   root.innerHTML = `
     <div class="card">
-      <h3>Cloud sync + reminders</h3>
+      <h3>Settings, sync + reminders</h3>
+      <div class="field-grid">
+        <div>
+          <label for="ownerDisplayName">Display name (optional)</label>
+          <input id="ownerDisplayName" value="${escapeHtml(ownerProfile.displayName)}" placeholder="How you want the greeting to appear">
+          <p class="helper-text">Used for dashboard greeting only on this device.</p>
+        </div>
+        <div>
+          <label class="check-item">
+            <input type="checkbox" id="personalizationEnabled" ${ownerProfile.personalizationEnabled ? "checked" : ""}>
+            <span>Enable personalized greeting and consistency feedback</span>
+          </label>
+        </div>
+      </div>
+      <div class="inline-row" style="margin-top:10px;">
+        <button class="btn btn-secondary" type="button" id="saveProfileSettingsButton">Save personalization</button>
+      </div>
+
+      <hr class="soft">
+
       <div class="field-grid">
         <div>
           <label>Enable cloud sync</label>
@@ -3747,7 +4392,7 @@ function renderSharing(root, _data, context) {
           <input id="syncOwnerKey" type="password" value="${escapeHtml(app.syncConfig.ownerKey || "")}" placeholder="Owner key for write access" ${syncDisabledAttr}>
         </div>
       </div>
-      <div class="row" style="margin-top:10px;">
+      <div class="inline-row" style="margin-top:10px;">
         <button class="btn btn-secondary" type="button" id="saveSyncConfigButton" ${syncDisabledAttr}>Save sync settings</button>
         <button class="btn btn-ghost" type="button" id="syncNowButton" ${syncDisabledAttr}>Sync now</button>
       </div>
@@ -3778,7 +4423,7 @@ function renderSharing(root, _data, context) {
           <div class="subtle">${"Notification" in window ? Notification.permission : "Not supported in this browser"}</div>
         </div>
       </div>
-      <div class="row" style="margin-top:10px;">
+      <div class="inline-row" style="margin-top:10px;">
         <button class="btn btn-secondary" type="button" id="saveReminderSettingsButton">Save reminder settings</button>
         <button class="btn btn-ghost" type="button" id="requestReminderPermissionButton">Request notification permission</button>
       </div>
@@ -3811,7 +4456,7 @@ function renderSharing(root, _data, context) {
           </div>
 
           <label style="margin-top:10px;">Allowed views</label>
-          <div class="row">
+          <div class="inline-row">
               ${["daily", "clinical", "personal"].map((mode) => {
                 const checked = Array.isArray(draftShare.allowedModes)
                   ? draftShare.allowedModes.includes(mode)
@@ -3821,7 +4466,7 @@ function renderSharing(root, _data, context) {
             </div>
         </div>
 
-        <div class="row" style="margin-top:10px;">
+        <div class="inline-row" style="margin-top:10px;">
           <button class="btn btn-primary" type="submit">Create read-only link</button>
         </div>
       </form>
@@ -3839,9 +4484,21 @@ function renderSharing(root, _data, context) {
   const syncEndpoint = root.querySelector("#syncEndpoint");
   const syncAccountId = root.querySelector("#syncAccountId");
   const syncOwnerKey = root.querySelector("#syncOwnerKey");
+  const ownerDisplayName = root.querySelector("#ownerDisplayName");
+  const personalizationEnabled = root.querySelector("#personalizationEnabled");
   const remindersEnabled = root.querySelector("#remindersEnabled");
   const reminderLeadMinutes = root.querySelector("#reminderLeadMinutes");
   const desktopNotificationsEnabled = root.querySelector("#desktopNotificationsEnabled");
+
+  root.querySelector("#saveProfileSettingsButton")?.addEventListener("click", () => {
+    app.ownerData.profile = normalizeOwnerProfile({
+      displayName: String(ownerDisplayName?.value || ""),
+      personalizationEnabled: Boolean(personalizationEnabled?.checked)
+    });
+    saveOwnerData(app.ownerData);
+    setStatus("Personalization settings saved.");
+    renderAll();
+  });
 
   root.querySelector("#saveSyncConfigButton")?.addEventListener("click", () => {
     if (LOCAL_ONLY_MODE) {
@@ -4064,7 +4721,7 @@ function renderShareList() {
           <div class="subtle">Status: ${status}${link.expiresAt ? ` · Expires ${escapeHtml(niceDate(link.expiresAt))}` : ""}</div>
           <div class="subtle">Access log: opens ${access.totalOpens || 0}${access.lastOpenedAt ? ` · last opened ${escapeHtml(niceDateTime(access.lastOpenedAt))}` : ""}</div>
           <textarea class="share-url" readonly>${escapeHtml(link.url)}</textarea>
-          <div class="row" style="margin-top:8px;">
+          <div class="inline-row" style="margin-top:8px;">
             <button class="btn btn-secondary" type="button" data-copy-link="${link.id}">Copy</button>
             <button class="btn btn-secondary" type="button" data-preview-link="${link.id}">Preview as recipient</button>
             <button class="btn btn-danger" type="button" data-revoke-link="${link.id}">${link.revoked ? "Unrevoke" : "Revoke"}</button>
@@ -4089,7 +4746,7 @@ function renderExports(root, data) {
   root.innerHTML = `
     <div class="card">
       <h3>Export options</h3>
-      <div class="row">
+      <div class="inline-row">
         <button class="btn btn-secondary" type="button" id="exportJson">Download JSON backup</button>
         <button class="btn btn-secondary" type="button" id="exportCsvMedications">Download medications CSV</button>
         <button class="btn btn-secondary" type="button" id="exportCsvChanges">Download changes CSV</button>
@@ -4240,6 +4897,11 @@ function buildClinicianSummaryHtml(data) {
 function filterDataForShare(source, permissions) {
   const clone = deepClone(source);
   clone.shareLinks = [];
+  clone.profile = {
+    displayName: "",
+    personalizationEnabled: false
+  };
+  clone.dashboardConfig = normalizeDashboardConfig(clone.dashboardConfig);
 
   if (!permissions.showSensitiveTags) {
     clone.notes = clone.notes.map((note) => ({
@@ -4420,6 +5082,38 @@ function setPendingDoseAction(occurrenceId, pending) {
   app.ui.pendingDoseActions = next;
 }
 
+function clearDoseUndoPrompt() {
+  if (app.doseUndoTimeout) {
+    window.clearTimeout(app.doseUndoTimeout);
+    app.doseUndoTimeout = null;
+  }
+  app.lastDoseUndo = null;
+}
+
+function queueDoseUndo(previousOwnerData, occurrenceId, status) {
+  clearDoseUndoPrompt();
+  app.lastDoseUndo = {
+    previousOwnerData: deepClone(previousOwnerData),
+    occurrenceId,
+    status: normalizeAdherenceStatus(status),
+    expiresAt: Date.now() + 10000
+  };
+  app.doseUndoTimeout = window.setTimeout(() => {
+    app.lastDoseUndo = null;
+    app.doseUndoTimeout = null;
+    renderAll();
+  }, 10000);
+}
+
+function handleDoseUndo() {
+  if (!app.lastDoseUndo) return;
+  app.ownerData = ensureStateShape(app.lastDoseUndo.previousOwnerData);
+  saveOwnerData(app.ownerData);
+  clearDoseUndoPrompt();
+  setStatus("Dose action undone.");
+  renderAll();
+}
+
 async function handleDoseAction(occurrenceId, status) {
   if (!occurrenceId || !status) {
     setStatus("Dose action is missing required details.", "error");
@@ -4445,12 +5139,14 @@ async function handleDoseAction(occurrenceId, status) {
     renderAll();
 
     saveOwnerData(nextOwnerData);
+    queueDoseUndo(previousOwnerData, occurrenceId, status);
     if (canUseRemoteSync()) {
       void flushRemoteSync();
     }
     setStatus(`Dose marked as ${normalizeAdherenceStatus(status)}.`);
   } catch (error) {
     app.ownerData = previousOwnerData;
+    clearDoseUndoPrompt();
     const message = error instanceof Error ? error.message : "Unknown save error";
     setStatus(`Could not save dose action. ${message}`, "error");
   } finally {
@@ -4461,6 +5157,11 @@ async function handleDoseAction(occurrenceId, status) {
 
 function buildAlerts(data) {
   const alerts = [];
+  const dashboardConfig = normalizeDashboardConfig(data.dashboardConfig);
+
+  for (const reminder of dashboardConfig.monitoringReminders) {
+    alerts.push(reminder);
+  }
 
   const highNotes = data.notes.filter((note) => note.severity === "high").slice(0, 3);
   highNotes.forEach((note) => {
@@ -4473,7 +5174,9 @@ function buildAlerts(data) {
     .slice(0, 2);
 
   recentChanges.forEach((change) => {
-    alerts.push(`${change.medicationName}: monitor ${change.interpretation.monitor}`);
+    const monitor = String(change?.interpretation?.monitor || "").trim();
+    if (!monitor) return;
+    alerts.push(`${change.medicationName}: monitor ${monitor}`);
   });
 
   const today = getLocalDateKey(new Date());

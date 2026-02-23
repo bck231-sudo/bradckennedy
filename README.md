@@ -38,14 +38,21 @@ Deploy the contents of this folder as a static site (`index.html`, `app.js`, `st
 
 ## Second-Round Upgrade Summary
 
+- Added predictable navigation for faster daily use:
+  - Top navigation: `Dashboard`, `History`, `Settings`, `Share`
+  - Bottom tab bar: `Dashboard`, `Medications`, `History`, `Share`, `Settings`
 - Reworked dashboard to be action-first:
-  - Today’s doses due now / upcoming
-  - Quick mark-as-taken actions
+  - Today’s doses and actions at the top (with filters + card/table toggle)
+  - Reliable Taken/Skip actions with loading state, optimistic update, undo, and save/error feedback
   - Quick daily check-in
-  - Recent medication changes (7 days)
   - Alerts/monitoring reminders
+  - Recent medication changes (14 days)
+  - Medication details table
   - Weekly trend preview
-  - Shared links management preview
+- Added owner-only inline dashboard editing:
+  - Summary note
+  - Alerts/reminders list
+  - Recent medication changes (in-place edit, save, cancel)
 - Added explicit viewer contexts:
   - `My View`
   - `Clinician View (preview)`
@@ -84,6 +91,9 @@ Deploy the contents of this folder as a static site (`index.html`, `app.js`, `st
   - date range filter
   - change markers
   - before/after comparison (7 days before, 14 days after)
+- Added optional personalization controls:
+  - owner display name for greeting
+  - toggle to enable/disable personalized encouragement and consistency feedback
 - Exports:
   - JSON backup
   - CSV datasets
@@ -98,6 +108,16 @@ Migration and normalization in `/Users/brad/Documents/New project/bradckennedy/a
 - legacy medication/change/note/check-in rows are normalized into v2 shape
 - legacy `#share=` payloads are still supported
 - no seeded default medications are injected
+
+Additional compatibility updates:
+
+- `dashboardConfig` is normalized with safe defaults:
+  - `summaryNote`
+  - `monitoringReminders`
+- adherence rows now preserve action timestamps when available:
+  - `actionAt`
+  - `takenAt`
+  - `skippedAt`
 
 ## How Current Medications Are Resolved
 

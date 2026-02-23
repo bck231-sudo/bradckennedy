@@ -128,6 +128,9 @@ export function applyDoseAction(ownerData, action, now = new Date()) {
             ? {
                 ...entry,
                 status: normalizedStatus,
+                actionAt: timestamp,
+                takenAt: normalizedStatus === ADHERENCE_STATUS.TAKEN ? timestamp : (entry.takenAt || ""),
+                skippedAt: normalizedStatus === ADHERENCE_STATUS.SKIPPED ? timestamp : (entry.skippedAt || ""),
                 updatedAt: timestamp,
                 occurrenceId: entry.occurrenceId || occurrenceId
               }
@@ -143,6 +146,9 @@ export function applyDoseAction(ownerData, action, now = new Date()) {
             medicationName: medication.name || "",
             scheduleTime,
             status: normalizedStatus,
+            actionAt: timestamp,
+            takenAt: normalizedStatus === ADHERENCE_STATUS.TAKEN ? timestamp : "",
+            skippedAt: normalizedStatus === ADHERENCE_STATUS.SKIPPED ? timestamp : "",
             createdAt: timestamp,
             updatedAt: timestamp
           }
