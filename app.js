@@ -7,19 +7,33 @@ import {
   normalizeAdherenceStatus,
   parseDoseOccurrenceId
 } from "./dose-actions.js";
+import {
+  RISK_LEVEL_META,
+  computeRiskAssessment,
+  defaultActionPlans,
+  defaultRiskConfig,
+  defaultWarningSigns,
+  normalizeActionPlans,
+  normalizeRiskConfig,
+  normalizeWarningSigns
+} from "./risk-engine.js";
+import { createStorageService } from "./storage-service.js";
 
 const STORAGE_KEY = "medication_tracker_data_v1";
 const DRAFT_KEY = "medication_tracker_drafts_v2";
 const ACCESS_LOG_KEY = "medication_tracker_access_logs_v1";
 const SYNC_CONFIG_KEY = "medication_tracker_sync_config_v1";
 const REMINDER_LOG_KEY = "medication_tracker_reminder_log_v1";
+const SYNC_QUEUE_KEY = "medication_tracker_sync_queue_v1";
 const PROFILE_PATCH_KEY = "medication_tracker_profile_patch_2026_02_21_v1";
-const APP_VERSION = 2;
+const APP_VERSION = 3;
 const DOSE_SNOOZE_MINUTES = 30;
 const REMOTE_SYNC_DEBOUNCE_MS = 800;
 const DASHBOARD_DOSE_PAGE_SIZE = 8;
 const PRODUCTION_SYNC_ENDPOINT = "https://medication-tracker-api.onrender.com";
 const LOCAL_ONLY_MODE = true;
+const SUMMARY_RANGE_OPTIONS = ["7", "14", "30"];
+const storage = createStorageService(typeof window !== "undefined" ? window.localStorage : null);
 
 const SIDE_EFFECT_OPTIONS = [
   "headache",
@@ -338,8 +352,10 @@ const dom = {
   contextPill: document.getElementById("contextPill"),
   sectionTitle: document.getElementById("sectionTitle"),
   sectionSubtitle: document.getElementById("sectionSubtitle"),
+  roleBadge: document.getElementById("roleBadge"),
   quickCheckinButton: document.getElementById("quickCheckinButton"),
   readOnlyBanner: document.getElementById("readOnlyBanner"),
+  offlineBanner: document.getElementById("offlineBanner"),
   globalStatus: document.getElementById("globalStatus"),
   toastStack: document.getElementById("toastStack"),
   initialSkeleton: document.getElementById("initialSkeleton"),
@@ -386,10 +402,13 @@ const app = {
     dashboardEdits: {
       summary: false,
       alerts: false,
-      changes: false
+      changes: false,
+      medications: false,
+      actionPlan: false
     },
     dashboardTrendView: "simple",
     dashboardTrendRangeDays: "7",
+    exportSummaryRangeDays: "14",
     timelineFilters: {
       medicationId: "all",
       rangeDays: "14",
@@ -402,6 +421,7 @@ const app = {
   lastDoseUndo: null,
   syncDebounceTimeout: null,
   reminderIntervalId: null,
+  syncQueue: loadSyncQueue(),
   sync: {
     status: "local-only",
     lastSyncedAt: "",
@@ -423,9 +443,10 @@ bindShareHashListener();
 app.queueRemoteSync = scheduleRemoteSync;
 renderAll();
 initializeBackgroundServices();
+void registerPwaServiceWorker();
 
 function loadOwnerData() {
-  const raw = localStorage.getItem(STORAGE_KEY);
+  const raw = storage.readText(STORAGE_KEY, "");
   if (!raw) {
     const seeded = buildSeedState();
     const patched = applyMedicationProfilePatch(seeded);
@@ -452,8 +473,11 @@ function saveOwnerData(nextData, options = {}) {
   if (!options.keepTimestamp) {
     payload.stateUpdatedAt = isoDateTime(new Date());
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  storage.writeJson(STORAGE_KEY, payload);
   if (!options.skipRemote && typeof window !== "undefined") {
+    if (canUseRemoteSync()) {
+      queueSyncMutation(options.reason || "state_update");
+    }
     queueMicrotask(() => {
       const runtimeApp = window.__medicationTrackerApp;
       if (runtimeApp && typeof runtimeApp.queueRemoteSync === "function") {
@@ -481,13 +505,16 @@ function buildSeedState() {
     },
     shareLinks: [],
     profile: defaultOwnerProfile(),
-    dashboardConfig: defaultDashboardConfig()
+    dashboardConfig: defaultDashboardConfig(),
+    warningSigns: defaultWarningSigns(),
+    riskConfig: defaultRiskConfig(),
+    actionPlans: defaultActionPlans()
   });
 }
 
 function applyMedicationProfilePatch(inputState) {
   const state = ensureStateShape(inputState);
-  if (localStorage.getItem(PROFILE_PATCH_KEY)) {
+  if (storage.readText(PROFILE_PATCH_KEY, "")) {
     return state;
   }
 
@@ -546,7 +573,7 @@ function applyMedicationProfilePatch(inputState) {
     isSensitive: false
   }, nowIso);
 
-  localStorage.setItem(PROFILE_PATCH_KEY, nowIso);
+  storage.writeText(PROFILE_PATCH_KEY, nowIso);
   return state;
 }
 
@@ -688,7 +715,10 @@ function migrateToV2(input) {
     reminderSettings: normalizeReminderSettings(input.reminderSettings),
     shareLinks: [],
     profile: normalizeOwnerProfile(input.profile),
-    dashboardConfig: normalizeDashboardConfig(input.dashboardConfig)
+    dashboardConfig: normalizeDashboardConfig(input.dashboardConfig),
+    warningSigns: normalizeWarningSigns(input.warningSigns),
+    riskConfig: normalizeRiskConfig(input.riskConfig),
+    actionPlans: normalizeActionPlans(input.actionPlans)
   };
 
   // Compatibility layer for older versions where dose/time lived directly on medication rows.
@@ -731,6 +761,13 @@ function migrateToV2(input) {
       oldDose: change.oldDose || extractOldDose(change.change || ""),
       newDose: change.newDose || extractNewDose(change.change || ""),
       reason: change.reason || "",
+      reasonForChange: change.reasonForChange || change.reason || "",
+      route: change.route || "",
+      changedBy: change.changedBy || "self",
+      expectedEffects: change.expectedEffects || "",
+      monitorFor: change.monitorFor || "",
+      reviewDate: change.reviewDate || "",
+      notes: change.notes || "",
       interpretation: normalizeInterpretation(
         change.interpretation ||
           generateInterpretationTemplate({
@@ -811,7 +848,10 @@ function ensureStateShape(input) {
     reminderSettings: normalizeReminderSettings(input.reminderSettings),
     shareLinks: [],
     profile: normalizeOwnerProfile(input.profile),
-    dashboardConfig: normalizeDashboardConfig(input.dashboardConfig)
+    dashboardConfig: normalizeDashboardConfig(input.dashboardConfig),
+    warningSigns: normalizeWarningSigns(input.warningSigns),
+    riskConfig: normalizeRiskConfig(input.riskConfig),
+    actionPlans: normalizeActionPlans(input.actionPlans)
   };
 
   for (const med of Array.isArray(input.medications) ? input.medications : []) {
@@ -853,6 +893,13 @@ function ensureStateShape(input) {
       oldDose: change.oldDose || "",
       newDose: change.newDose || "",
       reason: change.reason || "",
+      reasonForChange: change.reasonForChange || change.reason || "",
+      route: change.route || "",
+      changedBy: change.changedBy || "self",
+      expectedEffects: change.expectedEffects || "",
+      monitorFor: change.monitorFor || "",
+      reviewDate: change.reviewDate || "",
+      notes: change.notes || "",
       interpretation: normalizeInterpretation(change.interpretation || {}),
       createdAt: change.createdAt || isoDateTime(new Date())
     });
@@ -913,6 +960,7 @@ function ensureStateShape(input) {
 
 function normalizeCheckin(input) {
   const vitals = input?.vitals || {};
+  const createdAt = input?.createdAt || isoDateTime(new Date());
   return {
     id: input?.id || uid(),
     date: input?.date || isoDate(new Date()),
@@ -934,7 +982,8 @@ function normalizeCheckin(input) {
       bpDiastolic: vitals.bpDiastolic || "",
       hr: vitals.hr || ""
     },
-    createdAt: input?.createdAt || isoDateTime(new Date())
+    createdAt,
+    updatedAt: input?.updatedAt || createdAt
   };
 }
 
@@ -1106,7 +1155,7 @@ function handleShareSessionInit() {
 }
 
 function loadDrafts() {
-  const raw = localStorage.getItem(DRAFT_KEY);
+  const raw = storage.readText(DRAFT_KEY, "");
   if (!raw) {
     return {
       medication: {},
@@ -1135,7 +1184,7 @@ function loadDrafts() {
 }
 
 function saveDrafts() {
-  localStorage.setItem(DRAFT_KEY, JSON.stringify(app.drafts));
+  storage.writeJson(DRAFT_KEY, app.drafts);
   app.ui.lastDraftSavedAt = isoDateTime(new Date());
 }
 
@@ -1202,7 +1251,7 @@ function inferDefaultSyncEndpoint() {
 function loadSyncConfig() {
   const defaults = defaultSyncConfig();
   if (LOCAL_ONLY_MODE) return defaults;
-  const raw = localStorage.getItem(SYNC_CONFIG_KEY);
+  const raw = storage.readText(SYNC_CONFIG_KEY, "");
   if (!raw) return defaults;
   try {
     const parsed = JSON.parse(raw);
@@ -1218,11 +1267,11 @@ function loadSyncConfig() {
 }
 
 function saveSyncConfig() {
-  localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify(app.syncConfig));
+  storage.writeJson(SYNC_CONFIG_KEY, app.syncConfig);
 }
 
 function loadReminderLog() {
-  const raw = localStorage.getItem(REMINDER_LOG_KEY);
+  const raw = storage.readText(REMINDER_LOG_KEY, "");
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw);
@@ -1233,11 +1282,11 @@ function loadReminderLog() {
 }
 
 function saveReminderLog() {
-  localStorage.setItem(REMINDER_LOG_KEY, JSON.stringify(app.reminderLog));
+  storage.writeJson(REMINDER_LOG_KEY, app.reminderLog);
 }
 
 function loadAccessLogs() {
-  const raw = localStorage.getItem(ACCESS_LOG_KEY);
+  const raw = storage.readText(ACCESS_LOG_KEY, "");
   if (!raw) {
     return {};
   }
@@ -1249,7 +1298,34 @@ function loadAccessLogs() {
 }
 
 function saveAccessLogs() {
-  localStorage.setItem(ACCESS_LOG_KEY, JSON.stringify(app.accessLogs));
+  storage.writeJson(ACCESS_LOG_KEY, app.accessLogs);
+}
+
+function loadSyncQueue() {
+  const queue = storage.readJson(SYNC_QUEUE_KEY, []);
+  return Array.isArray(queue) ? queue : [];
+}
+
+function saveSyncQueue() {
+  storage.writeJson(SYNC_QUEUE_KEY, app.syncQueue || []);
+}
+
+function queueSyncMutation(reason = "state_update") {
+  const next = Array.isArray(app.syncQueue) ? app.syncQueue.slice(-120) : [];
+  next.push({
+    id: uid(),
+    reason,
+    createdAt: isoDateTime(new Date())
+  });
+  app.syncQueue = next;
+  saveSyncQueue();
+  updateConnectivityBanner();
+}
+
+function clearSyncQueue() {
+  app.syncQueue = [];
+  saveSyncQueue();
+  updateConnectivityBanner();
 }
 
 function recordAccess(token) {
@@ -1452,6 +1528,17 @@ function bindGlobalHandlers() {
       closeMedicationModal();
     }
   });
+
+  window.addEventListener("online", () => {
+    updateConnectivityBanner();
+    if (canUseRemoteSync() && app.syncQueue.length) {
+      scheduleRemoteSync();
+    }
+  });
+
+  window.addEventListener("offline", () => {
+    updateConnectivityBanner();
+  });
 }
 
 function bindShareHashListener() {
@@ -1469,13 +1556,42 @@ function bindShareHashListener() {
 }
 
 function initializeBackgroundServices() {
+  updateConnectivityBanner();
   if (app.shareSession) return;
   if (canUseRemoteSync()) {
     void pullRemoteStateOnBoot();
+    if (app.syncQueue.length) {
+      scheduleRemoteSync();
+    }
   } else {
     app.sync.status = "local-only";
   }
   restartReminderLoop();
+}
+
+async function registerPwaServiceWorker() {
+  if (typeof window === "undefined") return;
+  if (!("serviceWorker" in navigator)) return;
+  try {
+    await navigator.serviceWorker.register("./sw.js");
+  } catch (error) {
+    console.error("Service worker registration failed:", error);
+  }
+}
+
+function updateConnectivityBanner() {
+  if (!dom.offlineBanner) return;
+  const offline = typeof navigator !== "undefined" && !navigator.onLine;
+  if (!offline) {
+    dom.offlineBanner.classList.add("hidden");
+    dom.offlineBanner.textContent = "";
+    return;
+  }
+  const pendingSync = canUseRemoteSync() ? app.syncQueue.length : 0;
+  dom.offlineBanner.classList.remove("hidden");
+  dom.offlineBanner.textContent = pendingSync
+    ? `Offline mode active. ${pendingSync} change${pendingSync === 1 ? "" : "s"} queued for sync when connection returns.`
+    : "Offline mode active. Changes will continue saving locally.";
 }
 
 function canUseRemoteSync() {
@@ -1554,11 +1670,13 @@ async function flushRemoteSync() {
     app.sync.status = "connected";
     app.sync.lastSyncedAt = result.updatedAt || isoDateTime(new Date());
     app.sync.lastError = "";
+    clearSyncQueue();
   } catch (error) {
     app.sync.status = "error";
     app.sync.lastError = error instanceof Error ? error.message : "Unknown sync error";
   } finally {
     app.sync.inFlight = false;
+    updateConnectivityBanner();
     renderAll();
   }
 }
@@ -1979,6 +2097,7 @@ function renderUtilityPanel(context, data) {
 
   const meds = resolveCurrentMedications(data).filter((med) => med.isCurrent);
   const dueState = getDoseState(meds, data.adherence, data.doseSnoozes);
+  const riskAssessment = computeDashboardRisk(data, dueState);
   const pending = [...dueState.dueNow, ...dueState.next].sort((left, right) => left.time.localeCompare(right.time));
   const nextDose = pending[0] || null;
   const alerts = buildAlerts(data).slice(0, 4);
@@ -1990,6 +2109,7 @@ function renderUtilityPanel(context, data) {
       <h3>Today summary</h3>
       <div class="subtle">Taken ${dueState.counts.taken} · Remaining ${dueState.counts.remaining} · Missed ${dueState.counts.missed}</div>
       <div class="subtle" style="margin-top:8px;">${nextDose ? `Next dose: <strong>${escapeHtml(nextDose.medicationName)}</strong> at ${escapeHtml(nextDose.time)}` : "No scheduled doses remaining for today."}</div>
+      <div class="subtle" style="margin-top:8px;">Risk status: <strong>${escapeHtml(riskAssessment.label)}</strong></div>
     </div>
 
     <div class="utility-section">
@@ -2035,6 +2155,19 @@ function renderSectionMeta(context) {
   const meta = SECTION_META.find((section) => section.id === app.ui.activeSection) || SECTION_META[0];
   dom.sectionTitle.textContent = meta.title;
   dom.sectionSubtitle.textContent = meta.subtitle;
+  if (dom.roleBadge) {
+    const roleLabel = context.readOnly
+      ? context.type === "share"
+        ? "Viewer (Shared)"
+        : app.ui.viewerMode === "clinician"
+          ? "Viewer (Clinician)"
+          : app.ui.viewerMode === "family"
+            ? "Viewer (Family)"
+            : "Viewer"
+      : "Owner";
+    dom.roleBadge.textContent = roleLabel;
+    dom.roleBadge.className = `role-badge ${context.readOnly ? "is-viewer" : "is-owner"}`;
+  }
 }
 
 function renderSections(context, visibleData) {
@@ -2213,6 +2346,116 @@ function renderIcon(name, className = "mini-icon", label = "") {
       </svg>
     </span>
   `;
+}
+
+function safeDateFromKey(dateKey) {
+  const parsed = new Date(`${dateKey}T12:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function computeRecentRiskHistory(data, days = 14, referenceDate = new Date()) {
+  const timeline = [];
+  const totalDays = Math.max(1, Number(days || 14));
+  const start = new Date(referenceDate);
+  start.setDate(start.getDate() - (totalDays - 1));
+
+  for (let offset = 0; offset < totalDays; offset += 1) {
+    const pointDate = new Date(start);
+    pointDate.setDate(start.getDate() + offset);
+    const dateKey = getLocalDateKey(pointDate);
+    const checkins = (data.checkins || []).filter((entry) => String(entry.date || "") <= dateKey);
+    const notes = (data.notes || []).filter((entry) => String(entry.date || "") <= dateKey);
+    const adherence = (data.adherence || []).filter((entry) => String(entry.date || "") === dateKey);
+    const pointRisk = computeRiskAssessment({
+      now: pointDate,
+      checkins,
+      notes,
+      adherence,
+      dueState: null,
+      warningSigns: data.warningSigns,
+      riskConfig: data.riskConfig
+    });
+    timeline.push({
+      date: dateKey,
+      level: pointRisk.level
+    });
+  }
+  return timeline;
+}
+
+function computeDashboardRisk(data, dueState) {
+  return computeRiskAssessment({
+    now: new Date(),
+    checkins: data.checkins || [],
+    notes: data.notes || [],
+    adherence: data.adherence || [],
+    dueState,
+    warningSigns: data.warningSigns,
+    riskConfig: data.riskConfig
+  });
+}
+
+function riskToneClass(level) {
+  const normalized = String(level || "low").toLowerCase();
+  if (normalized === "high") return "risk-high";
+  if (normalized === "elevated") return "risk-elevated";
+  if (normalized === "watch") return "risk-watch";
+  return "risk-low";
+}
+
+function renderActionPlanSteps(actionPlans, level) {
+  const normalizedPlans = normalizeActionPlans(actionPlans || []);
+  return normalizedPlans
+    .filter((entry) => entry.enabled && entry.triggerLevel === level)
+    .sort((left, right) => left.stepOrder - right.stepOrder);
+}
+
+function riskLevelRank(level) {
+  const normalized = String(level || "low").toLowerCase();
+  if (normalized === "high") return 3;
+  if (normalized === "elevated") return 2;
+  if (normalized === "watch") return 1;
+  return 0;
+}
+
+function renderRiskHistoryDots(history = []) {
+  const rows = Array.isArray(history) ? history.slice(-14) : [];
+  if (!rows.length) return "";
+  return `
+    <div class="risk-history-dots" aria-label="Risk history last 14 days">
+      ${rows.map((entry) => `<span class="risk-dot ${escapeHtml(riskToneClass(entry.level))}" title="${escapeHtml(`${entry.date}: ${(RISK_LEVEL_META[entry.level] || RISK_LEVEL_META.low).label}`)}"></span>`).join("")}
+    </div>
+  `;
+}
+
+function actionPlanLinesByLevel(actionPlans, level) {
+  return renderActionPlanSteps(actionPlans, level)
+    .map((step) => {
+      const rolePrefix = step.notifyRole ? `[${step.notifyRole}] ` : "";
+      return `${rolePrefix}${step.stepText}`;
+    })
+    .join("\n");
+}
+
+function parseActionPlanLines(lines, level) {
+  return String(lines || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      const match = line.match(/^\[(self|family|clinician|gp|psychiatrist|other)\]\s*/i);
+      const notifyRole = match ? String(match[1] || "").toLowerCase() : "";
+      const stepText = match ? line.replace(match[0], "").trim() : line;
+      return {
+        id: uid(),
+        triggerLevel: level,
+        stepOrder: index + 1,
+        stepText,
+        notifyRole,
+        enabled: true
+      };
+    })
+    .filter((entry) => entry.stepText);
 }
 
 function isOverdueDose(item) {
@@ -2460,12 +2703,32 @@ function renderDashboard(root, data, context) {
     app.ui.dashboardTrendRangeDays = "7";
   }
   if (!app.ui.dashboardEdits || typeof app.ui.dashboardEdits !== "object") {
-    app.ui.dashboardEdits = { summary: false, alerts: false, changes: false };
+    app.ui.dashboardEdits = {
+      summary: false,
+      alerts: false,
+      changes: false,
+      medications: false,
+      actionPlan: false
+    };
   }
+  app.ui.dashboardEdits = {
+    summary: false,
+    alerts: false,
+    changes: false,
+    medications: false,
+    actionPlan: false,
+    ...(app.ui.dashboardEdits || {})
+  };
 
   const ownerEditable = context.type === "owner" && !context.readOnly;
   if (!ownerEditable) {
-    app.ui.dashboardEdits = { summary: false, alerts: false, changes: false };
+    app.ui.dashboardEdits = {
+      summary: false,
+      alerts: false,
+      changes: false,
+      medications: false,
+      actionPlan: false
+    };
   }
 
   const dashboardConfig = normalizeDashboardConfig(app.ownerData.dashboardConfig || data.dashboardConfig);
@@ -2476,20 +2739,27 @@ function renderDashboard(root, data, context) {
   const currentMedsLastUpdated = resolveCurrentMedsLastUpdatedDate(data);
   const today = getLocalDateKey(new Date());
   const todayCheckin = data.checkins.find((entry) => entry.date === today);
+  const latestCheckin = (data.checkins || [])
+    .slice()
+    .sort((left, right) => changeSortValue(right) - changeSortValue(left))[0] || null;
   const recentChanges = data.changes
     .filter((entry) => dateDiffDays(entry.date, today) <= 14)
     .sort((a, b) => b.date.localeCompare(a.date));
 
-  const trendMood = trendArrow(data.checkins, "mood");
-  const trendAnxiety = trendArrow(data.checkins, "anxiety", true);
-  const trendFocus = trendArrow(data.checkins, "focus");
-
   const dueState = getDoseState(activeMeds, data.adherence, data.doseSnoozes);
+  const riskAssessment = computeDashboardRisk(data, dueState);
+  const riskHistory = computeRecentRiskHistory(data, 14, new Date());
+  const riskTone = riskToneClass(riskAssessment.level);
   const alerts = buildAlerts(data);
   const pendingItems = [...dueState.dueNow, ...dueState.next].sort((left, right) => left.time.localeCompare(right.time));
   const nextDose = pendingItems[0] || null;
   const overdueCount = dueState.dueNow.filter((item) => String(item.statusLabel).toLowerCase().includes("overdue")).length;
-  const dashboardAlerts = alerts.slice(0, 6);
+  const dashboardAlerts = Array.from(
+    new Set([
+      ...riskAssessment.reasons.map((reason) => `Risk trigger: ${reason}`),
+      ...alerts
+    ])
+  ).slice(0, 8);
   const topChanges = recentChanges.slice(0, 6);
   const profile = normalizeOwnerProfile(app.ownerData.profile);
   const greetingLabel = dashboardGreetingLabel(context, profile);
@@ -2498,11 +2768,65 @@ function renderDashboard(root, data, context) {
   const nextDueLabel = nextDose
     ? `Next dose: ${nextDose.medicationName} at ${nextDose.time}`
     : "No scheduled doses remaining for today.";
+  const latestCheckinLabel = latestCheckin
+    ? `${niceDate(latestCheckin.date)}${latestCheckin.updatedAt ? ` · ${formatClockTime(latestCheckin.updatedAt)}` : ""}`
+    : "No check-in recorded";
+  const totalScheduledToday = dueState.counts.taken + dueState.counts.remaining + dueState.counts.missed;
+  const adherencePct = totalScheduledToday
+    ? roundNumber((dueState.counts.taken / totalScheduledToday) * 100, 0)
+    : 100;
   const checkinSleepHours = toNumber(todayCheckin?.sleepHours);
   const undoActive = Boolean(app.lastDoseUndo && Number(app.lastDoseUndo.expiresAt) > Date.now());
+  const actionPlans = normalizeActionPlans(data.actionPlans || []);
+  const activeActionPlanSteps = renderActionPlanSteps(actionPlans, riskAssessment.level);
+  const showActionPlanCard = ownerEditable || riskLevelRank(riskAssessment.level) >= riskLevelRank("elevated");
 
   root.innerHTML = `
     <div class="grid dashboard-flow">
+      <article class="card card-accent card-accent-ocean dashboard-summary-strip">
+        <div class="card-head-row">
+          <div>
+            <h3>Today at a glance</h3>
+            <div class="subtle">${escapeHtml(greetingLabel)} · ${escapeHtml(niceDate(today))}</div>
+          </div>
+          <div class="dashboard-readonly-wrap">
+            ${context.readOnly ? `<span class="readonly-badge">Read-only</span>` : ""}
+            <span class="risk-pill ${escapeHtml(riskTone)}">${escapeHtml(riskAssessment.label)} risk</span>
+          </div>
+        </div>
+        <div class="summary-strip-grid">
+          <article class="summary-strip-item">
+            <div class="summary-strip-label">Adherence today</div>
+            <div class="summary-strip-value">${escapeHtml(`${adherencePct}%`)}</div>
+            <div class="summary-strip-help">${escapeHtml(`${dueState.counts.taken} taken of ${totalScheduledToday || 0}`)}</div>
+          </article>
+          <article class="summary-strip-item">
+            <div class="summary-strip-label">Next dose due</div>
+            <div class="summary-strip-value">${escapeHtml(nextDose ? `${nextDose.medicationName} ${nextDose.time}` : "None remaining")}</div>
+            <div class="summary-strip-help">${escapeHtml(`${overdueCount} overdue`)}</div>
+          </article>
+          <article class="summary-strip-item">
+            <div class="summary-strip-label">Risk status</div>
+            <div class="summary-strip-value">${escapeHtml(riskAssessment.label)}</div>
+            <details>
+              <summary class="summary-strip-help">Why this status?</summary>
+              ${riskAssessment.reasons.length
+                ? `<ul class="risk-why-list">${riskAssessment.reasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")}</ul>`
+                : `<div class="summary-strip-help">No active triggers right now.</div>`}
+              ${riskAssessment.triggeredSigns.length
+                ? `<ul class="warning-sign-list">${riskAssessment.triggeredSigns.map((sign) => `<li>${escapeHtml(sign.label)}</li>`).join("")}</ul>`
+                : ""}
+              ${renderRiskHistoryDots(riskHistory)}
+            </details>
+          </article>
+          <article class="summary-strip-item">
+            <div class="summary-strip-label">Last check-in</div>
+            <div class="summary-strip-value">${escapeHtml(latestCheckinLabel)}</div>
+            <div class="summary-strip-help">${latestCheckin ? `Mood ${escapeHtml(String(latestCheckin.mood))} · Anxiety ${escapeHtml(String(latestCheckin.anxiety))}` : "Complete quick check-in to update."}</div>
+          </article>
+        </div>
+      </article>
+
       <article class="card card-accent card-accent-sky card-doses dashboard-priority-card">
         <div class="card-head-row">
           <div>
@@ -2632,7 +2956,18 @@ function renderDashboard(root, data, context) {
                     <div><label>Medication</label><input name="medicationName__${entry.id}" value="${escapeHtml(entry.medicationName || "")}" required></div>
                     <div><label>Old dose</label><input name="oldDose__${entry.id}" value="${escapeHtml(entry.oldDose || "")}" required></div>
                     <div><label>New dose</label><input name="newDose__${entry.id}" value="${escapeHtml(entry.newDose || "")}" required></div>
-                    <div style="grid-column: 1 / -1;"><label>Reason</label><textarea name="reason__${entry.id}" required>${escapeHtml(entry.reason || "")}</textarea></div>
+                    <div><label>Route (optional)</label><input name="route__${entry.id}" value="${escapeHtml(entry.route || "")}"></div>
+                    <div>
+                      <label>Changed by</label>
+                      <select name="changedBy__${entry.id}">
+                        ${["self", "psychiatrist", "gp", "clinician", "other"].map((role) => `<option value="${role}" ${String(entry.changedBy || "self") === role ? "selected" : ""}>${escapeHtml(role)}</option>`).join("")}
+                      </select>
+                    </div>
+                    <div><label>Review date</label><input name="reviewDate__${entry.id}" type="date" value="${escapeHtml(entry.reviewDate || "")}"></div>
+                    <div style="grid-column: 1 / -1;"><label>Reason for change</label><textarea name="reasonForChange__${entry.id}" required>${escapeHtml(entry.reasonForChange || entry.reason || "")}</textarea></div>
+                    <div style="grid-column: 1 / -1;"><label>Expected effects</label><textarea name="expectedEffects__${entry.id}">${escapeHtml(entry.expectedEffects || "")}</textarea></div>
+                    <div style="grid-column: 1 / -1;"><label>Monitor for</label><textarea name="monitorFor__${entry.id}">${escapeHtml(entry.monitorFor || "")}</textarea></div>
+                    <div style="grid-column: 1 / -1;"><label>Notes</label><textarea name="notes__${entry.id}">${escapeHtml(entry.notes || "")}</textarea></div>
                   </div>
                 </fieldset>
               `).join("")}
@@ -2644,7 +2979,7 @@ function renderDashboard(root, data, context) {
           ` : `<div class="empty">No medication changes in the last 14 days.</div>`}
         ` : (
           topChanges.length
-            ? `<ul class="timeline-list">${topChanges.map((entry) => `<li><strong>${escapeHtml(niceDate(entry.date))}</strong> · ${escapeHtml(entry.medicationName || "Medication")}: ${escapeHtml(entry.oldDose || "-")} → ${escapeHtml(entry.newDose || "-")}<br><span class="subtle">${escapeHtml(entry.reason || "")}</span></li>`).join("")}</ul>`
+            ? `<ul class="timeline-list">${topChanges.map((entry) => `<li><strong>${escapeHtml(niceDate(entry.date))}</strong> · ${escapeHtml(entry.medicationName || "Medication")}: ${escapeHtml(entry.oldDose || "-")} → ${escapeHtml(entry.newDose || "-")}<br><span class="subtle">${escapeHtml(entry.reasonForChange || entry.reason || "-")}${entry.changedBy ? ` · changed by ${escapeHtml(entry.changedBy)}` : ""}${entry.reviewDate ? ` · review ${escapeHtml(niceDate(entry.reviewDate))}` : ""}</span></li>`).join("")}</ul>`
             : `<div class="empty">No medication changes logged in the last 14 days.${ownerEditable ? ` <button class="btn btn-secondary small" type="button" data-dashboard-new-change="1">Log a change</button>` : ""}</div>`
         )}
       </article>
@@ -2655,9 +2990,35 @@ function renderDashboard(root, data, context) {
             <h3>Medication details</h3>
             <div class="subtle">Current medications, doses, and schedules.</div>
           </div>
-          <button class="btn btn-ghost small" type="button" data-dashboard-open-meds="1">Open full medications</button>
+          <div class="inline-row">
+            ${ownerEditable ? `<button class="btn btn-ghost small" type="button" data-dashboard-edit="medications">${app.ui.dashboardEdits.medications ? "Editing" : "Edit"}</button>` : ""}
+            <button class="btn btn-ghost small" type="button" data-dashboard-open-meds="1">Open full medications</button>
+          </div>
         </div>
-        ${activeMeds.length ? `
+        ${activeMeds.length ? (
+          ownerEditable && app.ui.dashboardEdits.medications
+            ? `
+              <form id="dashboardMedicationForm" class="dashboard-med-edit-grid">
+                ${activeMeds.map((med) => `
+                  <article class="dashboard-med-edit-row">
+                    <h4>${escapeHtml(med.name)}</h4>
+                    <div class="field-grid">
+                      <div><label>Dose</label><input name="currentDose__${med.id}" value="${escapeHtml(med.currentDose || "")}" required></div>
+                      <div><label>Route</label><input name="route__${med.id}" value="${escapeHtml(med.route || "")}" required></div>
+                      <div><label>Schedule times</label><input name="scheduleTimes__${med.id}" value="${escapeHtml((med.scheduleTimes || []).join(", "))}" placeholder="08:00, 20:00"></div>
+                      <div><label>Start date</label><input name="startDate__${med.id}" type="date" value="${escapeHtml(med.startDate || "")}" required></div>
+                      <div style="grid-column: 1 / -1;"><label>Indication</label><textarea name="indication__${med.id}">${escapeHtml(med.indication || "")}</textarea></div>
+                      <div style="grid-column: 1 / -1;"><label>Monitor</label><textarea name="monitor__${med.id}">${escapeHtml(med.monitor || "")}</textarea></div>
+                    </div>
+                  </article>
+                `).join("")}
+                <div class="inline-row" style="grid-column: 1 / -1;">
+                  <button class="btn btn-primary small" type="submit">Save</button>
+                  <button class="btn btn-ghost small" type="button" data-dashboard-edit-cancel="medications">Cancel</button>
+                </div>
+              </form>
+            `
+            : `
           <div class="table-wrap">
             <table>
               <thead>
@@ -2682,8 +3043,47 @@ function renderDashboard(root, data, context) {
               </tbody>
             </table>
           </div>
-        ` : `<div class="empty">No active medications yet.${ownerEditable ? ` <button class="btn btn-secondary small" type="button" data-dashboard-add-med="1">Add medication</button>` : ""}</div>`}
+        `
+        ) : `<div class="empty">No active medications yet.${ownerEditable ? ` <button class="btn btn-secondary small" type="button" data-dashboard-add-med="1">Add medication</button>` : ""}</div>`}
       </article>
+
+      ${showActionPlanCard ? `
+        <article class="card card-accent card-accent-teal action-plan-card">
+          <div class="card-head-row">
+            <div>
+              <h3>Action plan ${riskLevelRank(riskAssessment.level) >= riskLevelRank("elevated") ? `(for ${escapeHtml(riskAssessment.label)} risk)` : ""}</h3>
+              <div class="subtle">Pre-agreed response steps for Watch / Elevated / High risk levels.</div>
+            </div>
+            ${ownerEditable ? `<button class="btn btn-ghost small" type="button" data-dashboard-edit="actionPlan">${app.ui.dashboardEdits.actionPlan ? "Editing" : "Edit"}</button>` : ""}
+          </div>
+          ${ownerEditable && app.ui.dashboardEdits.actionPlan ? `
+            <form id="dashboardActionPlanForm" class="edit-inline-form">
+              <div>
+                <label for="actionPlanWatch">Watch steps (one per line, optional prefix: [family] or [clinician])</label>
+                <textarea id="actionPlanWatch" name="watch">${escapeHtml(actionPlanLinesByLevel(actionPlans, "watch"))}</textarea>
+              </div>
+              <div>
+                <label for="actionPlanElevated">Elevated steps (one per line)</label>
+                <textarea id="actionPlanElevated" name="elevated">${escapeHtml(actionPlanLinesByLevel(actionPlans, "elevated"))}</textarea>
+              </div>
+              <div>
+                <label for="actionPlanHigh">High steps (one per line)</label>
+                <textarea id="actionPlanHigh" name="high">${escapeHtml(actionPlanLinesByLevel(actionPlans, "high"))}</textarea>
+              </div>
+              <p class="inline-note">Tip: prefix a line with [family], [clinician], [gp], [psychiatrist], or [self] to set a notify role.</p>
+              <div class="inline-row">
+                <button class="btn btn-primary small" type="submit">Save</button>
+                <button class="btn btn-ghost small" type="button" data-dashboard-edit-cancel="actionPlan">Cancel</button>
+              </div>
+            </form>
+          ` : (
+            activeActionPlanSteps.length
+              ? `<ol class="action-plan-list">${activeActionPlanSteps.map((step) => `<li class="action-plan-item"><div>${escapeHtml(step.stepText)}</div>${step.notifyRole ? `<div class="action-plan-meta">Notify: ${escapeHtml(step.notifyRole)}</div>` : ""}</li>`).join("")}</ol>`
+              : `<div class="action-plan-empty">No steps configured for ${escapeHtml(riskAssessment.label)} risk.</div>`
+          )}
+          <p class="safety-footnote">Action plan steps are informational support prompts and should align with your prescriber plan.</p>
+        </article>
+      ` : ""}
 
       <article class="card card-accent card-accent-ocean dashboard-trend-preview">
       <div class="dashboard-trend-head">
@@ -2713,7 +3113,7 @@ function renderDashboard(root, data, context) {
     button.addEventListener("click", () => {
       if (!ownerEditable) return;
       const section = button.dataset.dashboardEdit || "";
-      if (!["summary", "alerts", "changes"].includes(section)) return;
+      if (!["summary", "alerts", "changes", "medications", "actionPlan"].includes(section)) return;
       app.ui.dashboardEdits = { ...app.ui.dashboardEdits, [section]: true };
       renderAll();
     });
@@ -2722,7 +3122,7 @@ function renderDashboard(root, data, context) {
   root.querySelectorAll("[data-dashboard-edit-cancel]").forEach((button) => {
     button.addEventListener("click", () => {
       const section = button.dataset.dashboardEditCancel || "";
-      if (!["summary", "alerts", "changes"].includes(section)) return;
+      if (!["summary", "alerts", "changes", "medications", "actionPlan"].includes(section)) return;
       app.ui.dashboardEdits = { ...app.ui.dashboardEdits, [section]: false };
       renderAll();
     });
@@ -2780,9 +3180,15 @@ function renderDashboard(root, data, context) {
       const medicationName = String(form.elements[`medicationName__${entry.id}`]?.value || "").trim();
       const oldDose = String(form.elements[`oldDose__${entry.id}`]?.value || "").trim();
       const newDose = String(form.elements[`newDose__${entry.id}`]?.value || "").trim();
-      const reason = String(form.elements[`reason__${entry.id}`]?.value || "").trim();
+      const reasonForChange = String(form.elements[`reasonForChange__${entry.id}`]?.value || "").trim();
+      const route = String(form.elements[`route__${entry.id}`]?.value || "").trim();
+      const changedBy = String(form.elements[`changedBy__${entry.id}`]?.value || "self").trim();
+      const expectedEffects = String(form.elements[`expectedEffects__${entry.id}`]?.value || "").trim();
+      const monitorFor = String(form.elements[`monitorFor__${entry.id}`]?.value || "").trim();
+      const reviewDate = String(form.elements[`reviewDate__${entry.id}`]?.value || "").trim();
+      const notes = String(form.elements[`notes__${entry.id}`]?.value || "").trim();
 
-      if (!date || !medicationName || !reason) {
+      if (!date || !medicationName || !reasonForChange) {
         setStatus("Recent changes edit failed: date, medication, and reason are required.", "error");
         return;
       }
@@ -2797,7 +3203,14 @@ function renderDashboard(root, data, context) {
         medicationName,
         oldDose,
         newDose,
-        reason
+        reason: reasonForChange,
+        reasonForChange,
+        route,
+        changedBy,
+        expectedEffects,
+        monitorFor,
+        reviewDate,
+        notes
       });
     }
 
@@ -2805,6 +3218,69 @@ function renderDashboard(root, data, context) {
     saveOwnerData(app.ownerData);
     app.ui.dashboardEdits = { ...app.ui.dashboardEdits, changes: false };
     setStatus("Recent medication changes updated.");
+    renderAll();
+  });
+
+  root.querySelector("#dashboardMedicationForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!ownerEditable) return;
+    const form = event.currentTarget;
+    const targetIds = new Set(activeMeds.map((med) => med.id));
+    const medicationById = new Map(app.ownerData.medications.map((med) => [med.id, med]));
+
+    for (const med of activeMeds) {
+      const nextDose = String(form.elements[`currentDose__${med.id}`]?.value || "").trim();
+      const route = String(form.elements[`route__${med.id}`]?.value || "").trim();
+      const scheduleTimesRaw = String(form.elements[`scheduleTimes__${med.id}`]?.value || "").trim();
+      const startDate = String(form.elements[`startDate__${med.id}`]?.value || "").trim();
+      const indication = String(form.elements[`indication__${med.id}`]?.value || "").trim();
+      const monitor = String(form.elements[`monitor__${med.id}`]?.value || "").trim();
+
+      if (!doseLooksValid(nextDose)) {
+        setStatus(`Dose format is invalid for ${med.name}. Use value + unit (e.g. 40 mg).`, "error");
+        return;
+      }
+
+      const scheduleTimes = normalizeTimes(scheduleTimesRaw.split(",").map((item) => item.trim()).filter(Boolean));
+      const invalidTime = scheduleTimes.find((time) => !isTimeValue(time));
+      if (invalidTime) {
+        setStatus(`Schedule time "${invalidTime}" for ${med.name} is invalid. Use HH:MM (24-hour).`, "error");
+        return;
+      }
+
+      const target = medicationById.get(med.id);
+      if (!target || !targetIds.has(med.id)) continue;
+      target.currentDose = nextDose;
+      target.route = route || "oral";
+      target.scheduleTimes = scheduleTimes;
+      target.startDate = startDate || target.startDate;
+      target.indication = indication;
+      target.monitor = monitor;
+      target.updatedAt = isoDateTime(new Date());
+    }
+
+    saveOwnerData(app.ownerData);
+    app.ui.dashboardEdits = { ...app.ui.dashboardEdits, medications: false };
+    setStatus("Medication details updated.");
+    renderAll();
+  });
+
+  root.querySelector("#dashboardActionPlanForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!ownerEditable) return;
+    const form = event.currentTarget;
+    const watchPlans = parseActionPlanLines(form.elements.watch?.value || "", "watch");
+    const elevatedPlans = parseActionPlanLines(form.elements.elevated?.value || "", "elevated");
+    const highPlans = parseActionPlanLines(form.elements.high?.value || "", "high");
+    const combined = normalizeActionPlans([...watchPlans, ...elevatedPlans, ...highPlans]);
+    if (!combined.length) {
+      setStatus("Add at least one action-plan step before saving.", "error");
+      return;
+    }
+    app.ownerData.actionPlans = combined;
+    saveOwnerData(app.ownerData);
+    app.ui.dashboardEdits = { ...app.ui.dashboardEdits, actionPlan: false };
+    setStatus("Action plan updated.");
     renderAll();
   });
 
@@ -3274,7 +3750,7 @@ function renderChanges(root, data, context) {
             <th>Date</th>
             <th>Medication</th>
             <th>Change</th>
-            <th>Reason</th>
+            <th>Context</th>
             <th>Interpretation</th>
           </tr>
         </thead>
@@ -3284,7 +3760,13 @@ function renderChanges(root, data, context) {
               <td>${escapeHtml(niceDate(row.date))}</td>
               <td>${escapeHtml(row.medicationName || "-")}</td>
               <td>${escapeHtml(row.oldDose || "-")} → ${escapeHtml(row.newDose || "-")}</td>
-              <td>${escapeHtml(row.reason || "-")}</td>
+              <td>
+                <div><strong>Reason:</strong> ${escapeHtml(row.reasonForChange || row.reason || "-")}</div>
+                <div class="subtle">${row.changedBy ? `Changed by: ${escapeHtml(row.changedBy)}` : ""}${row.route ? `${row.changedBy ? " · " : ""}Route: ${escapeHtml(row.route)}` : ""}${row.reviewDate ? `${(row.changedBy || row.route) ? " · " : ""}Review: ${escapeHtml(niceDate(row.reviewDate))}` : ""}</div>
+                ${row.monitorFor ? `<div class="subtle">Monitor: ${escapeHtml(row.monitorFor)}</div>` : ""}
+                ${row.expectedEffects ? `<div class="subtle">Expected effects: ${escapeHtml(row.expectedEffects)}</div>` : ""}
+                ${row.notes ? `<div class="subtle">Notes: ${escapeHtml(row.notes)}</div>` : ""}
+              </td>
               <td>
                 <details>
                   <summary>Open interpretation card</summary>
@@ -3904,10 +4386,36 @@ function renderWorkflowForm(data) {
             <input name="newDose" value="${escapeHtml(draft.newDose || "")}" required>
             <p class="helper-text">Example format: 40 mg daily.</p>
           </div>
+          <div>
+            <label>Route (optional)</label>
+            <input name="route" value="${escapeHtml(draft.route || "")}" placeholder="oral, transdermal, etc">
+          </div>
+          <div>
+            <label>Changed by</label>
+            <select name="changedBy">
+              ${["self", "psychiatrist", "gp", "clinician", "other"].map((role) => `<option value="${role}" ${String(draft.changedBy || "self") === role ? "selected" : ""}>${escapeHtml(role)}</option>`).join("")}
+            </select>
+          </div>
+          <div>
+            <label>Review date (optional)</label>
+            <input name="reviewDate" type="date" value="${escapeHtml(draft.reviewDate || "")}">
+          </div>
           <div style="grid-column: 1 / -1;">
-            <label>Reason</label>
-            <textarea name="reason" required>${escapeHtml(draft.reason || "")}</textarea>
+            <label>Reason for change</label>
+            <textarea name="reason" required>${escapeHtml(draft.reason || draft.reasonForChange || "")}</textarea>
             <p class="helper-text">Use neutral language describing what changed and why.</p>
+          </div>
+          <div style="grid-column: 1 / -1;">
+            <label>Expected effects (optional)</label>
+            <textarea name="expectedEffects">${escapeHtml(draft.expectedEffects || "")}</textarea>
+          </div>
+          <div style="grid-column: 1 / -1;">
+            <label>What to monitor (optional)</label>
+            <textarea name="monitorFor">${escapeHtml(draft.monitorFor || "")}</textarea>
+          </div>
+          <div style="grid-column: 1 / -1;">
+            <label>Notes (optional)</label>
+            <textarea name="notes">${escapeHtml(draft.notes || "")}</textarea>
           </div>
         </div>
         <div class="interpret-card">
@@ -4178,6 +4686,13 @@ function bindWorkflowFormHandlers(root, data) {
         oldDose: values.oldDose,
         newDose: values.newDose,
         reason: values.reason,
+        reasonForChange: values.reason,
+        route: values.route || "",
+        changedBy: values.changedBy || "self",
+        expectedEffects: values.expectedEffects || "",
+        monitorFor: values.monitorFor || values.monitor || "",
+        reviewDate: values.reviewDate || "",
+        notes: values.notes || "",
         interpretation: normalizeInterpretation({
           shortTerm: values.shortTerm,
           longTerm: values.longTerm,
@@ -4261,9 +4776,6 @@ function bindWorkflowFormHandlers(root, data) {
       const checklist = checkedValues(checkinForm, "sideEffectsChecklist");
 
       const duplicate = app.ownerData.checkins.find((entry) => entry.date === values.date);
-      if (duplicate) {
-        return setStatus("Duplicate warning: check-in for this date already exists.", "error");
-      }
 
       const rangeValid = ["mood", "anxiety", "focus", "sleepQuality", "appetite", "energy", "irritability", "cravingsImpulsivity"].every((field) => {
         const value = Number(values[field]);
@@ -4274,8 +4786,9 @@ function bindWorkflowFormHandlers(root, data) {
         return setStatus("Validation failed: 1-10 fields must be within range.", "error");
       }
 
-      app.ownerData.checkins.push({
-        id: uid(),
+      const nowIso = isoDateTime(new Date());
+      const payload = normalizeCheckin({
+        id: duplicate?.id || uid(),
         date: values.date,
         mood: Number(values.mood),
         anxiety: Number(values.anxiety),
@@ -4295,13 +4808,20 @@ function bindWorkflowFormHandlers(root, data) {
           bpDiastolic: values.bpDiastolic || "",
           hr: values.hr || ""
         },
-        createdAt: isoDateTime(new Date())
+        createdAt: duplicate?.createdAt || nowIso,
+        updatedAt: nowIso
       });
+
+      if (duplicate) {
+        app.ownerData.checkins = app.ownerData.checkins.map((entry) => (entry.id === duplicate.id ? payload : entry));
+      } else {
+        app.ownerData.checkins.push(payload);
+      }
 
       saveOwnerData(app.ownerData);
       app.drafts.checkin = {};
       saveDrafts();
-      setStatus("Daily check-in saved.");
+      setStatus(duplicate ? "Daily check-in updated." : "Daily check-in saved.");
       renderAll();
     });
   }
@@ -4332,6 +4852,8 @@ function renderSharing(root, _data, context) {
   const defaultExpiry = draftShare.expiresAt || shiftDateKey(today, 30);
   const reminderSettings = normalizeReminderSettings(app.ownerData.reminderSettings);
   const ownerProfile = normalizeOwnerProfile(app.ownerData.profile);
+  const warningSigns = normalizeWarningSigns(app.ownerData.warningSigns);
+  const riskConfig = normalizeRiskConfig(app.ownerData.riskConfig);
   const syncStatus = app.sync.status === "connected"
     ? `Connected${app.sync.lastSyncedAt ? ` · last sync ${niceDateTime(app.sync.lastSyncedAt)}` : ""}`
     : app.sync.status === "syncing"
@@ -4427,6 +4949,98 @@ function renderSharing(root, _data, context) {
         <button class="btn btn-secondary" type="button" id="saveReminderSettingsButton">Save reminder settings</button>
         <button class="btn btn-ghost" type="button" id="requestReminderPermissionButton">Request notification permission</button>
       </div>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
+      <h3>Warning signs + explainable risk thresholds</h3>
+      <form id="riskConfigForm">
+        <div class="field-grid">
+          <div>
+            <label for="riskMissedDoseWatch">Missed doses (Watch)</label>
+            <input id="riskMissedDoseWatch" name="missedDoseWatch" type="number" min="0" max="10" value="${escapeHtml(String(riskConfig.missedDoseWatch))}">
+          </div>
+          <div>
+            <label for="riskMissedDoseElevated">Missed doses (Elevated)</label>
+            <input id="riskMissedDoseElevated" name="missedDoseElevated" type="number" min="0" max="10" value="${escapeHtml(String(riskConfig.missedDoseElevated))}">
+          </div>
+          <div>
+            <label for="riskMissedDoseHigh">Missed doses (High)</label>
+            <input id="riskMissedDoseHigh" name="missedDoseHigh" type="number" min="0" max="10" value="${escapeHtml(String(riskConfig.missedDoseHigh))}">
+          </div>
+          <div>
+            <label for="riskAnxietyWatch">Anxiety threshold (Watch)</label>
+            <input id="riskAnxietyWatch" name="anxietyWatch" type="number" min="1" max="10" value="${escapeHtml(String(riskConfig.anxietyWatch))}">
+          </div>
+          <div>
+            <label for="riskAnxietyHigh">Anxiety threshold (High)</label>
+            <input id="riskAnxietyHigh" name="anxietyHigh" type="number" min="1" max="10" value="${escapeHtml(String(riskConfig.anxietyHigh))}">
+          </div>
+          <div>
+            <label for="riskLowSleepHours">Low-sleep threshold (hours)</label>
+            <input id="riskLowSleepHours" name="lowSleepHours" type="number" min="0" max="24" step="0.1" value="${escapeHtml(String(riskConfig.lowSleepHours))}">
+          </div>
+          <div>
+            <label for="riskNoCheckinHours">No check-in threshold (hours)</label>
+            <input id="riskNoCheckinHours" name="noCheckinHours" type="number" min="1" max="168" value="${escapeHtml(String(riskConfig.noCheckinHours))}">
+          </div>
+          <div>
+            <label for="riskSideEffectsWindowDays">Side effects window (days)</label>
+            <input id="riskSideEffectsWindowDays" name="sideEffectsWindowDays" type="number" min="1" max="30" value="${escapeHtml(String(riskConfig.sideEffectsWindowDays))}">
+          </div>
+          <div>
+            <label for="riskSideEffectsTriggerCount">Side effects trigger count</label>
+            <input id="riskSideEffectsTriggerCount" name="sideEffectsTriggerCount" type="number" min="1" max="50" value="${escapeHtml(String(riskConfig.sideEffectsTriggerCount))}">
+          </div>
+          <div>
+            <label for="riskWatchScore">Watch score threshold</label>
+            <input id="riskWatchScore" name="watchScore" type="number" min="1" max="100" value="${escapeHtml(String(riskConfig.watchScore))}">
+          </div>
+          <div>
+            <label for="riskElevatedScore">Elevated score threshold</label>
+            <input id="riskElevatedScore" name="elevatedScore" type="number" min="1" max="100" value="${escapeHtml(String(riskConfig.elevatedScore))}">
+          </div>
+          <div>
+            <label for="riskHighScore">High score threshold</label>
+            <input id="riskHighScore" name="highScore" type="number" min="1" max="100" value="${escapeHtml(String(riskConfig.highScore))}">
+          </div>
+        </div>
+
+        <h4 style="margin-top:12px;">Personal warning signs</h4>
+        <div class="settings-warning-grid">
+          ${warningSigns.map((sign) => `
+            <article class="settings-warning-row">
+              <div class="field-grid">
+                <div>
+                  <label>Label</label>
+                  <input name="warningLabel__${sign.id}" value="${escapeHtml(sign.label)}" required>
+                </div>
+                <div>
+                  <label>Category</label>
+                  <select name="warningCategory__${sign.id}">
+                    ${["sleep", "mood", "meds", "behaviour", "social", "custom"].map((category) => `<option value="${category}" ${sign.category === category ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}
+                  </select>
+                </div>
+                <div>
+                  <label>Weight (1-5)</label>
+                  <input name="warningWeight__${sign.id}" type="number" min="1" max="5" value="${escapeHtml(String(sign.severityWeight))}">
+                </div>
+                <div>
+                  <label class="check-item">
+                    <input type="checkbox" name="warningActive__${sign.id}" ${sign.active ? "checked" : ""}>
+                    <span>Active</span>
+                  </label>
+                </div>
+              </div>
+            </article>
+          `).join("")}
+        </div>
+
+        <div class="inline-row" style="margin-top:10px;">
+          <button class="btn btn-secondary" type="button" id="addWarningSignButton">Add warning sign</button>
+          <button class="btn btn-primary" type="submit">Save warning signs + thresholds</button>
+        </div>
+        <p class="helper-text">Risk status remains rule-based and explainable. No opaque AI predictions are used.</p>
+      </form>
     </div>
 
     <div class="card">
@@ -4553,6 +5167,73 @@ function renderSharing(root, _data, context) {
 
   root.querySelector("#requestReminderPermissionButton")?.addEventListener("click", () => {
     void requestNotificationPermission();
+  });
+
+  root.querySelector("#addWarningSignButton")?.addEventListener("click", () => {
+    app.ownerData.warningSigns = normalizeWarningSigns([
+      ...warningSigns,
+      {
+        id: uid(),
+        label: "New warning sign",
+        category: "custom",
+        severityWeight: 2,
+        active: true,
+        thresholdConfig: {}
+      }
+    ]);
+    saveOwnerData(app.ownerData);
+    setStatus("Warning sign row added.");
+    renderAll();
+  });
+
+  root.querySelector("#riskConfigForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const nextWarningSigns = warningSigns
+      .map((sign) => ({
+        id: sign.id,
+        label: String(form.elements[`warningLabel__${sign.id}`]?.value || "").trim(),
+        category: String(form.elements[`warningCategory__${sign.id}`]?.value || "custom").trim(),
+        severityWeight: Number(form.elements[`warningWeight__${sign.id}`]?.value || 2),
+        active: Boolean(form.elements[`warningActive__${sign.id}`]?.checked),
+        thresholdConfig: sign.thresholdConfig || {}
+      }))
+      .filter((sign) => sign.label);
+
+    if (!nextWarningSigns.length) {
+      setStatus("Add at least one warning sign before saving.", "error");
+      return;
+    }
+
+    const nextRiskConfig = normalizeRiskConfig({
+      missedDoseWatch: Number(form.elements.missedDoseWatch?.value || riskConfig.missedDoseWatch),
+      missedDoseElevated: Number(form.elements.missedDoseElevated?.value || riskConfig.missedDoseElevated),
+      missedDoseHigh: Number(form.elements.missedDoseHigh?.value || riskConfig.missedDoseHigh),
+      anxietyWatch: Number(form.elements.anxietyWatch?.value || riskConfig.anxietyWatch),
+      anxietyHigh: Number(form.elements.anxietyHigh?.value || riskConfig.anxietyHigh),
+      lowSleepHours: Number(form.elements.lowSleepHours?.value || riskConfig.lowSleepHours),
+      noCheckinHours: Number(form.elements.noCheckinHours?.value || riskConfig.noCheckinHours),
+      sideEffectsWindowDays: Number(form.elements.sideEffectsWindowDays?.value || riskConfig.sideEffectsWindowDays),
+      sideEffectsTriggerCount: Number(form.elements.sideEffectsTriggerCount?.value || riskConfig.sideEffectsTriggerCount),
+      watchScore: Number(form.elements.watchScore?.value || riskConfig.watchScore),
+      elevatedScore: Number(form.elements.elevatedScore?.value || riskConfig.elevatedScore),
+      highScore: Number(form.elements.highScore?.value || riskConfig.highScore)
+    });
+
+    if (nextRiskConfig.missedDoseWatch > nextRiskConfig.missedDoseElevated || nextRiskConfig.missedDoseElevated > nextRiskConfig.missedDoseHigh) {
+      setStatus("Missed-dose thresholds must be Watch <= Elevated <= High.", "error");
+      return;
+    }
+    if (nextRiskConfig.watchScore > nextRiskConfig.elevatedScore || nextRiskConfig.elevatedScore > nextRiskConfig.highScore) {
+      setStatus("Risk score thresholds must be Watch <= Elevated <= High.", "error");
+      return;
+    }
+
+    app.ownerData.warningSigns = normalizeWarningSigns(nextWarningSigns);
+    app.ownerData.riskConfig = nextRiskConfig;
+    saveOwnerData(app.ownerData);
+    setStatus("Warning signs and risk thresholds saved.");
+    renderAll();
   });
 
   presetSelect.addEventListener("change", () => {
@@ -4742,10 +5423,81 @@ function renderPermissionToggle(name, label, checked) {
   `;
 }
 
+function buildRangeSnapshot(data, rangeDays = 14) {
+  const days = SUMMARY_RANGE_OPTIONS.includes(String(rangeDays)) ? Number(rangeDays) : 14;
+  const endDate = getLocalDateKey(new Date());
+  const startDate = shiftDateKey(endDate, -(days - 1));
+  const inRange = (dateValue) => Boolean(dateValue && String(dateValue) >= startDate && String(dateValue) <= endDate);
+
+  return {
+    days,
+    startDate,
+    endDate,
+    medications: resolveCurrentMedications(data).filter((entry) => entry.isCurrent),
+    changes: (data.changes || []).filter((entry) => inRange(entry.date)).sort((a, b) => b.date.localeCompare(a.date)),
+    checkins: (data.checkins || []).filter((entry) => inRange(entry.date)).sort((a, b) => b.date.localeCompare(a.date)),
+    notes: (data.notes || []).filter((entry) => inRange(entry.date)).sort((a, b) => b.date.localeCompare(a.date)),
+    adherence: (data.adherence || []).filter((entry) => inRange(entry.date))
+  };
+}
+
+function renderExportSummaryPreview(data, rangeDays) {
+  const snapshot = buildRangeSnapshot(data, rangeDays);
+  const trendRisk = computeRiskAssessment({
+    now: new Date(),
+    checkins: snapshot.checkins,
+    notes: snapshot.notes,
+    adherence: snapshot.adherence,
+    dueState: null,
+    warningSigns: data.warningSigns,
+    riskConfig: data.riskConfig
+  });
+  const adherenceTaken = snapshot.adherence.filter((entry) => normalizeAdherenceStatus(entry.status) === ADHERENCE_STATUS.TAKEN).length;
+  const adherenceSkipped = snapshot.adherence.filter((entry) => normalizeAdherenceStatus(entry.status) === ADHERENCE_STATUS.SKIPPED).length;
+  const adherencePct = adherenceTaken + adherenceSkipped
+    ? roundNumber((adherenceTaken / (adherenceTaken + adherenceSkipped)) * 100, 0)
+    : 0;
+
+  return `
+    <article class="card" style="margin-top:12px;">
+      <h3>${snapshot.days}-day summary preview</h3>
+      <p class="subtle">${escapeHtml(niceDate(snapshot.startDate))} to ${escapeHtml(niceDate(snapshot.endDate))}</p>
+      <div class="summary-strip-grid" style="margin-top:8px;">
+        <div class="summary-strip-item">
+          <div class="summary-strip-label">Current medications</div>
+          <div class="summary-strip-value">${snapshot.medications.length}</div>
+          <div class="summary-strip-help">Active medications in current list</div>
+        </div>
+        <div class="summary-strip-item">
+          <div class="summary-strip-label">Medication changes</div>
+          <div class="summary-strip-value">${snapshot.changes.length}</div>
+          <div class="summary-strip-help">Logged in this period</div>
+        </div>
+        <div class="summary-strip-item">
+          <div class="summary-strip-label">Adherence (logged)</div>
+          <div class="summary-strip-value">${escapeHtml(`${adherencePct}%`)}</div>
+          <div class="summary-strip-help">${adherenceTaken} taken · ${adherenceSkipped} skipped</div>
+        </div>
+        <div class="summary-strip-item">
+          <div class="summary-strip-label">Risk status</div>
+          <div class="summary-strip-value">${escapeHtml(trendRisk.label)}</div>
+          <div class="summary-strip-help">${escapeHtml(trendRisk.reasons[0] || "No major triggers in the selected window.")}</div>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
 function renderExports(root, data) {
   root.innerHTML = `
     <div class="card">
       <h3>Export options</h3>
+      <div class="summary-range-row" style="margin-bottom:10px;">
+        <label for="exportSummaryRange">Summary range</label>
+        <select id="exportSummaryRange">
+          ${SUMMARY_RANGE_OPTIONS.map((days) => `<option value="${days}" ${String(app.ui.exportSummaryRangeDays || "14") === days ? "selected" : ""}>${days} days</option>`).join("")}
+        </select>
+      </div>
       <div class="inline-row">
         <button class="btn btn-secondary" type="button" id="exportJson">Download JSON backup</button>
         <button class="btn btn-secondary" type="button" id="exportCsvMedications">Download medications CSV</button>
@@ -4755,7 +5507,14 @@ function renderExports(root, data) {
       </div>
       <p class="safety-footnote">Clinician summary text is informational. Discuss with prescriber.</p>
     </div>
+    ${renderExportSummaryPreview(data, app.ui.exportSummaryRangeDays || "14")}
   `;
+
+  root.querySelector("#exportSummaryRange")?.addEventListener("change", (event) => {
+    const next = String(event.target.value || "14");
+    app.ui.exportSummaryRangeDays = SUMMARY_RANGE_OPTIONS.includes(next) ? next : "14";
+    renderAll();
+  });
 
   root.querySelector("#exportJson").addEventListener("click", () => {
     const payload = JSON.stringify(ensureStateShape(data), null, 2);
@@ -4786,7 +5545,13 @@ function renderExports(root, data) {
       medication: entry.medicationName,
       old_dose: entry.oldDose,
       new_dose: entry.newDose,
-      reason: entry.reason,
+      reason: entry.reasonForChange || entry.reason,
+      route: entry.route || "",
+      changed_by: entry.changedBy || "",
+      expected_effects: entry.expectedEffects || "",
+      monitor_for: entry.monitorFor || "",
+      review_date: entry.reviewDate || "",
+      notes: entry.notes || "",
       short_term: entry.interpretation.shortTerm,
       long_term: entry.interpretation.longTerm,
       monitor: entry.interpretation.monitor
@@ -4818,7 +5583,7 @@ function renderExports(root, data) {
   });
 
   root.querySelector("#exportPdfSummary").addEventListener("click", () => {
-    const html = buildClinicianSummaryHtml(data);
+    const html = buildClinicianSummaryHtml(data, app.ui.exportSummaryRangeDays || "14");
     const popup = window.open("", "_blank", "noopener,noreferrer,width=1024,height=900");
     if (!popup) {
       return setStatus("Popup blocked. Allow popups to export PDF summary.", "error");
@@ -4830,11 +5595,31 @@ function renderExports(root, data) {
   });
 }
 
-function buildClinicianSummaryHtml(data) {
-  const meds = resolveCurrentMedications(data).filter((entry) => entry.isCurrent);
-  const recentChanges = data.changes.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 12);
-  const recentCheckins = data.checkins.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 14);
-  const notes = data.notes.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
+function buildClinicianSummaryHtml(data, rangeDays = "14") {
+  const snapshot = buildRangeSnapshot(data, rangeDays);
+  const meds = snapshot.medications;
+  const recentChanges = snapshot.changes.slice(0, 24);
+  const recentCheckins = snapshot.checkins.slice(0, 30);
+  const notes = snapshot.notes.slice(0, 20);
+  const riskAssessment = computeRiskAssessment({
+    now: new Date(),
+    checkins: snapshot.checkins,
+    notes: snapshot.notes,
+    adherence: snapshot.adherence,
+    dueState: null,
+    warningSigns: data.warningSigns,
+    riskConfig: data.riskConfig
+  });
+  const riskHistory = computeRecentRiskHistory(
+    {
+      ...data,
+      checkins: snapshot.checkins,
+      notes: snapshot.notes,
+      adherence: snapshot.adherence
+    },
+    snapshot.days
+  );
+  const actionPlan = renderActionPlanSteps(data.actionPlans, riskAssessment.level);
 
   return `
     <!doctype html>
@@ -4855,6 +5640,28 @@ function buildClinicianSummaryHtml(data) {
       <body>
         <h1>Medication Tracker · Clinician Summary</h1>
         <p>Generated: ${escapeHtml(niceDateTime(isoDateTime(new Date())))}</p>
+        <p>Summary range: ${snapshot.days} days (${escapeHtml(niceDate(snapshot.startDate))} to ${escapeHtml(niceDate(snapshot.endDate))})</p>
+
+        <h2>Risk status</h2>
+        <table>
+          <thead><tr><th>Current level</th><th>Reasons</th><th>Triggered signs</th><th>Recent history</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>${escapeHtml(riskAssessment.label)}</td>
+              <td>${escapeHtml(riskAssessment.reasons.join(" | ") || "No active triggers.")}</td>
+              <td>${escapeHtml(riskAssessment.triggeredSigns.map((entry) => entry.label).join(", ") || "-")}</td>
+              <td>${escapeHtml(riskHistory.map((entry) => `${entry.date}:${(RISK_LEVEL_META[entry.level] || RISK_LEVEL_META.low).label}`).join(" | ") || "-")}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>Action plan (${escapeHtml(riskAssessment.label)} level)</h2>
+        <table>
+          <thead><tr><th>Step</th><th>Notify</th></tr></thead>
+          <tbody>
+            ${(actionPlan.length ? actionPlan : [{ stepText: "No action-plan steps configured for this level.", notifyRole: "" }]).map((step) => `<tr><td>${escapeHtml(step.stepText || "-")}</td><td>${escapeHtml(step.notifyRole || "-")}</td></tr>`).join("")}
+          </tbody>
+        </table>
 
         <h2>Current Medications</h2>
         <table>
@@ -4866,9 +5673,9 @@ function buildClinicianSummaryHtml(data) {
 
         <h2>Recent Medication Changes</h2>
         <table>
-          <thead><tr><th>Date</th><th>Medication</th><th>Old</th><th>New</th><th>Reason</th><th>Short term</th><th>Long term</th></tr></thead>
+          <thead><tr><th>Date</th><th>Medication</th><th>Old</th><th>New</th><th>Reason</th><th>Changed by</th><th>Monitor</th><th>Review date</th><th>Short term</th><th>Long term</th></tr></thead>
           <tbody>
-            ${recentChanges.map((change) => `<tr><td>${escapeHtml(niceDate(change.date))}</td><td>${escapeHtml(change.medicationName)}</td><td>${escapeHtml(change.oldDose)}</td><td>${escapeHtml(change.newDose)}</td><td>${escapeHtml(change.reason)}</td><td>${escapeHtml(change.interpretation.shortTerm)}</td><td>${escapeHtml(change.interpretation.longTerm)}</td></tr>`).join("")}
+            ${recentChanges.map((change) => `<tr><td>${escapeHtml(niceDate(change.date))}</td><td>${escapeHtml(change.medicationName)}</td><td>${escapeHtml(change.oldDose)}</td><td>${escapeHtml(change.newDose)}</td><td>${escapeHtml(change.reasonForChange || change.reason)}</td><td>${escapeHtml(change.changedBy || "-")}</td><td>${escapeHtml(change.monitorFor || change.interpretation.monitor || "-")}</td><td>${escapeHtml(change.reviewDate ? niceDate(change.reviewDate) : "-")}</td><td>${escapeHtml(change.interpretation.shortTerm)}</td><td>${escapeHtml(change.interpretation.longTerm)}</td></tr>`).join("")}
           </tbody>
         </table>
 

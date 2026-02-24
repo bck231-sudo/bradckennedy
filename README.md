@@ -36,6 +36,38 @@ Deploy the contents of this folder as a static site (`index.html`, `app.js`, `st
   - 30-day default link expiry
   - stronger random share tokens
 
+## Phase 1 Upgrade (Shared-Care Focus)
+
+- Kept existing structure and labels (`Medication Tracker`, `Dashboard / History / Settings / Share`, Viewer Context + Data View).
+- Added an action-first dashboard flow:
+  1. Today at a glance strip (adherence, next dose, risk, last check-in)
+  2. Today’s doses/actions
+  3. Quick check-in
+  4. Alerts / monitoring reminders
+  5. Recent medication changes (14 days)
+  6. Medication details
+  7. Contextual action plan (shown in elevated/high risk, always editable in owner mode)
+- Added explainable risk status (rule-based, no opaque AI):
+  - `Low / Watch / Elevated / High`
+  - “Why this status?” shows exact triggers
+  - Warning signs + thresholds are editable in Settings
+- Added owner inline editing on dashboard:
+  - alerts/reminders
+  - recent medication changes
+  - medication detail key fields
+  - action plan steps
+- Extended medication-change schema/UI:
+  - `route`, `changedBy`, `reasonForChange`, `expectedEffects`, `monitorFor`, `reviewDate`, `notes`
+- Daily check-in now supports same-day edit (updates existing entry instead of failing as duplicate).
+- Added PWA support:
+  - `manifest.webmanifest`
+  - `sw.js` offline shell cache
+  - app icons in `/Users/brad/Documents/New project/bradckennedy/icons/`
+  - offline banner in UI
+- Export enhancements:
+  - selectable 7/14/30 day summary range
+  - print/PDF summary now includes risk status/history and action plan context.
+
 ## Second-Round Upgrade Summary
 
 - Added predictable navigation for faster daily use:

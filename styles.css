@@ -333,13 +333,13 @@ h4 {
   font-size: var(--font-2);
   font-weight: 700;
   cursor: pointer;
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   line-height: 1.2;
-  word-break: normal;
+  word-break: keep-all;
   overflow-wrap: normal;
-  text-wrap: balance;
+  text-wrap: nowrap;
   text-align: center;
   transition: border-color var(--motion-fast), background var(--motion-fast), color var(--motion-fast), transform var(--motion-fast);
 }
@@ -479,6 +479,33 @@ h4 {
   display: flex;
   gap: var(--space-2);
   flex-wrap: wrap;
+  align-items: center;
+}
+
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: var(--border-subtle);
+  min-height: 34px;
+  padding: 0 var(--space-3);
+  font-size: var(--font-1);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.role-badge.is-owner {
+  background: linear-gradient(180deg, #e8f1ff, #deebff);
+  border-color: #b8cdf0;
+  color: #1f56b7;
+}
+
+.role-badge.is-viewer {
+  background: linear-gradient(180deg, #f5f7fb, #eef3fa);
+  border-color: #d1dcea;
+  color: #4d637f;
 }
 
 .utility {
@@ -520,6 +547,12 @@ h4 {
 .banner {
   background: var(--color-warning-soft);
   color: var(--color-warning);
+}
+
+.banner-offline {
+  background: #ecf3ff;
+  color: #2358ad;
+  border-color: #c6d8f4;
 }
 
 .status {
@@ -570,6 +603,204 @@ h4 {
   align-items: start;
 }
 
+.dashboard-summary-strip {
+  grid-column: 1 / -1;
+}
+
+.summary-strip-grid {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.summary-strip-item {
+  border: var(--border-subtle);
+  border-radius: var(--radius-2);
+  background: linear-gradient(180deg, #ffffff, #f4f8ff);
+  padding: var(--space-3);
+  min-height: 100%;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.summary-strip-label {
+  font-size: var(--font-1);
+  color: var(--color-text-muted);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.summary-strip-value {
+  font-size: var(--font-3);
+  font-weight: 800;
+  color: #173353;
+  line-height: 1.3;
+}
+
+.summary-strip-help {
+  font-size: var(--font-1);
+  color: var(--color-text-muted);
+}
+
+.risk-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: var(--border-subtle);
+  padding: 4px 10px;
+  font-size: var(--font-1);
+  font-weight: 800;
+}
+
+.risk-pill.risk-low {
+  color: #1a7458;
+  background: #eaf8f1;
+  border-color: #bfe8d7;
+}
+
+.risk-pill.risk-watch {
+  color: #925f1f;
+  background: #fff5e6;
+  border-color: #f0d5ad;
+}
+
+.risk-pill.risk-elevated {
+  color: #ab5425;
+  background: #ffeee4;
+  border-color: #f6c7ac;
+}
+
+.risk-pill.risk-high {
+  color: #a33a3a;
+  background: #fdecec;
+  border-color: #edc1c1;
+}
+
+.risk-why-list,
+.warning-sign-list,
+.action-plan-list {
+  margin: var(--space-2) 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+.risk-why-list li,
+.warning-sign-list li,
+.action-plan-list li {
+  color: #334a67;
+  font-size: var(--font-2);
+}
+
+.risk-history-dots {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+}
+
+.risk-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.risk-dot.risk-low {
+  background: #39b889;
+  border-color: #32a77d;
+}
+
+.risk-dot.risk-watch {
+  background: #f2b260;
+  border-color: #de9c4a;
+}
+
+.risk-dot.risk-elevated {
+  background: #ef8a5d;
+  border-color: #d9784f;
+}
+
+.risk-dot.risk-high {
+  background: #e06767;
+  border-color: #cc5757;
+}
+
+.action-plan-card {
+  grid-column: 1 / -1;
+}
+
+.action-plan-item {
+  border: var(--border-subtle);
+  border-radius: var(--radius-2);
+  background: linear-gradient(180deg, #fbfdff, #f4f8ff);
+  padding: var(--space-3);
+}
+
+.action-plan-item + .action-plan-item {
+  margin-top: var(--space-2);
+}
+
+.action-plan-item .action-plan-meta {
+  font-size: var(--font-1);
+  color: var(--color-text-muted);
+  margin-top: 4px;
+}
+
+.action-plan-empty {
+  color: var(--color-text-muted);
+  font-size: var(--font-2);
+}
+
+.dashboard-med-edit-grid {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dashboard-med-edit-row {
+  border: var(--border-subtle);
+  border-radius: var(--radius-2);
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+  padding: var(--space-3);
+}
+
+.dashboard-med-edit-row h4 {
+  margin: 0 0 var(--space-2);
+}
+
+.dashboard-med-edit-row .field-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-warning-grid {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.settings-warning-row {
+  border: var(--border-subtle);
+  border-radius: var(--radius-2);
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+  padding: var(--space-3);
+}
+
+.settings-warning-row .field-grid {
+  grid-template-columns: 2.4fr 1.1fr 1fr 1fr;
+  align-items: end;
+}
+
+.inline-note {
+  font-size: var(--font-1);
+  color: var(--color-text-muted);
+}
+
+.summary-range-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
 .dashboard-priority-card,
 .card-medication-details,
 .dashboard-trend-preview {
@@ -1987,6 +2218,10 @@ body.app-ready .skeleton-shell {
   .dashboard-flow {
     grid-template-columns: 1fr;
   }
+
+  .summary-strip-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 980px) {
@@ -2042,6 +2277,11 @@ body.app-ready .skeleton-shell {
 
   .dashboard-edit-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-med-edit-row .field-grid,
+  .settings-warning-row .field-grid {
+    grid-template-columns: 1fr 1fr;
   }
 
   .skeleton-row {
@@ -2113,6 +2353,10 @@ body.app-ready .skeleton-shell {
     grid-template-columns: 1fr;
   }
 
+  .summary-strip-grid {
+    grid-template-columns: 1fr;
+  }
+
   .dashboard-grid {
     grid-template-columns: 1fr;
   }
@@ -2131,6 +2375,11 @@ body.app-ready .skeleton-shell {
 
   .field-grid {
     grid-template-columns: 1fr;
+  }
+
+  .role-badge {
+    width: 100%;
+    justify-content: center;
   }
 
   table {
