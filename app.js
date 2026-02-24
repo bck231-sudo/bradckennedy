@@ -29,6 +29,7 @@ const PROFILE_PATCH_KEY = "medication_tracker_profile_patch_2026_02_21_v1";
 const APP_VERSION = 3;
 const DOSE_SNOOZE_MINUTES = 30;
 const REMOTE_SYNC_DEBOUNCE_MS = 800;
+const REMOTE_REQUEST_TIMEOUT_MS = 12000;
 const DASHBOARD_DOSE_PAGE_SIZE = 8;
 const PRODUCTION_SYNC_ENDPOINT = "https://medication-tracker-api.onrender.com";
 const LOCAL_ONLY_MODE = false;
@@ -1744,13 +1745,32 @@ async function remoteRequest(path, init = {}) {
   if (!base) {
     throw new Error("Remote sync endpoint is not configured.");
   }
-  return fetch(`${base}${path}`, {
-    ...init,
-    headers: {
-      ...remoteHeaders(),
-      ...(init.headers || {})
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timeoutId = controller
+    ? globalThis.setTimeout(() => controller.abort(), REMOTE_REQUEST_TIMEOUT_MS)
+    : null;
+  try {
+    return await fetch(`${base}${path}`, {
+      ...init,
+      ...(controller ? { signal: controller.signal } : {}),
+      headers: {
+        ...remoteHeaders(),
+        ...(init.headers || {})
+      }
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`Cloud request timed out after ${Math.round(REMOTE_REQUEST_TIMEOUT_MS / 1000)}s. Cannot reach API at ${base}.`);
     }
-  });
+    if (error instanceof Error && /failed to fetch|networkerror|load failed|fetch failed/i.test(error.message || "")) {
+      throw new Error(`Cannot reach cloud API at ${base}. Check Share -> Settings -> API endpoint and ensure the backend is online.`);
+    }
+    throw error instanceof Error ? error : new Error("Cloud request failed.");
+  } finally {
+    if (timeoutId !== null) {
+      globalThis.clearTimeout(timeoutId);
+    }
+  }
 }
 
 async function postShareAccessEvent(token) {
@@ -5658,6 +5678,11 @@ function renderSharing(root, _data, context) {
   const desktopNotificationsEnabled = root.querySelector("#desktopNotificationsEnabled");
   const riskAlertsEnabled = root.querySelector("#riskAlertsEnabled");
   const riskAlertsMinLevel = root.querySelector("#riskAlertsMinLevel");
+  const requireCloudEndpoint = () => {
+    if (normalizedApiBase()) return true;
+    setStatus("Set your API endpoint first: Share -> Settings, then save sync settings.", "error");
+    return false;
+  };
 
   refreshCloudMetaButton?.addEventListener("click", () => {
     if (LOCAL_ONLY_MODE) {
@@ -5692,8 +5717,10 @@ function renderSharing(root, _data, context) {
       setStatus("Cloud sync is disabled in this build.", "error");
       return;
     }
+    if (!requireCloudEndpoint()) return;
     const values = formToObject(cloudRegisterForm);
     void (async () => {
+      setFormBusy(cloudRegisterForm, true, "Registering...");
       try {
         const payload = await cloudRegisterOwner({
           email: values.email,
@@ -5711,6 +5738,8 @@ function renderSharing(root, _data, context) {
       } catch (error) {
         const message = error instanceof Error ? error.message : "Could not register owner account.";
         setStatus(message, "error");
+      } finally {
+        setFormBusy(cloudRegisterForm, false);
       }
     })();
   });
@@ -5721,8 +5750,10 @@ function renderSharing(root, _data, context) {
       setStatus("Cloud sync is disabled in this build.", "error");
       return;
     }
+    if (!requireCloudEndpoint()) return;
     const values = formToObject(cloudLoginForm);
     void (async () => {
+      setFormBusy(cloudLoginForm, true, "Signing in...");
       try {
         const payload = await cloudLogin({
           email: values.email,
@@ -5739,6 +5770,8 @@ function renderSharing(root, _data, context) {
       } catch (error) {
         const message = error instanceof Error ? error.message : "Could not sign in.";
         setStatus(message, "error");
+      } finally {
+        setFormBusy(cloudLoginForm, false);
       }
     })();
   });
@@ -5749,8 +5782,10 @@ function renderSharing(root, _data, context) {
       setStatus("Cloud sync is disabled in this build.", "error");
       return;
     }
+    if (!requireCloudEndpoint()) return;
     const values = formToObject(cloudAcceptInviteForm);
     void (async () => {
+      setFormBusy(cloudAcceptInviteForm, true, "Accepting...");
       try {
         const payload = await cloudAcceptInvite({
           token: values.token,
@@ -5768,14 +5803,18 @@ function renderSharing(root, _data, context) {
       } catch (error) {
         const message = error instanceof Error ? error.message : "Could not accept invite.";
         setStatus(message, "error");
+      } finally {
+        setFormBusy(cloudAcceptInviteForm, false);
       }
     })();
   });
 
   cloudCreateInviteForm?.addEventListener("submit", (event) => {
     event.preventDefault();
+    if (!requireCloudEndpoint()) return;
     const values = formToObject(cloudCreateInviteForm);
     void (async () => {
+      setFormBusy(cloudCreateInviteForm, true, "Creating...");
       try {
         const payload = await cloudCreateInvite({
           email: values.email,
@@ -5795,6 +5834,8 @@ function renderSharing(root, _data, context) {
       } catch (error) {
         const message = error instanceof Error ? error.message : "Could not create invite.";
         setStatus(message, "error");
+      } finally {
+        setFormBusy(cloudCreateInviteForm, false);
       }
     })();
   });
@@ -6984,6 +7025,33 @@ function checkedValues(form, name) {
 function valueOf(id) {
   const node = document.getElementById(id);
   return node ? String(node.value || "").trim() : "";
+}
+
+function setFormBusy(form, busy, busyLabel) {
+  if (!form) return;
+  const controls = form.querySelectorAll("input, select, textarea, button");
+  controls.forEach((control) => {
+    if (busy) {
+      control.dataset.wasDisabled = control.disabled ? "1" : "0";
+      control.disabled = true;
+    } else {
+      control.disabled = control.dataset.wasDisabled === "1";
+      delete control.dataset.wasDisabled;
+    }
+  });
+
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (submitButton) {
+    if (busy) {
+      submitButton.dataset.originalLabel = submitButton.textContent || "";
+      submitButton.textContent = busyLabel || "Saving...";
+    } else if (submitButton.dataset.originalLabel) {
+      submitButton.textContent = submitButton.dataset.originalLabel;
+      delete submitButton.dataset.originalLabel;
+    }
+  }
+
+  form.setAttribute("aria-busy", busy ? "true" : "false");
 }
 
 function pushToast(message, type = "success") {

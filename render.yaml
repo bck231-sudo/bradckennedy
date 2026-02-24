@@ -10,7 +10,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: CORS_ORIGIN
-        value: https://bradckennedy.org
+        value: https://bradckennedy.org,https://www.bradckennedy.org
       - key: MT_DATA_DIR
         value: /var/data/medication-tracker
       - key: MT_OWNER_KEY

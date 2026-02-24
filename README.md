@@ -263,3 +263,13 @@ Phase 2 is now implemented end-to-end with incremental updates (no rewrite).
    - set API endpoint (for local: `http://127.0.0.1:8080`)
    - register owner or sign in
    - create invites for clinician/family/viewer
+
+### If "Register owner" seems to do nothing
+
+- The app now shows clear cloud errors and temporarily disables the form while submitting.
+- Most common cause: API endpoint is missing or backend is offline.
+- Fix:
+  1. Open `Share -> Settings + sync + reminders`
+  2. Set **API endpoint**
+  3. Click **Save sync settings**
+  4. Try **Register owner** again

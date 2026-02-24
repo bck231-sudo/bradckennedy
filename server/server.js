@@ -45,13 +45,22 @@ const encryptionKey = String(process.env.MT_ENCRYPTION_KEY || "");
 const sessionTtlDays = Number(process.env.MT_SESSION_TTL_DAYS || 30);
 const inviteTtlDays = Number(process.env.MT_INVITE_TTL_DAYS || 14);
 const allowLegacyOwnerKey = String(process.env.MT_ALLOW_LEGACY_OWNER_KEY || "true") !== "false";
-const corsOrigin = String(process.env.CORS_ORIGIN || "*");
+const corsOrigins = String(process.env.CORS_ORIGIN || "*")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const allowAnyCorsOrigin = !corsOrigins.length || corsOrigins.includes("*");
 
 const app = express();
 app.use(express.json({ limit: "8mb" }));
 
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", corsOrigin);
+  const requestOrigin = String(req.header("origin") || "").trim();
+  const allowedOrigin = allowAnyCorsOrigin
+    ? "*"
+    : (requestOrigin && corsOrigins.includes(requestOrigin) ? requestOrigin : corsOrigins[0]);
+  res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Headers", "content-type,authorization,x-account-id,x-owner-key");
   res.setHeader("Access-Control-Allow-Methods", "GET,PUT,POST,OPTIONS");
   if (req.method === "OPTIONS") {
