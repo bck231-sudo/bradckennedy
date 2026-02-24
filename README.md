@@ -212,3 +212,54 @@ When logging a medication change:
 4. Save.
 
 All interpretation content is informational and includes a discuss-with-prescriber safety footer.
+
+## Phase 2 Upgrade (Auth + Secure Sync + Notifications)
+
+Phase 2 is now implemented end-to-end with incremental updates (no rewrite).
+
+- Invite-based cloud auth:
+  - owner registration (`/api/auth/register-owner`)
+  - sign-in/sign-out (`/api/auth/login`, `/api/auth/logout`, `/api/auth/me`)
+  - invite create/list/revoke/inspect/accept (`/api/auth/invites*`)
+- Role-aware access controls:
+  - `owner` can write account state
+  - `viewer` / `family` / `clinician` are read-only for state writes
+  - audit log readable by owner/clinician
+- Secure sync backend:
+  - structured account/user/session store in `server/data/store.json`
+  - optional encryption at rest for account state using `MT_ENCRYPTION_KEY`
+  - backward compatibility with legacy plain state + legacy owner key mode
+- Audit log:
+  - auth events, invite events, state reads/writes, risk notification events
+  - API: `GET /api/audit?limit=...`
+- Optional notifications:
+  - dose reminders (existing)
+  - new rule-threshold risk notifications (toast + desktop notification + optional cloud event)
+  - API: `POST /api/notifications/risk`, `GET /api/notifications`
+- Frontend cloud controls:
+  - new “Cloud account and invites” panel in Sharing
+  - register owner, sign in, accept invite, create/revoke invites, refresh cloud status
+  - cloud sign-out quick action in utility panel
+
+### New Server Environment Variables
+
+- `MT_ENCRYPTION_KEY`:
+  - when set, account state is encrypted at rest (AES-256-GCM)
+- `MT_ALLOW_LEGACY_OWNER_KEY`:
+  - `true` keeps old `x-owner-key` compatibility for legacy clients
+- `MT_SESSION_TTL_DAYS`:
+  - session token lifetime
+- `MT_INVITE_TTL_DAYS`:
+  - default invite expiry window
+
+### Quick Setup (Phase 2)
+
+1. Start server:
+   - `npm run dev`
+2. Open:
+   - `http://127.0.0.1:8080` (or your configured port)
+3. In app:
+   - Share tab -> Cloud account and invites
+   - set API endpoint (for local: `http://127.0.0.1:8080`)
+   - register owner or sign in
+   - create invites for clinician/family/viewer

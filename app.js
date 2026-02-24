@@ -31,7 +31,7 @@ const DOSE_SNOOZE_MINUTES = 30;
 const REMOTE_SYNC_DEBOUNCE_MS = 800;
 const DASHBOARD_DOSE_PAGE_SIZE = 8;
 const PRODUCTION_SYNC_ENDPOINT = "https://medication-tracker-api.onrender.com";
-const LOCAL_ONLY_MODE = true;
+const LOCAL_ONLY_MODE = false;
 const SUMMARY_RANGE_OPTIONS = ["7", "14", "30"];
 const storage = createStorageService(typeof window !== "undefined" ? window.localStorage : null);
 
@@ -234,6 +234,13 @@ const PRESETS = {
   }
 };
 
+const AUTH_ROLE_TO_PRESET = Object.freeze({
+  owner: "full",
+  viewer: "full",
+  family: "family",
+  clinician: "clinician"
+});
+
 const VIEW_MODE_META = {
   daily: {
     label: "Daily View",
@@ -428,10 +435,23 @@ const app = {
     lastError: "",
     inFlight: false
   },
+  cloud: {
+    invites: [],
+    audit: [],
+    notifications: [],
+    loaded: false
+  },
   queueRemoteSync: () => {}
 };
 
 window.__medicationTrackerApp = app;
+
+const inviteTokenFromHash = parseInviteTokenFromHash();
+if (inviteTokenFromHash && !app.shareSession) {
+  app.drafts.cloudInviteToken = inviteTokenFromHash;
+  app.ui.activeSection = "sharing";
+  app.ui.activeViewMode = "clinical";
+}
 
 if (app.shareSession) {
   handleShareSessionInit();
@@ -475,7 +495,8 @@ function saveOwnerData(nextData, options = {}) {
   }
   storage.writeJson(STORAGE_KEY, payload);
   if (!options.skipRemote && typeof window !== "undefined") {
-    if (canUseRemoteSync()) {
+    const runtimeApp = window.__medicationTrackerApp;
+    if (runtimeApp && canUseRemoteSync()) {
       queueSyncMutation(options.reason || "state_update");
     }
     queueMicrotask(() => {
@@ -501,7 +522,9 @@ function buildSeedState() {
     reminderSettings: {
       enabled: false,
       leadMinutes: 15,
-      desktopNotifications: false
+      desktopNotifications: false,
+      riskAlertsEnabled: true,
+      riskAlertsMinLevel: "elevated"
     },
     shareLinks: [],
     profile: defaultOwnerProfile(),
@@ -1024,10 +1047,13 @@ function normalizeDoseSnooze(input) {
 function normalizeReminderSettings(input) {
   const source = input || {};
   const leadMinutes = Number(source.leadMinutes);
+  const minLevel = String(source.riskAlertsMinLevel || "elevated").toLowerCase();
   return {
     enabled: Boolean(source.enabled),
     leadMinutes: Number.isFinite(leadMinutes) ? Math.min(120, Math.max(0, Math.round(leadMinutes))) : 15,
-    desktopNotifications: Boolean(source.desktopNotifications)
+    desktopNotifications: Boolean(source.desktopNotifications),
+    riskAlertsEnabled: source.riskAlertsEnabled !== false,
+    riskAlertsMinLevel: ["watch", "elevated", "high"].includes(minLevel) ? minLevel : "elevated"
   };
 }
 
@@ -1129,6 +1155,16 @@ function parseSharePayload() {
   return null;
 }
 
+function parseInviteTokenFromHash() {
+  const hash = window.location.hash || "";
+  if (!hash.startsWith("#invite=")) return "";
+  try {
+    return decodeURIComponent(hash.slice("#invite=".length)).trim();
+  } catch (_error) {
+    return "";
+  }
+}
+
 function handleShareSessionInit() {
   const token = app.shareSession.token;
   if (token) {
@@ -1226,7 +1262,10 @@ function defaultSyncConfig() {
     enabled: false,
     endpoint: LOCAL_ONLY_MODE ? "" : inferDefaultSyncEndpoint(),
     accountId: "default",
-    ownerKey: ""
+    ownerKey: "",
+    authToken: "",
+    authRole: "",
+    authUser: null
   };
 }
 
@@ -1259,7 +1298,16 @@ function loadSyncConfig() {
       enabled: Boolean(parsed.enabled),
       endpoint: String(parsed.endpoint || defaults.endpoint || "").trim(),
       accountId: String(parsed.accountId || "default").trim() || "default",
-      ownerKey: String(parsed.ownerKey || "")
+      ownerKey: String(parsed.ownerKey || ""),
+      authToken: String(parsed.authToken || ""),
+      authRole: String(parsed.authRole || "").trim().toLowerCase(),
+      authUser: parsed.authUser && typeof parsed.authUser === "object"
+        ? {
+            id: String(parsed.authUser.id || ""),
+            email: String(parsed.authUser.email || ""),
+            name: String(parsed.authUser.name || "")
+          }
+        : null
     };
   } catch (_error) {
     return defaults;
@@ -1268,6 +1316,51 @@ function loadSyncConfig() {
 
 function saveSyncConfig() {
   storage.writeJson(SYNC_CONFIG_KEY, app.syncConfig);
+}
+
+function hasCloudSession() {
+  return Boolean(String(app.syncConfig.authToken || "").trim());
+}
+
+function authRolePresetKey(role) {
+  return AUTH_ROLE_TO_PRESET[String(role || "").toLowerCase()] || "full";
+}
+
+function applyCloudAuthSession(payload) {
+  const token = String(payload?.token || "").trim();
+  if (!token) {
+    throw new Error("Missing auth token.");
+  }
+  app.syncConfig = {
+    ...app.syncConfig,
+    authToken: token,
+    authRole: String(payload?.role || "").trim().toLowerCase(),
+    accountId: String(payload?.accountId || app.syncConfig.accountId || "default").trim() || "default",
+    authUser: payload?.user && typeof payload.user === "object"
+      ? {
+          id: String(payload.user.id || ""),
+          email: String(payload.user.email || ""),
+          name: String(payload.user.name || "")
+        }
+      : null,
+    enabled: true
+  };
+  if (app.syncConfig.authRole && app.syncConfig.authRole !== "owner") {
+    clearSyncQueue();
+  }
+  app.cloud.loaded = false;
+  saveSyncConfig();
+}
+
+function clearCloudAuthSession() {
+  app.syncConfig = {
+    ...app.syncConfig,
+    authToken: "",
+    authRole: "",
+    authUser: null
+  };
+  app.cloud.loaded = false;
+  saveSyncConfig();
 }
 
 function loadReminderLog() {
@@ -1413,6 +1506,22 @@ function getActiveContext() {
     };
   }
 
+  const authRole = String(app.syncConfig.authRole || "").toLowerCase();
+  if (hasCloudSession() && authRole && authRole !== "owner") {
+    const presetKey = authRolePresetKey(authRole);
+    const preset = PRESETS[presetKey] || PRESETS.full;
+    return {
+      type: "authenticated_viewer",
+      label: `${authRole === "clinician" ? "Clinician" : authRole === "family" ? "Family" : "Viewer"} account`,
+      readOnly: true,
+      permissions: normalizePermissions(preset.permissions),
+      allowedModes: normalizeAllowedModes(preset.defaultModes),
+      blockedReason: "",
+      expiresAt: "",
+      preset: presetKey
+    };
+  }
+
   return {
     type: "owner",
     label: "Owner View",
@@ -1544,6 +1653,12 @@ function bindGlobalHandlers() {
 function bindShareHashListener() {
   window.addEventListener("hashchange", () => {
     app.shareSession = parseSharePayload();
+    const inviteToken = parseInviteTokenFromHash();
+    if (inviteToken) {
+      app.drafts.cloudInviteToken = inviteToken;
+      app.ui.activeSection = "sharing";
+      app.ui.activeViewMode = "clinical";
+    }
     if (app.shareSession) {
       handleShareSessionInit();
     } else {
@@ -1559,9 +1674,15 @@ function initializeBackgroundServices() {
   updateConnectivityBanner();
   if (app.shareSession) return;
   if (canUseRemoteSync()) {
-    void pullRemoteStateOnBoot();
-    if (app.syncQueue.length) {
-      scheduleRemoteSync();
+    if (hasCloudSession() || app.syncConfig.ownerKey) {
+      void pullRemoteStateOnBoot();
+      void refreshCloudSideData();
+      if (app.syncQueue.length) {
+        scheduleRemoteSync();
+      }
+    } else {
+      app.sync.status = "auth-required";
+      app.sync.lastError = "Sign in to enable cloud sync.";
     }
   } else {
     app.sync.status = "local-only";
@@ -1612,6 +1733,9 @@ function remoteHeaders() {
   if (app.syncConfig.ownerKey) {
     headers["x-owner-key"] = app.syncConfig.ownerKey;
   }
+  if (app.syncConfig.authToken) {
+    headers.authorization = `Bearer ${app.syncConfig.authToken}`;
+  }
   return headers;
 }
 
@@ -1645,6 +1769,14 @@ async function postShareAccessEvent(token) {
 
 function scheduleRemoteSync() {
   if (!canUseRemoteSync() || app.shareSession) return;
+  if (hasCloudSession() && app.syncConfig.authRole && app.syncConfig.authRole !== "owner" && !app.syncConfig.ownerKey) {
+    return;
+  }
+  if (!hasCloudSession() && !app.syncConfig.ownerKey) {
+    app.sync.status = "auth-required";
+    app.sync.lastError = "Sign in to enable cloud sync.";
+    return;
+  }
   clearTimeout(app.syncDebounceTimeout);
   app.syncDebounceTimeout = window.setTimeout(() => {
     void flushRemoteSync();
@@ -1653,6 +1785,15 @@ function scheduleRemoteSync() {
 
 async function flushRemoteSync() {
   if (!canUseRemoteSync() || app.shareSession || app.sync.inFlight) return;
+  if (hasCloudSession() && app.syncConfig.authRole && app.syncConfig.authRole !== "owner" && !app.syncConfig.ownerKey) {
+    return;
+  }
+  if (!hasCloudSession() && !app.syncConfig.ownerKey) {
+    app.sync.status = "auth-required";
+    app.sync.lastError = "Sign in to enable cloud sync.";
+    renderAll();
+    return;
+  }
   app.sync.inFlight = true;
   app.sync.status = "syncing";
   renderAll();
@@ -1683,6 +1824,12 @@ async function flushRemoteSync() {
 
 async function pullRemoteStateOnBoot() {
   if (!canUseRemoteSync() || app.shareSession) return;
+  if (!hasCloudSession() && !app.syncConfig.ownerKey) {
+    app.sync.status = "auth-required";
+    app.sync.lastError = "Sign in to enable cloud sync.";
+    renderAll();
+    return;
+  }
   app.sync.status = "syncing";
   renderAll();
   try {
@@ -1708,7 +1855,7 @@ async function pullRemoteStateOnBoot() {
         app.ownerData = remoteState;
         saveOwnerData(app.ownerData, { skipRemote: true, keepTimestamp: true });
         setStatus("Synced latest data from cloud.");
-      } else if (localUpdatedAt > remoteUpdatedAt) {
+      } else if (localUpdatedAt > remoteUpdatedAt && (!hasCloudSession() || String(app.syncConfig.authRole || "") === "owner" || app.syncConfig.ownerKey)) {
         scheduleRemoteSync();
       }
     }
@@ -1752,21 +1899,194 @@ async function pullRemoteShareAccess() {
   }
 }
 
+async function cloudRegisterOwner(payload) {
+  const response = await remoteRequest("/api/auth/register-owner", {
+    method: "POST",
+    body: JSON.stringify(payload || {})
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error || `Owner registration failed (${response.status})`);
+  }
+  applyCloudAuthSession(json);
+  return json;
+}
+
+async function cloudLogin(payload) {
+  const response = await remoteRequest("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify(payload || {})
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error || `Sign in failed (${response.status})`);
+  }
+  applyCloudAuthSession(json);
+  return json;
+}
+
+async function cloudAcceptInvite(payload) {
+  const response = await remoteRequest("/api/auth/invites/accept", {
+    method: "POST",
+    body: JSON.stringify(payload || {})
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error || `Invite acceptance failed (${response.status})`);
+  }
+  applyCloudAuthSession(json);
+  return json;
+}
+
+async function cloudLogout() {
+  if (!hasCloudSession()) return;
+  try {
+    await remoteRequest("/api/auth/logout", { method: "POST" });
+  } catch (_error) {
+    // Ignore logout API errors and clear local session anyway.
+  }
+  clearCloudAuthSession();
+}
+
+async function cloudFetchMe() {
+  if (!hasCloudSession()) return null;
+  const response = await remoteRequest("/api/auth/me", { method: "GET" });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearCloudAuthSession();
+    }
+    throw new Error(json.error || `Could not load cloud profile (${response.status})`);
+  }
+  app.syncConfig = {
+    ...app.syncConfig,
+    accountId: String(json.accountId || app.syncConfig.accountId || "default"),
+    authRole: String(json.role || app.syncConfig.authRole || "").toLowerCase(),
+    authUser: json.user && typeof json.user === "object"
+      ? {
+          id: String(json.user.id || ""),
+          email: String(json.user.email || ""),
+          name: String(json.user.name || "")
+        }
+      : app.syncConfig.authUser
+  };
+  saveSyncConfig();
+  return json;
+}
+
+async function cloudCreateInvite(payload) {
+  const response = await remoteRequest("/api/auth/invites", {
+    method: "POST",
+    body: JSON.stringify(payload || {})
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error || `Invite creation failed (${response.status})`);
+  }
+  return json;
+}
+
+async function cloudListInvites() {
+  const response = await remoteRequest("/api/auth/invites", { method: "GET" });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error || `Could not load invites (${response.status})`);
+  }
+  app.cloud.invites = Array.isArray(json.invites) ? json.invites : [];
+  return app.cloud.invites;
+}
+
+async function cloudRevokeInvite(inviteId) {
+  const response = await remoteRequest("/api/auth/invites/revoke", {
+    method: "POST",
+    body: JSON.stringify({ inviteId })
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error || `Could not revoke invite (${response.status})`);
+  }
+  return json;
+}
+
+async function cloudLoadAudit(limit = 80) {
+  const response = await remoteRequest(`/api/audit?limit=${encodeURIComponent(String(limit))}`, { method: "GET" });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error || `Could not load audit log (${response.status})`);
+  }
+  app.cloud.audit = Array.isArray(json.audit) ? json.audit : [];
+  return app.cloud.audit;
+}
+
+async function cloudLoadNotifications() {
+  const response = await remoteRequest("/api/notifications", { method: "GET" });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error || `Could not load notifications (${response.status})`);
+  }
+  app.cloud.notifications = Array.isArray(json.notifications) ? json.notifications : [];
+  return app.cloud.notifications;
+}
+
+async function cloudPostRiskNotification(payload) {
+  if (!hasCloudSession()) return;
+  try {
+    await remoteRequest("/api/notifications/risk", {
+      method: "POST",
+      body: JSON.stringify(payload || {})
+    });
+  } catch (_error) {
+    // Notifications are optional and should not block user flow.
+  }
+}
+
+async function refreshCloudSideData() {
+  if (!hasCloudSession()) {
+    app.cloud.invites = [];
+    app.cloud.audit = [];
+    app.cloud.notifications = [];
+    app.cloud.loaded = false;
+    return;
+  }
+  try {
+    await cloudFetchMe();
+  } catch (_error) {
+    return;
+  }
+
+  if (String(app.syncConfig.authRole || "") === "owner") {
+    await Promise.allSettled([
+      cloudListInvites(),
+      cloudLoadAudit(),
+      cloudLoadNotifications()
+    ]);
+  } else {
+    app.cloud.invites = [];
+    app.cloud.audit = [];
+    await Promise.allSettled([cloudLoadNotifications()]);
+  }
+  app.cloud.loaded = true;
+}
+
 function restartReminderLoop() {
   if (app.reminderIntervalId) {
     window.clearInterval(app.reminderIntervalId);
     app.reminderIntervalId = null;
   }
-  if (!app.ownerData.reminderSettings?.enabled || app.shareSession) return;
+  const settings = normalizeReminderSettings(app.ownerData.reminderSettings);
+  if ((!settings.enabled && !settings.riskAlertsEnabled) || app.shareSession) return;
   app.reminderIntervalId = window.setInterval(() => {
     runReminderSweep();
+    runRiskAlertSweep();
   }, 60 * 1000);
   runReminderSweep();
+  runRiskAlertSweep();
 }
 
 function runReminderSweep() {
-  if (!app.ownerData.reminderSettings?.enabled || app.shareSession) return;
-  const leadMinutes = Number(app.ownerData.reminderSettings.leadMinutes || 0);
+  const settings = normalizeReminderSettings(app.ownerData.reminderSettings);
+  if (!settings.enabled || app.shareSession) return;
+  const leadMinutes = Number(settings.leadMinutes || 0);
   const now = new Date();
   const today = getLocalDateKey(now);
   let reminderLogChanged = false;
@@ -1803,10 +2123,44 @@ function runReminderSweep() {
     };
     saveReminderLog();
     pushToast(message, "success");
-    if (app.ownerData.reminderSettings.desktopNotifications && "Notification" in window && Notification.permission === "granted") {
+    if (settings.desktopNotifications && "Notification" in window && Notification.permission === "granted") {
       new Notification("Medication reminder", { body: message });
     }
   }
+}
+
+function runRiskAlertSweep() {
+  const settings = normalizeReminderSettings(app.ownerData.reminderSettings);
+  if (!settings.riskAlertsEnabled || app.shareSession) return;
+
+  const meds = resolveCurrentMedications(app.ownerData).filter((med) => med.isCurrent);
+  const dueState = getDoseState(meds, app.ownerData.adherence, app.ownerData.doseSnoozes);
+  const riskAssessment = computeDashboardRisk(app.ownerData, dueState);
+  if (riskLevelRank(riskAssessment.level) < riskLevelRank(settings.riskAlertsMinLevel)) return;
+
+  const dayKey = getLocalDateKey(new Date());
+  const alertKey = `risk:${dayKey}:${riskAssessment.level}`;
+  if (app.reminderLog[alertKey]) return;
+
+  const reasonSummary = riskAssessment.reasons[0] || "Multiple warning signs triggered.";
+  const message = `Risk status ${riskAssessment.label}: ${reasonSummary}`;
+  app.reminderLog[alertKey] = {
+    date: dayKey,
+    firedAt: isoDateTime(new Date()),
+    level: riskAssessment.level
+  };
+  saveReminderLog();
+  pushToast(message, "success");
+
+  if (settings.desktopNotifications && "Notification" in window && Notification.permission === "granted") {
+    new Notification("Risk status update", { body: message });
+  }
+
+  void cloudPostRiskNotification({
+    level: riskAssessment.level,
+    reasons: riskAssessment.reasons.slice(0, 6),
+    triggeredAt: isoDateTime(new Date())
+  });
 }
 
 async function requestNotificationPermission() {
@@ -1846,7 +2200,14 @@ function renderAll() {
 }
 
 function renderViewModeSelector(context) {
-  if (!app.shareSession) {
+  if (!app.shareSession && context.type === "authenticated_viewer") {
+    const role = String(app.syncConfig.authRole || "viewer").toLowerCase();
+    const label = role === "clinician" ? "Clinician Account" : role === "family" ? "Family Account" : "Viewer Account";
+    dom.viewerModeSelect.innerHTML = `<option value="my">${escapeHtml(label)}</option>`;
+    dom.viewerModeSelect.disabled = true;
+    dom.viewerModeSegment.innerHTML = `<button type="button" role="tab" aria-selected="true" class="active" disabled>${escapeHtml(label)}</button>`;
+    app.ui.viewerMode = "my";
+  } else if (!app.shareSession) {
     dom.viewerModeSelect.innerHTML = VIEWER_MODE_ORDER
       .map((value) => `<option value="${value}">${escapeHtml(VIEWER_MODE_OPTIONS[value].label)}</option>`)
       .join("");
@@ -1911,6 +2272,9 @@ function renderContextElements(context) {
   if (context.type === "share") {
     dom.readOnlyBanner.classList.remove("hidden");
     dom.readOnlyBanner.innerHTML = `<strong>Read-only access:</strong> Shared for ${escapeHtml(context.label)}.${context.expiresAt ? ` Link expires ${escapeHtml(niceDate(context.expiresAt))}.` : ""}`;
+  } else if (context.type === "authenticated_viewer") {
+    dom.readOnlyBanner.classList.remove("hidden");
+    dom.readOnlyBanner.innerHTML = `<strong>Read-only account:</strong> You are signed in with viewer permissions (${escapeHtml(context.label)}).`;
   } else if (context.type === "preview") {
     dom.readOnlyBanner.classList.remove("hidden");
     dom.readOnlyBanner.innerHTML = `<strong>Preview mode:</strong> You are previewing ${escapeHtml(context.label)} permissions in read-only mode.`;
@@ -1933,6 +2297,7 @@ function renderContextElements(context) {
 function resolveContextBadge(context) {
   if (context.type === "owner") return VIEWER_BADGES.owner;
   if (context.type === "share") return VIEWER_BADGES.share;
+  if (context.type === "authenticated_viewer") return "Account View (Read-only)";
   if (app.ui.viewerMode === "clinician") return VIEWER_BADGES.clinician;
   if (app.ui.viewerMode === "family") return VIEWER_BADGES.family;
   if (app.ui.viewerMode === "preview_link") return VIEWER_BADGES.preview_link;
@@ -2130,8 +2495,20 @@ function renderUtilityPanel(context, data) {
     <div class="utility-section">
       <h3>Share status</h3>
       <div class="subtle">${context.readOnly ? "Read-only session active." : `${app.ownerData.shareLinks.length} shared links configured.`}</div>
-      ${context.readOnly ? "" : `<div class="subtle">Sync: ${escapeHtml(app.sync.status === "connected" ? "Connected" : app.sync.status === "syncing" ? "Syncing" : app.sync.status === "error" ? "Error" : "Local-only")}</div>`}
+      ${hasCloudSession() ? `<div class="subtle">Cloud user: ${escapeHtml(app.syncConfig.authUser?.email || app.syncConfig.authUser?.name || "signed in")} (${escapeHtml(app.syncConfig.authRole || "viewer")})</div>` : ""}
+      ${context.readOnly ? "" : `<div class="subtle">Sync: ${escapeHtml(
+        app.sync.status === "connected"
+          ? "Connected"
+          : app.sync.status === "syncing"
+            ? "Syncing"
+            : app.sync.status === "auth-required"
+              ? "Sign in required"
+              : app.sync.status === "error"
+                ? "Error"
+                : "Local-only"
+      )}</div>`}
       ${context.readOnly ? "" : `<div class="subtle">Reminders: ${app.ownerData.reminderSettings?.enabled ? `On (${app.ownerData.reminderSettings.leadMinutes || 0}m)` : "Off"}</div>`}
+      ${hasCloudSession() ? `<button class="btn btn-ghost small" type="button" data-utility-action="cloud-logout">Sign out cloud</button>` : ""}
       ${context.readOnly ? "" : `<button class="btn btn-ghost small" type="button" data-utility-action="sharing">Manage sharing</button>`}
     </div>
   `;
@@ -2146,6 +2523,16 @@ function renderUtilityPanel(context, data) {
       if (action === "sharing") {
         app.ui.activeSection = "sharing";
       }
+      if (action === "cloud-logout") {
+        void (async () => {
+          await cloudLogout();
+          app.sync.status = "auth-required";
+          app.sync.lastError = "Sign in to enable cloud sync.";
+          setStatus("Signed out from cloud account.");
+          renderAll();
+        })();
+        return;
+      }
       renderAll();
     });
   });
@@ -2159,11 +2546,13 @@ function renderSectionMeta(context) {
     const roleLabel = context.readOnly
       ? context.type === "share"
         ? "Viewer (Shared)"
-        : app.ui.viewerMode === "clinician"
-          ? "Viewer (Clinician)"
-          : app.ui.viewerMode === "family"
-            ? "Viewer (Family)"
-            : "Viewer"
+        : context.type === "authenticated_viewer"
+          ? `Viewer (${(app.syncConfig.authRole || "viewer").replace(/^./, (ch) => ch.toUpperCase())})`
+          : app.ui.viewerMode === "clinician"
+            ? "Viewer (Clinician)"
+            : app.ui.viewerMode === "family"
+              ? "Viewer (Family)"
+              : "Viewer"
       : "Owner";
     dom.roleBadge.textContent = roleLabel;
     dom.roleBadge.className = `role-badge ${context.readOnly ? "is-viewer" : "is-owner"}`;
@@ -4843,6 +5232,12 @@ function renderSharing(root, _data, context) {
     return;
   }
 
+  if (hasCloudSession() && !app.cloud.loaded) {
+    void refreshCloudSideData().then(() => {
+      renderAll();
+    });
+  }
+
   const defaultPreset = PRESETS.family;
   const toggles = normalizePermissions(app.drafts.sharePermissions || defaultPreset.permissions);
   const draftShare = app.drafts.share || {};
@@ -4858,15 +5253,155 @@ function renderSharing(root, _data, context) {
     ? `Connected${app.sync.lastSyncedAt ? ` · last sync ${niceDateTime(app.sync.lastSyncedAt)}` : ""}`
     : app.sync.status === "syncing"
       ? "Syncing..."
+      : app.sync.status === "auth-required"
+        ? "Sign in required"
       : app.sync.status === "error"
         ? `Error: ${app.sync.lastError || "Unable to sync"}`
         : "Local-only mode";
+  const signedInRole = String(app.syncConfig.authRole || "").toLowerCase();
+  const signedInName = app.syncConfig.authUser?.name || app.syncConfig.authUser?.email || "";
+  const signedInSummary = hasCloudSession()
+    ? `Signed in as ${signedInName || "user"} (${signedInRole || "viewer"})`
+    : "Not signed in";
   const syncDisabledAttr = LOCAL_ONLY_MODE ? "disabled" : "";
   const syncHelperText = LOCAL_ONLY_MODE
     ? "Cloud sync is disabled in this build. Your data stays in this browser."
     : "Example: https://api.yourdomain.com";
+  const cloudInvites = Array.isArray(app.cloud.invites) ? app.cloud.invites : [];
+  const cloudAudit = Array.isArray(app.cloud.audit) ? app.cloud.audit : [];
+  const cloudNotifications = Array.isArray(app.cloud.notifications) ? app.cloud.notifications : [];
+  const isOwnerSession = signedInRole === "owner";
 
   root.innerHTML = `
+    <div class="card">
+      <h3>Cloud account and invites</h3>
+      <div class="subtle">${escapeHtml(signedInSummary)}</div>
+      <div class="inline-row" style="margin-top:10px;">
+        <button class="btn btn-ghost" type="button" id="refreshCloudMetaButton" ${syncDisabledAttr}>Refresh cloud status</button>
+        ${hasCloudSession() ? `<button class="btn btn-secondary" type="button" id="cloudLogoutButton" ${syncDisabledAttr}>Sign out</button>` : ""}
+      </div>
+
+      ${hasCloudSession() ? `
+        <div class="field-grid" style="margin-top:12px;">
+          <div>
+            <label>Cloud account role</label>
+            <div class="subtle">${escapeHtml(signedInRole || "viewer")}</div>
+          </div>
+          <div>
+            <label>Account ID</label>
+            <div class="subtle">${escapeHtml(app.syncConfig.accountId || "default")}</div>
+          </div>
+        </div>
+      ` : `
+        <div class="field-grid" style="margin-top:12px;">
+          <form id="cloudRegisterForm">
+            <h4>Create owner account</h4>
+            <label>Email</label>
+            <input name="email" type="email" required placeholder="owner@example.com" ${syncDisabledAttr}>
+            <label>Password</label>
+            <input name="password" type="password" minlength="8" required ${syncDisabledAttr}>
+            <label>Name</label>
+            <input name="name" placeholder="Owner name" ${syncDisabledAttr}>
+            <label>Account ID</label>
+            <input name="accountId" value="${escapeHtml(app.syncConfig.accountId || "default")}" ${syncDisabledAttr}>
+            <button class="btn btn-secondary" type="submit" style="margin-top:8px;" ${syncDisabledAttr}>Register owner</button>
+          </form>
+          <form id="cloudLoginForm">
+            <h4>Sign in</h4>
+            <label>Email</label>
+            <input name="email" type="email" required placeholder="you@example.com" ${syncDisabledAttr}>
+            <label>Password</label>
+            <input name="password" type="password" required ${syncDisabledAttr}>
+            <label>Account ID (optional)</label>
+            <input name="accountId" value="${escapeHtml(app.syncConfig.accountId || "default")}" ${syncDisabledAttr}>
+            <button class="btn btn-primary" type="submit" style="margin-top:8px;" ${syncDisabledAttr}>Sign in</button>
+          </form>
+        </div>
+        <form id="cloudAcceptInviteForm" style="margin-top:12px;">
+          <h4>Accept invite</h4>
+          <div class="field-grid">
+            <div>
+              <label>Invite token</label>
+              <input name="token" value="${escapeHtml(app.drafts.cloudInviteToken || "")}" placeholder="Paste invite token" ${syncDisabledAttr}>
+            </div>
+            <div>
+              <label>Password</label>
+              <input name="password" type="password" minlength="8" placeholder="Required (new user or existing account check)" ${syncDisabledAttr}>
+            </div>
+            <div>
+              <label>Name (for first-time account)</label>
+              <input name="name" placeholder="Optional display name" ${syncDisabledAttr}>
+            </div>
+          </div>
+          <button class="btn btn-secondary" type="submit" style="margin-top:8px;" ${syncDisabledAttr}>Accept invite</button>
+        </form>
+      `}
+
+      ${hasCloudSession() && isOwnerSession ? `
+        <form id="cloudCreateInviteForm" style="margin-top:12px;">
+          <h4>Invite collaborator</h4>
+          <div class="field-grid">
+            <div>
+              <label>Email</label>
+              <input name="email" type="email" required placeholder="clinician@example.com">
+            </div>
+            <div>
+              <label>Name</label>
+              <input name="name" placeholder="Recipient name">
+            </div>
+            <div>
+              <label>Role</label>
+              <select name="role">
+                <option value="viewer">Viewer</option>
+                <option value="family">Family</option>
+                <option value="clinician">Clinician</option>
+              </select>
+            </div>
+            <div>
+              <label>Expiry</label>
+              <input name="expiresAt" type="date" value="${escapeHtml(defaultExpiry)}">
+            </div>
+          </div>
+          <button class="btn btn-secondary" type="submit" style="margin-top:8px;">Create invite</button>
+        </form>
+        <div style="margin-top:12px;">
+          <h4>Pending and recent invites</h4>
+          ${cloudInvites.length ? `
+            <div class="timeline-list">
+              ${cloudInvites.slice(0, 20).map((invite) => {
+                const status = invite.revokedAt ? "revoked" : invite.acceptedAt ? "accepted" : (invite.expiresAt && new Date(invite.expiresAt).getTime() < Date.now() ? "expired" : "pending");
+                return `
+                  <div class="timeline-item">
+                    <div><strong>${escapeHtml(invite.email || "Invite")}</strong> · ${escapeHtml(invite.role || "viewer")} · ${escapeHtml(status)}</div>
+                    <div class="subtle">Created ${escapeHtml(niceDateTime(invite.createdAt || ""))}${invite.acceptedAt ? ` · accepted ${escapeHtml(niceDateTime(invite.acceptedAt))}` : ""}</div>
+                    ${status === "pending" ? `<button class="btn btn-ghost small" type="button" data-cloud-revoke-invite="${escapeHtml(invite.id)}">Revoke</button>` : ""}
+                  </div>
+                `;
+              }).join("")}
+            </div>
+          ` : `<div class="subtle">No cloud invites yet.</div>`}
+        </div>
+      ` : ""}
+
+      ${hasCloudSession() ? `
+        <div style="margin-top:12px;">
+          <h4>Recent cloud notifications</h4>
+          ${cloudNotifications.length
+            ? `<ul class="timeline-list">${cloudNotifications.slice(0, 8).map((item) => `<li>${escapeHtml(item.message || item.type || "Notification")} · ${escapeHtml(niceDateTime(item.createdAt || ""))}</li>`).join("")}</ul>`
+            : `<div class="subtle">No cloud notifications yet.</div>`}
+        </div>
+      ` : ""}
+
+      ${hasCloudSession() && isOwnerSession ? `
+        <div style="margin-top:12px;">
+          <h4>Recent audit events</h4>
+          ${cloudAudit.length
+            ? `<ul class="timeline-list">${cloudAudit.slice(0, 8).map((item) => `<li>${escapeHtml(item.action || "event")} · ${escapeHtml(niceDateTime(item.at || ""))}</li>`).join("")}</ul>`
+            : `<div class="subtle">No audit events yet.</div>`}
+        </div>
+      ` : ""}
+    </div>
+
     <div class="card">
       <h3>Settings, sync + reminders</h3>
       <div class="field-grid">
@@ -4939,6 +5474,18 @@ function renderSharing(root, _data, context) {
             <input type="checkbox" id="desktopNotificationsEnabled" ${reminderSettings.desktopNotifications ? "checked" : ""}>
             <span>Desktop notifications</span>
           </label>
+        </div>
+        <div>
+          <label class="check-item">
+            <input type="checkbox" id="riskAlertsEnabled" ${reminderSettings.riskAlertsEnabled ? "checked" : ""}>
+            <span>Risk threshold alerts</span>
+          </label>
+        </div>
+        <div>
+          <label for="riskAlertsMinLevel">Alert from risk level</label>
+          <select id="riskAlertsMinLevel">
+            ${["watch", "elevated", "high"].map((level) => `<option value="${level}" ${reminderSettings.riskAlertsMinLevel === level ? "selected" : ""}>${escapeHtml(level)}</option>`).join("")}
+          </select>
         </div>
         <div>
           <label>Notification permission</label>
@@ -5093,6 +5640,12 @@ function renderSharing(root, _data, context) {
   `;
 
   const shareForm = root.querySelector("#shareForm");
+  const cloudRegisterForm = root.querySelector("#cloudRegisterForm");
+  const cloudLoginForm = root.querySelector("#cloudLoginForm");
+  const cloudAcceptInviteForm = root.querySelector("#cloudAcceptInviteForm");
+  const cloudCreateInviteForm = root.querySelector("#cloudCreateInviteForm");
+  const cloudLogoutButton = root.querySelector("#cloudLogoutButton");
+  const refreshCloudMetaButton = root.querySelector("#refreshCloudMetaButton");
   const presetSelect = root.querySelector("#sharePresetSelect");
   const syncEnabled = root.querySelector("#syncEnabled");
   const syncEndpoint = root.querySelector("#syncEndpoint");
@@ -5103,6 +5656,166 @@ function renderSharing(root, _data, context) {
   const remindersEnabled = root.querySelector("#remindersEnabled");
   const reminderLeadMinutes = root.querySelector("#reminderLeadMinutes");
   const desktopNotificationsEnabled = root.querySelector("#desktopNotificationsEnabled");
+  const riskAlertsEnabled = root.querySelector("#riskAlertsEnabled");
+  const riskAlertsMinLevel = root.querySelector("#riskAlertsMinLevel");
+
+  refreshCloudMetaButton?.addEventListener("click", () => {
+    if (LOCAL_ONLY_MODE) {
+      setStatus("Cloud sync is disabled in this build.", "error");
+      return;
+    }
+    void (async () => {
+      try {
+        await refreshCloudSideData();
+        setStatus("Cloud status refreshed.");
+        renderAll();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not refresh cloud status.";
+        setStatus(message, "error");
+      }
+    })();
+  });
+
+  cloudLogoutButton?.addEventListener("click", () => {
+    void (async () => {
+      await cloudLogout();
+      app.sync.status = "auth-required";
+      app.sync.lastError = "Sign in to enable cloud sync.";
+      setStatus("Signed out from cloud account.");
+      renderAll();
+    })();
+  });
+
+  cloudRegisterForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (LOCAL_ONLY_MODE) {
+      setStatus("Cloud sync is disabled in this build.", "error");
+      return;
+    }
+    const values = formToObject(cloudRegisterForm);
+    void (async () => {
+      try {
+        const payload = await cloudRegisterOwner({
+          email: values.email,
+          password: values.password,
+          name: values.name,
+          accountId: values.accountId || app.syncConfig.accountId || "default"
+        });
+        app.sync.status = "connected";
+        app.sync.lastError = "";
+        app.sync.lastSyncedAt = isoDateTime(new Date());
+        setStatus(`Cloud owner account ready for ${payload.user?.email || values.email}.`);
+        await pullRemoteStateOnBoot();
+        await refreshCloudSideData();
+        renderAll();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not register owner account.";
+        setStatus(message, "error");
+      }
+    })();
+  });
+
+  cloudLoginForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (LOCAL_ONLY_MODE) {
+      setStatus("Cloud sync is disabled in this build.", "error");
+      return;
+    }
+    const values = formToObject(cloudLoginForm);
+    void (async () => {
+      try {
+        const payload = await cloudLogin({
+          email: values.email,
+          password: values.password,
+          accountId: values.accountId || ""
+        });
+        app.sync.status = "connected";
+        app.sync.lastError = "";
+        app.sync.lastSyncedAt = isoDateTime(new Date());
+        setStatus(`Signed in as ${payload.user?.email || values.email}.`);
+        await pullRemoteStateOnBoot();
+        await refreshCloudSideData();
+        renderAll();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not sign in.";
+        setStatus(message, "error");
+      }
+    })();
+  });
+
+  cloudAcceptInviteForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (LOCAL_ONLY_MODE) {
+      setStatus("Cloud sync is disabled in this build.", "error");
+      return;
+    }
+    const values = formToObject(cloudAcceptInviteForm);
+    void (async () => {
+      try {
+        const payload = await cloudAcceptInvite({
+          token: values.token,
+          password: values.password,
+          name: values.name
+        });
+        app.drafts.cloudInviteToken = "";
+        app.sync.status = "connected";
+        app.sync.lastError = "";
+        app.sync.lastSyncedAt = isoDateTime(new Date());
+        setStatus(`Invite accepted. Signed in as ${payload.user?.email || "user"}.`);
+        await pullRemoteStateOnBoot();
+        await refreshCloudSideData();
+        renderAll();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not accept invite.";
+        setStatus(message, "error");
+      }
+    })();
+  });
+
+  cloudCreateInviteForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const values = formToObject(cloudCreateInviteForm);
+    void (async () => {
+      try {
+        const payload = await cloudCreateInvite({
+          email: values.email,
+          name: values.name,
+          role: values.role,
+          expiresAt: values.expiresAt
+        });
+        await cloudListInvites();
+        const token = payload?.inviteToken || "";
+        if (token && navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(token);
+          setStatus("Invite created. Invite token copied to clipboard.");
+        } else {
+          setStatus(token ? `Invite created. Token: ${token}` : "Invite created.");
+        }
+        renderAll();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not create invite.";
+        setStatus(message, "error");
+      }
+    })();
+  });
+
+  root.querySelectorAll("[data-cloud-revoke-invite]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const inviteId = String(button.getAttribute("data-cloud-revoke-invite") || "");
+      if (!inviteId) return;
+      void (async () => {
+        try {
+          await cloudRevokeInvite(inviteId);
+          await cloudListInvites();
+          setStatus("Invite revoked.");
+          renderAll();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Could not revoke invite.";
+          setStatus(message, "error");
+        }
+      })();
+    });
+  });
 
   root.querySelector("#saveProfileSettingsButton")?.addEventListener("click", () => {
     app.ownerData.profile = normalizeOwnerProfile({
@@ -5125,15 +5838,18 @@ function renderSharing(root, _data, context) {
       return;
     }
     app.syncConfig = {
+      ...app.syncConfig,
       enabled: Boolean(syncEnabled?.checked),
       endpoint: String(syncEndpoint?.value || "").trim(),
       accountId: String(syncAccountId?.value || "default").trim() || "default",
       ownerKey: String(syncOwnerKey?.value || "")
     };
     saveSyncConfig();
-    app.sync.status = canUseRemoteSync() ? "syncing" : "local-only";
+    app.sync.status = canUseRemoteSync()
+      ? (hasCloudSession() || app.syncConfig.ownerKey ? "syncing" : "auth-required")
+      : "local-only";
     app.sync.lastError = "";
-    if (canUseRemoteSync()) {
+    if (canUseRemoteSync() && (hasCloudSession() || app.syncConfig.ownerKey)) {
       void pullRemoteStateOnBoot();
     }
     setStatus("Sync settings saved.");
@@ -5149,6 +5865,10 @@ function renderSharing(root, _data, context) {
       setStatus("Enable sync and set API endpoint first.", "error");
       return;
     }
+    if (!hasCloudSession() && !app.syncConfig.ownerKey) {
+      setStatus("Sign in to cloud (or provide legacy owner key) before syncing.", "error");
+      return;
+    }
     void flushRemoteSync();
     setStatus("Sync requested.");
   });
@@ -5157,7 +5877,9 @@ function renderSharing(root, _data, context) {
     app.ownerData.reminderSettings = normalizeReminderSettings({
       enabled: remindersEnabled?.checked,
       leadMinutes: Number(reminderLeadMinutes?.value || 15),
-      desktopNotifications: desktopNotificationsEnabled?.checked
+      desktopNotifications: desktopNotificationsEnabled?.checked,
+      riskAlertsEnabled: riskAlertsEnabled?.checked,
+      riskAlertsMinLevel: String(riskAlertsMinLevel?.value || "elevated")
     });
     saveOwnerData(app.ownerData);
     restartReminderLoop();
