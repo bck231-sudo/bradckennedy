@@ -32,7 +32,7 @@ const REMOTE_SYNC_DEBOUNCE_MS = 800;
 const REMOTE_REQUEST_TIMEOUT_MS = 12000;
 const DASHBOARD_DOSE_PAGE_SIZE = 8;
 const PRODUCTION_SYNC_ENDPOINT = "https://medication-tracker-api.onrender.com";
-const LOCAL_ONLY_MODE = false;
+const LOCAL_ONLY_MODE = true;
 const SUMMARY_RANGE_OPTIONS = ["7", "14", "30"];
 const storage = createStorageService(typeof window !== "undefined" ? window.localStorage : null);
 
@@ -5293,7 +5293,7 @@ function renderSharing(root, _data, context) {
   const isOwnerSession = signedInRole === "owner";
 
   root.innerHTML = `
-    <div class="card">
+    <div id="cloudAccountCard" class="card ${LOCAL_ONLY_MODE ? "hidden" : ""}">
       <h3>Cloud account and invites</h3>
       <div class="subtle">${escapeHtml(signedInSummary)}</div>
       <div class="inline-row" style="margin-top:10px;">
@@ -5440,38 +5440,43 @@ function renderSharing(root, _data, context) {
       <div class="inline-row" style="margin-top:10px;">
         <button class="btn btn-secondary" type="button" id="saveProfileSettingsButton">Save personalization</button>
       </div>
+      ${LOCAL_ONLY_MODE
+        ? `<p class="helper-text" style="margin-top:10px;">Local-only mode is active. No login or cloud account setup is required.</p>`
+        : ""}
 
-      <hr class="soft">
+      <div id="syncSettingsBlock" class="${LOCAL_ONLY_MODE ? "hidden" : ""}">
+        <hr class="soft">
 
-      <div class="field-grid">
-        <div>
-          <label>Enable cloud sync</label>
-          <label class="check-item">
-            <input type="checkbox" id="syncEnabled" ${app.syncConfig.enabled ? "checked" : ""} ${syncDisabledAttr}>
-            <span>Use backend persistence for multi-device access</span>
-          </label>
+        <div class="field-grid">
+          <div>
+            <label>Enable cloud sync</label>
+            <label class="check-item">
+              <input type="checkbox" id="syncEnabled" ${app.syncConfig.enabled ? "checked" : ""} ${syncDisabledAttr}>
+              <span>Use backend persistence for multi-device access</span>
+            </label>
+          </div>
+          <div>
+            <label>Sync status</label>
+            <div class="subtle">${escapeHtml(syncStatus)}</div>
+          </div>
+          <div>
+            <label for="syncEndpoint">API endpoint</label>
+            <input id="syncEndpoint" value="${escapeHtml(app.syncConfig.endpoint || "")}" placeholder="https://your-api.example.com" ${syncDisabledAttr}>
+            <p class="helper-text">${escapeHtml(syncHelperText)}</p>
+          </div>
+          <div>
+            <label for="syncAccountId">Account ID</label>
+            <input id="syncAccountId" value="${escapeHtml(app.syncConfig.accountId || "default")}" ${syncDisabledAttr}>
+          </div>
+          <div style="grid-column: 1 / -1;">
+            <label for="syncOwnerKey">Owner API key</label>
+            <input id="syncOwnerKey" type="password" value="${escapeHtml(app.syncConfig.ownerKey || "")}" placeholder="Owner key for write access" ${syncDisabledAttr}>
+          </div>
         </div>
-        <div>
-          <label>Sync status</label>
-          <div class="subtle">${escapeHtml(syncStatus)}</div>
+        <div class="inline-row" style="margin-top:10px;">
+          <button class="btn btn-secondary" type="button" id="saveSyncConfigButton" ${syncDisabledAttr}>Save sync settings</button>
+          <button class="btn btn-ghost" type="button" id="syncNowButton" ${syncDisabledAttr}>Sync now</button>
         </div>
-        <div>
-          <label for="syncEndpoint">API endpoint</label>
-          <input id="syncEndpoint" value="${escapeHtml(app.syncConfig.endpoint || "")}" placeholder="https://your-api.example.com" ${syncDisabledAttr}>
-          <p class="helper-text">${escapeHtml(syncHelperText)}</p>
-        </div>
-        <div>
-          <label for="syncAccountId">Account ID</label>
-          <input id="syncAccountId" value="${escapeHtml(app.syncConfig.accountId || "default")}" ${syncDisabledAttr}>
-        </div>
-        <div style="grid-column: 1 / -1;">
-          <label for="syncOwnerKey">Owner API key</label>
-          <input id="syncOwnerKey" type="password" value="${escapeHtml(app.syncConfig.ownerKey || "")}" placeholder="Owner key for write access" ${syncDisabledAttr}>
-        </div>
-      </div>
-      <div class="inline-row" style="margin-top:10px;">
-        <button class="btn btn-secondary" type="button" id="saveSyncConfigButton" ${syncDisabledAttr}>Save sync settings</button>
-        <button class="btn btn-ghost" type="button" id="syncNowButton" ${syncDisabledAttr}>Sync now</button>
       </div>
 
       <hr class="soft">

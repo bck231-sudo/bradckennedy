@@ -1,6 +1,7 @@
 # Medication Tracker (bradckennedy.org)
 
 This site now runs in **local-only mode** by default (no login, no backend required, no API setup).
+Cloud account registration/sign-in panels are hidden in this mode to keep the workflow simple.
 
 ## Run Locally (No Backend)
 
