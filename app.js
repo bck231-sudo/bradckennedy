@@ -31,9 +31,17 @@ const DOSE_SNOOZE_MINUTES = 30;
 const REMOTE_SYNC_DEBOUNCE_MS = 800;
 const REMOTE_REQUEST_TIMEOUT_MS = 12000;
 const DASHBOARD_DOSE_PAGE_SIZE = 8;
+const UTILITY_PANEL_MIN_WIDTH = 1500;
 const PRODUCTION_SYNC_ENDPOINT = "https://medication-tracker-api.onrender.com";
 const LOCAL_ONLY_MODE = true;
 const SUMMARY_RANGE_OPTIONS = ["7", "14", "30"];
+const TIMELINE_LAZY_CHART_DEFAULTS = Object.freeze({
+  adherence: true,
+  symptoms: true,
+  sleep: false,
+  sideEffects: false,
+  doseChanges: false
+});
 const storage = createStorageService(typeof window !== "undefined" ? window.localStorage : null);
 
 const SIDE_EFFECT_OPTIONS = [
@@ -361,6 +369,7 @@ const dom = {
   sectionTitle: document.getElementById("sectionTitle"),
   sectionSubtitle: document.getElementById("sectionSubtitle"),
   roleBadge: document.getElementById("roleBadge"),
+  installAppButton: document.getElementById("installAppButton"),
   quickCheckinButton: document.getElementById("quickCheckinButton"),
   readOnlyBanner: document.getElementById("readOnlyBanner"),
   offlineBanner: document.getElementById("offlineBanner"),
@@ -417,6 +426,7 @@ const app = {
     dashboardTrendView: "simple",
     dashboardTrendRangeDays: "7",
     exportSummaryRangeDays: "14",
+    timelineLazyCharts: { ...TIMELINE_LAZY_CHART_DEFAULTS },
     timelineFilters: {
       medicationId: "all",
       rangeDays: "14",
@@ -442,6 +452,18 @@ const app = {
     notifications: [],
     loaded: false
   },
+  pwa: {
+    installPromptEvent: null,
+    installed: false
+  },
+  derivedMemo: {
+    currentMedsKey: "",
+    currentMedsValue: [],
+    riskHistoryKey: "",
+    riskHistoryValue: [],
+    timelineFilteredKey: "",
+    timelineFilteredValue: null
+  },
   queueRemoteSync: () => {}
 };
 
@@ -457,6 +479,7 @@ if (inviteTokenFromHash && !app.shareSession) {
 if (app.shareSession) {
   handleShareSessionInit();
 }
+applySectionRouteFromHash(window.location.hash);
 
 hydrateMedicationNameOptions();
 bindGlobalHandlers();
@@ -494,7 +517,10 @@ function saveOwnerData(nextData, options = {}) {
   if (!options.keepTimestamp) {
     payload.stateUpdatedAt = isoDateTime(new Date());
   }
-  storage.writeJson(STORAGE_KEY, payload);
+  const persisted = storage.writeJson(STORAGE_KEY, payload);
+  if (!persisted && options.throwOnPersistFailure) {
+    throw new Error("Local save failed. Check browser storage availability and retry.");
+  }
   if (!options.skipRemote && typeof window !== "undefined") {
     const runtimeApp = window.__medicationTrackerApp;
     if (runtimeApp && canUseRemoteSync()) {
@@ -909,11 +935,13 @@ function ensureStateShape(input) {
   }
 
   for (const change of Array.isArray(input.changes) ? input.changes : []) {
+    const dateEffective = change.dateEffective || change.date || isoDate(new Date());
     state.changes.push({
       id: change.id || uid(),
       medicationId: change.medicationId || "",
       medicationName: change.medicationName || "",
-      date: change.date || isoDate(new Date()),
+      date: dateEffective,
+      dateEffective,
       oldDose: change.oldDose || "",
       newDose: change.newDose || "",
       reason: change.reason || "",
@@ -988,15 +1016,15 @@ function normalizeCheckin(input) {
   return {
     id: input?.id || uid(),
     date: input?.date || isoDate(new Date()),
-    mood: clampNumber(input?.mood, 1, 10),
-    anxiety: clampNumber(input?.anxiety, 1, 10),
-    focus: clampNumber(input?.focus, 1, 10),
+    mood: clampNumber(input?.mood, 0, 10),
+    anxiety: clampNumber(input?.anxiety, 0, 10),
+    focus: clampNumber(input?.focus, 0, 10),
     sleepHours: clampDecimal(input?.sleepHours, 0, 24),
-    sleepQuality: clampNumber(input?.sleepQuality, 1, 10),
-    appetite: clampNumber(input?.appetite, 1, 10),
-    energy: clampNumber(input?.energy, 1, 10),
-    irritability: clampNumber(input?.irritability, 1, 10),
-    cravingsImpulsivity: clampNumber(input?.cravingsImpulsivity, 1, 10),
+    sleepQuality: clampNumber(input?.sleepQuality, 0, 10),
+    appetite: clampNumber(input?.appetite, 0, 10),
+    energy: clampNumber(input?.energy, 0, 10),
+    irritability: clampNumber(input?.irritability, 0, 10),
+    cravingsImpulsivity: clampNumber(input?.cravingsImpulsivity, 0, 10),
     sideEffectsChecklist: Array.isArray(input?.sideEffectsChecklist) ? input.sideEffectsChecklist : [],
     sideEffectsText: input?.sideEffectsText || "",
     trainingNotes: input?.trainingNotes || "",
@@ -1544,6 +1572,9 @@ function getSourceData() {
 
 function getVisibleData() {
   const context = getActiveContext();
+  if (context.type === "owner" && !context.readOnly) {
+    return getSourceData();
+  }
   const source = deepClone(getSourceData());
 
   if (!context.permissions.showSensitiveTags) {
@@ -1632,6 +1663,10 @@ function bindGlobalHandlers() {
     renderAll();
   });
 
+  dom.installAppButton?.addEventListener("click", () => {
+    void promptPwaInstall();
+  });
+
   dom.closeMedicationModal.addEventListener("click", closeMedicationModal);
   dom.medicationModal.addEventListener("click", (event) => {
     if (event.target === dom.medicationModal) {
@@ -1649,6 +1684,41 @@ function bindGlobalHandlers() {
   window.addEventListener("offline", () => {
     updateConnectivityBanner();
   });
+
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    app.pwa.installPromptEvent = event;
+    updateInstallButtonVisibility();
+  });
+
+  window.addEventListener("appinstalled", () => {
+    app.pwa.installed = true;
+    app.pwa.installPromptEvent = null;
+    updateInstallButtonVisibility();
+    setStatus("App installed.");
+  });
+}
+
+function parseSectionRouteFromHash(hashValue) {
+  const normalized = String(hashValue || "").trim().toLowerCase();
+  if (!normalized || normalized.includes("=")) return null;
+  const route = normalized.replace(/^#/, "");
+  if (!route) return null;
+  if (route === "dashboard") return { sectionId: "dashboard", preferredModes: ["daily", "clinical", "personal"], fallbackSections: [] };
+  if (route === "history") return { sectionId: "timeline", preferredModes: ["clinical", "personal"], fallbackSections: ["changes"] };
+  if (route === "settings") return { sectionId: "exports", preferredModes: ["personal", "clinical"], fallbackSections: ["sharing"] };
+  if (route === "share") return { sectionId: "sharing", preferredModes: ["clinical", "personal"], fallbackSections: ["exports"] };
+  return null;
+}
+
+function applySectionRouteFromHash(hashValue) {
+  if (app.shareSession) return false;
+  const route = parseSectionRouteFromHash(hashValue);
+  if (!route) return false;
+  return navigateToSection(route.sectionId, {
+    preferredModes: route.preferredModes,
+    fallbackSections: route.fallbackSections
+  });
 }
 
 function bindShareHashListener() {
@@ -1664,6 +1734,7 @@ function bindShareHashListener() {
       handleShareSessionInit();
     } else {
       app.ui.viewerMode = "my";
+      applySectionRouteFromHash(window.location.hash);
     }
     restartReminderLoop();
     ensureSectionForCurrentMode();
@@ -1696,8 +1767,43 @@ async function registerPwaServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
   try {
     await navigator.serviceWorker.register("./sw.js");
+    if (window.matchMedia?.("(display-mode: standalone)").matches || window.navigator.standalone === true) {
+      app.pwa.installed = true;
+      app.pwa.installPromptEvent = null;
+    }
+    updateInstallButtonVisibility();
   } catch (error) {
     console.error("Service worker registration failed:", error);
+  }
+}
+
+function updateInstallButtonVisibility() {
+  if (!dom.installAppButton) return;
+  const canPromptInstall = Boolean(app.pwa.installPromptEvent) && !app.pwa.installed;
+  dom.installAppButton.hidden = !canPromptInstall;
+}
+
+async function promptPwaInstall() {
+  if (!app.pwa.installPromptEvent) {
+    setStatus("Install prompt is not available yet on this device/browser.", "error");
+    return;
+  }
+  const promptEvent = app.pwa.installPromptEvent;
+  app.pwa.installPromptEvent = null;
+  updateInstallButtonVisibility();
+  try {
+    await promptEvent.prompt();
+    const choice = await promptEvent.userChoice;
+    if (choice?.outcome === "accepted") {
+      app.pwa.installed = true;
+      setStatus("Install started.");
+    } else {
+      setStatus("Install dismissed.");
+    }
+  } catch (_error) {
+    setStatus("Install prompt could not be completed.", "error");
+  } finally {
+    updateInstallButtonVisibility();
   }
 }
 
@@ -2267,6 +2373,24 @@ function renderViewModeSelector(context) {
   dom.viewModeSelect.value = app.ui.activeViewMode;
 }
 
+function renderViewerCapabilitySummary(context) {
+  if (!context?.readOnly) return "";
+  const allowedModes = (context.allowedModes || [])
+    .map((mode) => VIEW_MODE_META[mode]?.label || mode)
+    .filter(Boolean);
+  const hidden = [];
+  if (!context.permissions?.showSensitiveNotes) hidden.push("sensitive notes");
+  if (!context.permissions?.showJournalText) hidden.push("journal text");
+  if (!context.permissions?.showLibido) hidden.push("libido/sexual side effects");
+  if (!context.permissions?.showSubstance) hidden.push("substance-use notes");
+  if (!context.permissions?.showFreeText) hidden.push("free-text notes");
+  if (!context.permissions?.showSensitiveTags) hidden.push("sensitive tags");
+
+  const viewSummary = allowedModes.length ? allowedModes.join(", ") : "none";
+  const hiddenSummary = hidden.length ? hidden.join(", ") : "none";
+  return `<div class="subtle" style="margin-top:4px;">Can view: ${escapeHtml(viewSummary)} · Hidden: ${escapeHtml(hiddenSummary)}</div>`;
+}
+
 function renderContextElements(context) {
   dom.contextPill.textContent = resolveContextBadge(context);
 
@@ -2291,13 +2415,13 @@ function renderContextElements(context) {
 
   if (context.type === "share") {
     dom.readOnlyBanner.classList.remove("hidden");
-    dom.readOnlyBanner.innerHTML = `<strong>Read-only access:</strong> Shared for ${escapeHtml(context.label)}.${context.expiresAt ? ` Link expires ${escapeHtml(niceDate(context.expiresAt))}.` : ""}`;
+    dom.readOnlyBanner.innerHTML = `<strong>Read-only access:</strong> Shared for ${escapeHtml(context.label)}.${context.expiresAt ? ` Link expires ${escapeHtml(niceDate(context.expiresAt))}.` : ""}${renderViewerCapabilitySummary(context)}`;
   } else if (context.type === "authenticated_viewer") {
     dom.readOnlyBanner.classList.remove("hidden");
-    dom.readOnlyBanner.innerHTML = `<strong>Read-only account:</strong> You are signed in with viewer permissions (${escapeHtml(context.label)}).`;
+    dom.readOnlyBanner.innerHTML = `<strong>Read-only account:</strong> You are signed in with viewer permissions (${escapeHtml(context.label)}).${renderViewerCapabilitySummary(context)}`;
   } else if (context.type === "preview") {
     dom.readOnlyBanner.classList.remove("hidden");
-    dom.readOnlyBanner.innerHTML = `<strong>Preview mode:</strong> You are previewing ${escapeHtml(context.label)} permissions in read-only mode.`;
+    dom.readOnlyBanner.innerHTML = `<strong>Preview mode:</strong> You are previewing ${escapeHtml(context.label)} permissions in read-only mode.${renderViewerCapabilitySummary(context)}`;
   } else {
     dom.readOnlyBanner.classList.add("hidden");
     dom.readOnlyBanner.innerHTML = "";
@@ -2354,6 +2478,22 @@ function findModeForSection(context, sectionId, preferredModes = []) {
   return "";
 }
 
+function hashForSection(sectionId) {
+  if (sectionId === "dashboard") return "#dashboard";
+  if (sectionId === "timeline" || sectionId === "changes") return "#history";
+  if (sectionId === "sharing") return "#share";
+  if (sectionId === "exports") return "#settings";
+  return "";
+}
+
+function syncHashWithSection(sectionId) {
+  if (typeof window === "undefined" || app.shareSession) return;
+  const targetHash = hashForSection(sectionId);
+  if (!targetHash) return;
+  if (window.location.hash === targetHash) return;
+  window.history.replaceState(null, "", targetHash);
+}
+
 function navigateToSection(sectionId, options = {}) {
   const context = getActiveContext();
   const preferredModes = Array.isArray(options.preferredModes) ? options.preferredModes : [];
@@ -2365,11 +2505,13 @@ function navigateToSection(sectionId, options = {}) {
     if (!mode) continue;
     app.ui.activeViewMode = mode;
     app.ui.activeSection = candidate;
+    syncHashWithSection(candidate);
     return true;
   }
 
   const currentSections = availableSections(context, app.ui.activeViewMode);
   app.ui.activeSection = currentSections[0]?.id || "dashboard";
+  syncHashWithSection(app.ui.activeSection);
   setStatus("That section is not available in this viewer context.", "error");
   return false;
 }
@@ -2397,6 +2539,7 @@ function renderNavigation(context) {
   dom.sectionNav.querySelectorAll("button[data-section]").forEach((button) => {
     button.addEventListener("click", () => {
       app.ui.activeSection = button.dataset.section;
+      syncHashWithSection(app.ui.activeSection);
       renderAll();
     });
   });
@@ -2475,6 +2618,13 @@ function renderMobileNav(context) {
 
 function renderUtilityPanel(context, data) {
   if (!dom.utilityPanel) return;
+  const utilityVisible = typeof window !== "undefined"
+    ? Boolean(window.matchMedia?.(`(min-width: ${UTILITY_PANEL_MIN_WIDTH}px)`)?.matches)
+    : false;
+  if (!utilityVisible) {
+    dom.utilityPanel.innerHTML = "";
+    return;
+  }
   if (context.blockedReason) {
     dom.utilityPanel.innerHTML = `<div class="utility-section"><h3>Access status</h3><p class="subtle">${escapeHtml(context.blockedReason)}</p></div>`;
     return;
@@ -2562,6 +2712,11 @@ function renderSectionMeta(context) {
   const meta = SECTION_META.find((section) => section.id === app.ui.activeSection) || SECTION_META[0];
   dom.sectionTitle.textContent = meta.title;
   dom.sectionSubtitle.textContent = meta.subtitle;
+  if (dom.quickCheckinButton) {
+    dom.quickCheckinButton.disabled = Boolean(context.readOnly);
+    dom.quickCheckinButton.title = context.readOnly ? "Quick check-in is disabled in read-only mode." : "Open quick check-in";
+  }
+  updateInstallButtonVisibility();
   if (dom.roleBadge) {
     const roleLabel = context.readOnly
       ? context.type === "share"
@@ -2634,7 +2789,46 @@ function renderSections(context, visibleData) {
   }
 }
 
+function maxDateAcrossRows(rows, fields) {
+  if (!Array.isArray(rows) || !rows.length) return 0;
+  let maxValue = 0;
+  for (const row of rows) {
+    for (const field of fields) {
+      const parsed = parseSortableDate(row?.[field]);
+      if (parsed > maxValue) maxValue = parsed;
+    }
+  }
+  return maxValue;
+}
+
+function derivedStateMemoKey(data) {
+  if (!data || typeof data !== "object") return "empty";
+  const medications = Array.isArray(data.medications) ? data.medications : [];
+  const changes = Array.isArray(data.changes) ? data.changes : [];
+  const checkins = Array.isArray(data.checkins) ? data.checkins : [];
+  const adherence = Array.isArray(data.adherence) ? data.adherence : [];
+  const notes = Array.isArray(data.notes) ? data.notes : [];
+  return [
+    String(data.stateUpdatedAt || ""),
+    medications.length,
+    changes.length,
+    checkins.length,
+    adherence.length,
+    notes.length,
+    maxDateAcrossRows(medications, ["updatedAt", "createdAt", "startDate"]),
+    maxDateAcrossRows(changes, ["createdAt", "date", "dateEffective"]),
+    maxDateAcrossRows(checkins, ["updatedAt", "createdAt", "date"]),
+    maxDateAcrossRows(adherence, ["updatedAt", "createdAt", "actionAt", "date"]),
+    maxDateAcrossRows(notes, ["createdAt", "date"])
+  ].join("|");
+}
+
 function resolveCurrentMedications(data) {
+  const memoKey = `${derivedStateMemoKey(data)}|current_meds`;
+  if (app.derivedMemo.currentMedsKey === memoKey) {
+    return app.derivedMemo.currentMedsValue;
+  }
+
   const grouped = new Map();
 
   for (const med of data.medications || []) {
@@ -2675,11 +2869,14 @@ function resolveCurrentMedications(data) {
     });
   }
 
-  return resolved.sort((a, b) => {
+  const sortedResolved = resolved.sort((a, b) => {
     if (Number(b.isCurrent) !== Number(a.isCurrent)) return Number(b.isCurrent) - Number(a.isCurrent);
     if (Number(b.isTargetMedication) !== Number(a.isTargetMedication)) return Number(b.isTargetMedication) - Number(a.isTargetMedication);
     return (a.name || "").localeCompare(b.name || "");
   });
+  app.derivedMemo.currentMedsKey = memoKey;
+  app.derivedMemo.currentMedsValue = sortedResolved;
+  return sortedResolved;
 }
 
 function isTargetMedicationRecord(medication) {
@@ -2763,8 +2960,14 @@ function safeDateFromKey(dateKey) {
 }
 
 function computeRecentRiskHistory(data, days = 14, referenceDate = new Date()) {
-  const timeline = [];
   const totalDays = Math.max(1, Number(days || 14));
+  const referenceKey = getLocalDateKey(referenceDate);
+  const memoKey = `${derivedStateMemoKey(data)}|risk_history|${totalDays}|${referenceKey}`;
+  if (app.derivedMemo.riskHistoryKey === memoKey) {
+    return app.derivedMemo.riskHistoryValue;
+  }
+
+  const timeline = [];
   const start = new Date(referenceDate);
   start.setDate(start.getDate() - (totalDays - 1));
 
@@ -2789,6 +2992,8 @@ function computeRecentRiskHistory(data, days = 14, referenceDate = new Date()) {
       level: pointRisk.level
     });
   }
+  app.derivedMemo.riskHistoryKey = memoKey;
+  app.derivedMemo.riskHistoryValue = timeline;
   return timeline;
 }
 
@@ -3188,7 +3393,7 @@ function renderDashboard(root, data, context) {
   const undoActive = Boolean(app.lastDoseUndo && Number(app.lastDoseUndo.expiresAt) > Date.now());
   const actionPlans = normalizeActionPlans(data.actionPlans || []);
   const activeActionPlanSteps = renderActionPlanSteps(actionPlans, riskAssessment.level);
-  const showActionPlanCard = ownerEditable || riskLevelRank(riskAssessment.level) >= riskLevelRank("elevated");
+  const showActionPlanCard = ownerEditable || riskLevelRank(riskAssessment.level) >= riskLevelRank("watch");
 
   root.innerHTML = `
     <div class="grid dashboard-flow">
@@ -3207,7 +3412,7 @@ function renderDashboard(root, data, context) {
           <article class="summary-strip-item">
             <div class="summary-strip-label">Adherence today</div>
             <div class="summary-strip-value">${escapeHtml(`${adherencePct}%`)}</div>
-            <div class="summary-strip-help">${escapeHtml(`${dueState.counts.taken} taken of ${totalScheduledToday || 0}`)}</div>
+            <div class="summary-strip-help">${escapeHtml(`${dueState.counts.taken} taken · ${dueState.counts.remaining} due · ${dueState.counts.missed} missed`)}</div>
           </article>
           <article class="summary-strip-item">
             <div class="summary-strip-label">Next dose due</div>
@@ -4363,6 +4568,19 @@ function renderNotes(root, data) {
   });
 }
 
+function renderDeferredTimelineChart(chartKey, title, description, renderChart) {
+  const enabled = Boolean(app.ui.timelineLazyCharts?.[chartKey]);
+  return `
+    <article class="chart-box">
+      <h4>${escapeHtml(title)}</h4>
+      ${description ? `<p class="subtle">${escapeHtml(description)}</p>` : ""}
+      ${enabled
+        ? renderChart()
+        : `<div class="empty">Chart deferred until requested to keep this view fast. <button class="btn btn-secondary small" type="button" data-load-timeline-chart="${escapeHtml(chartKey)}">Load chart</button></div>`}
+    </article>
+  `;
+}
+
 function renderTimeline(root, data) {
   const showAdvancedTimeline = app.ui.activeViewMode === "personal";
   const meds = resolveCurrentMedications(data);
@@ -4375,16 +4593,12 @@ function renderTimeline(root, data) {
   }
 
   const filtered = applyTimelineFilters(data);
+  app.ui.timelineLazyCharts = {
+    ...TIMELINE_LAZY_CHART_DEFAULTS,
+    ...(app.ui.timelineLazyCharts || {})
+  };
   const checkins = filtered.checkins.slice().sort((a, b) => a.date.localeCompare(b.date));
   const changeDates = filtered.changes.map((entry) => entry.date);
-
-  const moodSeries = checkins.map((entry) => ({ date: entry.date, value: toNumber(entry.mood) }));
-  const anxietySeries = checkins.map((entry) => ({ date: entry.date, value: toNumber(entry.anxiety) }));
-  const focusSeries = checkins.map((entry) => ({ date: entry.date, value: toNumber(entry.focus) }));
-  const sleepSeries = checkins.map((entry) => ({ date: entry.date, value: toNumber(entry.sleepHours) }));
-  const sideEffectCounts = buildSideEffectCounts(filtered);
-  const adherenceTrend = buildAdherenceTrend(filtered.adherence);
-  const doseChangeTrend = buildDoseChangeTrend(filtered.changes);
 
   if (!app.ui.comparisonChangeId && filtered.changes[0]) {
     app.ui.comparisonChangeId = filtered.changes[0].id;
@@ -4417,41 +4631,66 @@ function renderTimeline(root, data) {
           ${["7", "14", "30"].map((days) => `<button class="chip ${app.ui.timelineFilters.rangeDays === days ? "active" : ""}" type="button" data-range-days="${days}">${days}d</button>`).join("")}
         </div>
         <p class="helper-text" style="margin-top:8px;">${showAdvancedTimeline ? "Personal View: full timeline depth enabled." : "Clinical View: focused chart set."}</p>
+        <div class="inline-row" style="margin-top:8px;">
+          <button class="btn btn-ghost small" type="button" data-load-all-timeline-charts="1">Load all charts</button>
+          <button class="btn btn-ghost small" type="button" data-reset-timeline-charts="1">Keep essential charts only</button>
+        </div>
       </article>
 
-      <article class="chart-box">
-        <h4>Adherence % over time</h4>
-        ${renderLineChart([{ label: "Adherence %", color: CHART_COLORS.adherence, points: adherenceTrend }], { yMin: 0, yMax: 100, changeDates })}
-      </article>
+      ${renderDeferredTimelineChart(
+        "adherence",
+        "Adherence % over time",
+        "",
+        () => {
+          const adherenceTrend = buildAdherenceTrend(filtered.adherence);
+          return renderLineChart([{ label: "Adherence %", color: CHART_COLORS.adherence, points: adherenceTrend }], { yMin: 0, yMax: 100, changeDates });
+        }
+      )}
 
-      <article class="chart-box">
-        <h4>Symptom trends: mood / anxiety / focus</h4>
-        ${renderLineChart(
-          [
-            { label: "Mood", color: CHART_COLORS.mood, points: moodSeries },
-            { label: "Anxiety", color: CHART_COLORS.anxiety, points: anxietySeries },
-            { label: "Focus", color: CHART_COLORS.focus, points: focusSeries }
-          ],
-          { yMin: 0, yMax: 10, changeDates }
-        )}
-      </article>
+      ${renderDeferredTimelineChart(
+        "symptoms",
+        "Symptom trends: mood / anxiety / focus",
+        "",
+        () => {
+          const moodSeries = checkins.map((entry) => ({ date: entry.date, value: toNumber(entry.mood) }));
+          const anxietySeries = checkins.map((entry) => ({ date: entry.date, value: toNumber(entry.anxiety) }));
+          const focusSeries = checkins.map((entry) => ({ date: entry.date, value: toNumber(entry.focus) }));
+          return renderLineChart(
+            [
+              { label: "Mood", color: CHART_COLORS.mood, points: moodSeries },
+              { label: "Anxiety", color: CHART_COLORS.anxiety, points: anxietySeries },
+              { label: "Focus", color: CHART_COLORS.focus, points: focusSeries }
+            ],
+            { yMin: 0, yMax: 10, changeDates }
+          );
+        }
+      )}
 
-      <article class="chart-box">
-        <h4>Sleep hours over time</h4>
-        ${renderLineChart([{ label: "Sleep hours", color: CHART_COLORS.sleep, points: sleepSeries }], { yMin: 0, yMax: 12, changeDates })}
-      </article>
+      ${renderDeferredTimelineChart(
+        "sleep",
+        "Sleep hours over time",
+        "",
+        () => {
+          const sleepSeries = checkins.map((entry) => ({ date: entry.date, value: toNumber(entry.sleepHours) }));
+          return renderLineChart([{ label: "Sleep hours", color: CHART_COLORS.sleep, points: sleepSeries }], { yMin: 0, yMax: 12, changeDates });
+        }
+      )}
 
-      <article class="chart-box">
-        <h4>Side-effect intensity trend</h4>
-        ${renderBarChart(sideEffectCounts, changeDates)}
-      </article>
+      ${renderDeferredTimelineChart(
+        "sideEffects",
+        "Side-effect intensity trend",
+        "",
+        () => renderBarChart(buildSideEffectCounts(filtered), changeDates)
+      )}
 
-      ${showAdvancedTimeline ? `
-        <article class="chart-box">
-          <h4>Dose changes timeline</h4>
-          ${renderBarChart(doseChangeTrend, [], { label: "Dose changes", color: CHART_COLORS.doseChangeMarker })}
-        </article>
-      ` : ""}
+      ${showAdvancedTimeline
+        ? renderDeferredTimelineChart(
+            "doseChanges",
+            "Dose changes timeline",
+            "",
+            () => renderBarChart(buildDoseChangeTrend(filtered.changes), [], { label: "Dose changes", color: CHART_COLORS.doseChangeMarker })
+          )
+        : ""}
 
       <article class="card">
         <h3>Before/After comparison around a medication change</h3>
@@ -4493,6 +4732,35 @@ function renderTimeline(root, data) {
     });
   });
 
+  root.querySelectorAll("[data-load-timeline-chart]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const chartKey = String(button.dataset.loadTimelineChart || "").trim();
+      if (!chartKey) return;
+      app.ui.timelineLazyCharts = {
+        ...TIMELINE_LAZY_CHART_DEFAULTS,
+        ...(app.ui.timelineLazyCharts || {}),
+        [chartKey]: true
+      };
+      renderAll();
+    });
+  });
+
+  root.querySelector("[data-load-all-timeline-charts]")?.addEventListener("click", () => {
+    app.ui.timelineLazyCharts = {
+      adherence: true,
+      symptoms: true,
+      sleep: true,
+      sideEffects: true,
+      doseChanges: true
+    };
+    renderAll();
+  });
+
+  root.querySelector("[data-reset-timeline-charts]")?.addEventListener("click", () => {
+    app.ui.timelineLazyCharts = { ...TIMELINE_LAZY_CHART_DEFAULTS };
+    renderAll();
+  });
+
   const comparisonSelect = root.querySelector("#comparisonChangeSelect");
   if (comparisonSelect) {
     comparisonSelect.addEventListener("change", () => {
@@ -4529,6 +4797,18 @@ function applyTimelineFilters(data) {
     fromDate = shiftDateKey(toDate, -(rangeDays - 1));
   }
 
+  const memoKey = [
+    derivedStateMemoKey(data),
+    medicationId,
+    selectedKey,
+    fromDate,
+    toDate,
+    rangeDays
+  ].join("|");
+  if (app.derivedMemo.timelineFilteredKey === memoKey && app.derivedMemo.timelineFilteredValue) {
+    return app.derivedMemo.timelineFilteredValue;
+  }
+
   const inDateWindow = (value) => {
     if (!value) return true;
     if (fromDate && value < fromDate) return false;
@@ -4554,13 +4834,16 @@ function applyTimelineFilters(data) {
 
   const checkins = (data.checkins || []).filter((checkin) => inDateWindow(checkin.date));
   const adherence = (data.adherence || []).filter((entry) => inDateWindow(entry.date));
-  return {
+  const filtered = {
     ...data,
     changes,
     notes,
     checkins,
     adherence
   };
+  app.derivedMemo.timelineFilteredKey = memoKey;
+  app.derivedMemo.timelineFilteredValue = filtered;
+  return filtered;
 }
 
 function renderCombinedTimeline(data) {
@@ -4696,6 +4979,60 @@ function renderDraftSaveLabel() {
   if (secondsAgo < 60) return "Saved just now.";
   if (secondsAgo < 3600) return `Saved ${Math.floor(secondsAgo / 60)}m ago.`;
   return `Saved ${niceDateTime(savedAt.toISOString())}.`;
+}
+
+function buildCheckinDraftDefaults(data, draftInput = {}) {
+  const draft = draftInput && typeof draftInput === "object" ? draftInput : {};
+  const latest = (data.checkins || [])
+    .slice()
+    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))[0];
+
+  const base = latest
+    ? {
+        mood: latest.mood,
+        anxiety: latest.anxiety,
+        focus: latest.focus,
+        sleepHours: latest.sleepHours,
+        sleepQuality: latest.sleepQuality,
+        appetite: latest.appetite,
+        energy: latest.energy,
+        irritability: latest.irritability,
+        cravingsImpulsivity: latest.cravingsImpulsivity,
+        sideEffectsChecklist: latest.sideEffectsChecklist || [],
+        sideEffectsText: latest.sideEffectsText || "",
+        trainingNotes: latest.trainingNotes || "",
+        weight: latest.vitals?.weight || "",
+        bpSystolic: latest.vitals?.bpSystolic || "",
+        bpDiastolic: latest.vitals?.bpDiastolic || "",
+        hr: latest.vitals?.hr || ""
+      }
+    : {
+        mood: 6,
+        anxiety: 5,
+        focus: 6,
+        sleepHours: 7,
+        sleepQuality: 6,
+        appetite: 5,
+        energy: 6,
+        irritability: 4,
+        cravingsImpulsivity: 4,
+        sideEffectsChecklist: [],
+        sideEffectsText: "",
+        trainingNotes: "",
+        weight: "",
+        bpSystolic: "",
+        bpDiastolic: "",
+        hr: ""
+      };
+
+  return {
+    ...base,
+    ...draft,
+    date: String(draft.date || isoDate(new Date())),
+    sideEffectsChecklist: Array.isArray(draft.sideEffectsChecklist)
+      ? draft.sideEffectsChecklist
+      : base.sideEffectsChecklist
+  };
 }
 
 function renderWorkflowForm(data) {
@@ -4919,21 +5256,25 @@ function renderWorkflowForm(data) {
     `;
   }
 
-  const draft = app.drafts.checkin || {};
+  const draft = buildCheckinDraftDefaults(data, app.drafts.checkin || {});
   return `
     <form id="formCheckin" class="card">
       <h3>Daily Wellbeing Check-in</h3>
+      <div class="inline-row">
+        <button class="btn btn-ghost small" type="button" id="applyLastCheckinDefaults">Use last check-in values</button>
+        <button class="btn btn-ghost small" type="button" id="resetCheckinDefaults">Reset to neutral</button>
+      </div>
       <div class="field-grid">
         <div><label>Date</label><input name="date" type="date" value="${escapeHtml(draft.date || isoDate(new Date()))}" required></div>
-        <div><label>Mood (1-10)</label><input name="mood" type="number" min="1" max="10" value="${escapeHtml(valueOrDefault(draft.mood, 6))}" required></div>
-        <div><label>Anxiety (1-10)</label><input name="anxiety" type="number" min="1" max="10" value="${escapeHtml(valueOrDefault(draft.anxiety, 5))}" required></div>
-        <div><label>Focus (1-10)</label><input name="focus" type="number" min="1" max="10" value="${escapeHtml(valueOrDefault(draft.focus, 6))}" required></div>
+        <div><label>Mood (0-10)</label><input name="mood" type="number" min="0" max="10" value="${escapeHtml(valueOrDefault(draft.mood, 6))}" required></div>
+        <div><label>Anxiety (0-10)</label><input name="anxiety" type="number" min="0" max="10" value="${escapeHtml(valueOrDefault(draft.anxiety, 5))}" required></div>
+        <div><label>Focus (0-10)</label><input name="focus" type="number" min="0" max="10" value="${escapeHtml(valueOrDefault(draft.focus, 6))}" required></div>
         <div><label>Sleep hours</label><input name="sleepHours" type="number" step="0.1" min="0" max="24" value="${escapeHtml(valueOrDefault(draft.sleepHours, 7))}" required></div>
-        <div><label>Sleep quality (1-10)</label><input name="sleepQuality" type="number" min="1" max="10" value="${escapeHtml(valueOrDefault(draft.sleepQuality, 6))}" required></div>
-        <div><label>Appetite (1-10)</label><input name="appetite" type="number" min="1" max="10" value="${escapeHtml(valueOrDefault(draft.appetite, 5))}" required></div>
-        <div><label>Energy (1-10)</label><input name="energy" type="number" min="1" max="10" value="${escapeHtml(valueOrDefault(draft.energy, 6))}" required></div>
-        <div><label>Irritability (1-10)</label><input name="irritability" type="number" min="1" max="10" value="${escapeHtml(valueOrDefault(draft.irritability, 4))}" required></div>
-        <div><label>Cravings / impulsivity (1-10)</label><input name="cravingsImpulsivity" type="number" min="1" max="10" value="${escapeHtml(valueOrDefault(draft.cravingsImpulsivity, 4))}" required></div>
+        <div><label>Sleep quality (0-10)</label><input name="sleepQuality" type="number" min="0" max="10" value="${escapeHtml(valueOrDefault(draft.sleepQuality, 6))}" required></div>
+        <div><label>Appetite (0-10)</label><input name="appetite" type="number" min="0" max="10" value="${escapeHtml(valueOrDefault(draft.appetite, 5))}" required></div>
+        <div><label>Energy (0-10)</label><input name="energy" type="number" min="0" max="10" value="${escapeHtml(valueOrDefault(draft.energy, 6))}" required></div>
+        <div><label>Irritability (0-10)</label><input name="irritability" type="number" min="0" max="10" value="${escapeHtml(valueOrDefault(draft.irritability, 4))}" required></div>
+        <div><label>Cravings / impulsivity (0-10)</label><input name="cravingsImpulsivity" type="number" min="0" max="10" value="${escapeHtml(valueOrDefault(draft.cravingsImpulsivity, 4))}" required></div>
       </div>
 
       <label style="margin-top:10px;">Side effects checklist</label>
@@ -5092,6 +5433,7 @@ function bindWorkflowFormHandlers(root, data) {
         medicationId: medication?.id || "",
         medicationName: values.medicationName,
         date: values.date,
+        dateEffective: values.date,
         oldDose: values.oldDose,
         newDose: values.newDose,
         reason: values.reason,
@@ -5173,10 +5515,59 @@ function bindWorkflowFormHandlers(root, data) {
 
   const checkinForm = root.querySelector("#formCheckin");
   if (checkinForm) {
-    checkinForm.addEventListener("input", () => {
+    const writeCheckinDraftFromForm = () => {
       app.drafts.checkin = formToObject(checkinForm);
       app.drafts.checkin.sideEffectsChecklist = checkedValues(checkinForm, "sideEffectsChecklist");
       saveDrafts();
+    };
+
+    const applyCheckinPreset = (preset) => {
+      const entries = Object.entries(preset || {});
+      for (const [key, value] of entries) {
+        if (key === "sideEffectsChecklist") continue;
+        if (!checkinForm.elements[key]) continue;
+        checkinForm.elements[key].value = value;
+      }
+      if (Array.isArray(preset?.sideEffectsChecklist)) {
+        const selected = new Set(preset.sideEffectsChecklist.map((item) => String(item)));
+        checkinForm.querySelectorAll('input[name="sideEffectsChecklist"]').forEach((input) => {
+          input.checked = selected.has(String(input.value));
+        });
+      }
+      writeCheckinDraftFromForm();
+    };
+
+    root.querySelector("#applyLastCheckinDefaults")?.addEventListener("click", () => {
+      const latest = buildCheckinDraftDefaults(data, {});
+      applyCheckinPreset(latest);
+      setStatus("Applied last check-in values.");
+    });
+
+    root.querySelector("#resetCheckinDefaults")?.addEventListener("click", () => {
+      applyCheckinPreset({
+        date: isoDate(new Date()),
+        mood: 6,
+        anxiety: 5,
+        focus: 6,
+        sleepHours: 7,
+        sleepQuality: 6,
+        appetite: 5,
+        energy: 6,
+        irritability: 4,
+        cravingsImpulsivity: 4,
+        sideEffectsChecklist: [],
+        sideEffectsText: "",
+        trainingNotes: "",
+        weight: "",
+        bpSystolic: "",
+        bpDiastolic: "",
+        hr: ""
+      });
+      setStatus("Check-in fields reset to neutral defaults.");
+    });
+
+    checkinForm.addEventListener("input", () => {
+      writeCheckinDraftFromForm();
     });
 
     checkinForm.addEventListener("submit", (event) => {
@@ -5188,11 +5579,11 @@ function bindWorkflowFormHandlers(root, data) {
 
       const rangeValid = ["mood", "anxiety", "focus", "sleepQuality", "appetite", "energy", "irritability", "cravingsImpulsivity"].every((field) => {
         const value = Number(values[field]);
-        return Number.isFinite(value) && value >= 1 && value <= 10;
+        return Number.isFinite(value) && value >= 0 && value <= 10;
       });
 
       if (!rangeValid) {
-        return setStatus("Validation failed: 1-10 fields must be within range.", "error");
+        return setStatus("Validation failed: 0-10 fields must be within range.", "error");
       }
 
       const nowIso = isoDateTime(new Date());
@@ -5293,8 +5684,15 @@ function renderSharing(root, _data, context) {
   const isOwnerSession = signedInRole === "owner";
 
   root.innerHTML = `
-    <div id="cloudAccountCard" class="card ${LOCAL_ONLY_MODE ? "hidden" : ""}">
+    <div id="cloudAccountCard" class="card">
       <h3>Cloud account and invites</h3>
+      ${LOCAL_ONLY_MODE
+        ? `<div class="context-block">
+            Local-only mode is active in this build, so cloud registration, sign-in, and invites are disabled here.
+            To enable cloud account + invites, set <code>LOCAL_ONLY_MODE = false</code> in <code>app.js</code> and connect the API endpoint.
+          </div>`
+        : ""}
+      <div class="${LOCAL_ONLY_MODE ? "hidden" : ""}">
       <div class="subtle">${escapeHtml(signedInSummary)}</div>
       <div class="inline-row" style="margin-top:10px;">
         <button class="btn btn-ghost" type="button" id="refreshCloudMetaButton" ${syncDisabledAttr}>Refresh cloud status</button>
@@ -5420,6 +5818,7 @@ function renderSharing(root, _data, context) {
             : `<div class="subtle">No audit events yet.</div>`}
         </div>
       ` : ""}
+      </div>
     </div>
 
     <div class="card">
@@ -6713,7 +7112,7 @@ async function handleDoseAction(occurrenceId, status) {
     app.ownerData = nextOwnerData;
     renderAll();
 
-    saveOwnerData(nextOwnerData);
+    saveOwnerData(nextOwnerData, { throwOnPersistFailure: true });
     queueDoseUndo(previousOwnerData, occurrenceId, status);
     if (canUseRemoteSync()) {
       void flushRemoteSync();

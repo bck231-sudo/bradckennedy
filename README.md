@@ -28,6 +28,30 @@ Deploy the contents of this folder as a static site (`index.html`, `app.js`, `st
 - No server sync is used.
 - Cloud sync controls are intentionally disabled in this build.
 
+## Optimisation Pass (App-Readiness)
+
+- Dashboard hierarchy tightened for faster scanning:
+  - summary strip -> doses -> quick check-in -> alerts -> recent changes -> medication details -> action plan.
+- Action plan now appears for `Watch`, `Elevated`, and `High` risk levels (not only elevated/high).
+- Dose action persistence hardened:
+  - strict local persistence check on dose actions
+  - rollback + visible error if save fails.
+- Viewer trust improvements:
+  - read-only banner now includes “what this viewer can see / hidden”.
+- Quick check-in speed improvements:
+  - defaults now prefill from the last saved check-in
+  - one-click “Use last check-in values” and “Reset to neutral”.
+- Timeline performance improvements:
+  - heavy charts are deferred until requested
+  - “Load all charts” / “Keep essential charts only” controls.
+- PWA installability improvements:
+  - install prompt button in header when browser supports `beforeinstallprompt`
+  - app-installed detection and button auto-hide.
+- Navigation polish:
+  - hash routes supported for `#dashboard`, `#history`, `#settings`, `#share`.
+- Cloud UX clarification:
+  - when local-only mode is enabled, the Share tab now clearly explains cloud accounts/invites are disabled (instead of showing inactive controls).
+
 ## What Changed (Phase 1)
 
 - Added API server scaffold at `/Users/brad/Documents/New project/bradckennedy/server/server.js` (kept for future optional use).
