@@ -8374,7 +8374,8 @@ function bindWorkflowFormHandlers(root, data) {
       app.drafts.medication = {};
       saveDrafts();
       hydrateMedicationNameOptions();
-      setStatus("Medication added.");
+      app.ui.activeSection = "dashboard";
+      setStatus("Medication added. Dashboard updated.");
       renderAll();
     });
   }
@@ -8658,8 +8659,19 @@ function bindWorkflowFormHandlers(root, data) {
         energy: 6,
         irritability: 4,
         cravingsImpulsivity: 4,
+        socialContactLevel: "limited",
+        gotOutOfBedOnTime: false,
+        selfCareCompleted: false,
+        keyTaskCompleted: false,
+        exerciseOrWalkDone: false,
+        avoidedImpulsiveBehaviour: false,
         sideEffectsChecklist: [],
         sideEffectsText: "",
+        sideEffectMedication: "",
+        onsetAfterDoseMinutes: "",
+        timeOfDay: "",
+        confidenceRelatedToMed: "medium",
+        impactOnFunction: "medium",
         trainingNotes: "",
         weight: "",
         bpSystolic: "",
