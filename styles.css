@@ -3907,6 +3907,152 @@ body.viewer-mode #readOnlyBanner {
   }
 }
 
+/* Top brand refresh */
+.app-topbar {
+  position: relative;
+  overflow: hidden;
+  padding: var(--space-4) var(--space-5);
+  background:
+    radial-gradient(circle at 8% 18%, rgba(45, 121, 243, 0.08) 0, rgba(45, 121, 243, 0) 35%),
+    radial-gradient(circle at 92% 82%, rgba(34, 200, 216, 0.08) 0, rgba(34, 200, 216, 0) 34%),
+    linear-gradient(180deg, #ffffff, #f8fbff);
+  border-color: #d8e2f1;
+}
+
+.app-brand {
+  grid-template-columns: 68px minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: center;
+  text-align: left;
+}
+
+.brand-copy {
+  min-width: 0;
+}
+
+.app-brand h1 {
+  margin: 0;
+  font-size: clamp(28px, 2.7vw, 38px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.02;
+  color: #162a42;
+}
+
+.app-brand p {
+  margin-top: 6px;
+  margin-bottom: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #5c718a;
+  line-height: 1.35;
+}
+
+.logo-mark.logo-mark-brand {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  border: 1px solid #cfdcf1;
+  background: linear-gradient(160deg, #ffffff, #eff5ff);
+  position: relative;
+  display: grid;
+  place-items: center;
+  box-shadow:
+    0 12px 28px rgba(36, 92, 174, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94);
+}
+
+.logo-mark-brand .logo-glyph {
+  width: 42px;
+  height: 42px;
+}
+
+.logo-mark-brand .logo-monogram {
+  position: absolute;
+  right: -6px;
+  bottom: -8px;
+  min-width: 26px;
+  height: 22px;
+  border-radius: 999px;
+  padding: 0 7px;
+  border: 1px solid #2e77ee;
+  background: linear-gradient(140deg, #2d79f3, #25b6ef);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 14px rgba(45, 121, 243, 0.32);
+}
+
+@media (max-width: 980px) {
+  .app-topbar {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .app-brand {
+    grid-template-columns: 58px minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+
+  .logo-mark.logo-mark-brand {
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+  }
+
+  .logo-mark-brand .logo-glyph {
+    width: 36px;
+    height: 36px;
+  }
+
+  .app-brand h1 {
+    font-size: clamp(22px, 7vw, 30px);
+  }
+
+  .app-brand p {
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-topbar {
+    padding: var(--space-3);
+  }
+
+  .app-brand {
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+
+  .logo-mark.logo-mark-brand {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+  }
+
+  .logo-mark-brand .logo-monogram {
+    right: -4px;
+    bottom: -6px;
+    min-width: 23px;
+    height: 20px;
+    font-size: 9px;
+  }
+
+  .app-brand h1 {
+    font-size: clamp(20px, 7.4vw, 26px);
+    line-height: 1.05;
+  }
+
+  .app-brand p {
+    margin-top: 4px;
+    font-size: 11px;
+    line-height: 1.3;
+  }
+}
+
 /* Consult wizard renovation */
 #section-consult {
   display: grid;
