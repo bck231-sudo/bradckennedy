@@ -3906,3 +3906,626 @@ body.viewer-mode #readOnlyBanner {
     display: none !important;
   }
 }
+
+/* Targeted optimisation pass: hierarchy clarity, timeline readability, consult cleanup */
+.top-navbar {
+  top: var(--space-2);
+}
+
+.top-navbar-nav {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  justify-content: flex-start;
+  scrollbar-width: thin;
+}
+
+.top-navbar .top-nav-link {
+  flex: 0 0 auto;
+}
+
+.top-navbar .top-nav-link span {
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.header-mode-control {
+  max-width: 440px;
+}
+
+.segmented-control-header {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  overflow: visible;
+}
+
+.segmented-control-header button {
+  min-width: 0;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.history-controls-card .field-grid {
+  margin-top: var(--space-3);
+}
+
+.history-day-groups {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.history-day-group {
+  border: var(--border-subtle);
+  border-radius: var(--radius-2);
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+  padding: var(--space-3);
+}
+
+.history-day-group h4 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-3);
+}
+
+.history-event-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.history-event-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: var(--space-2);
+  border: var(--border-subtle);
+  border-radius: var(--radius-2);
+  background: #ffffff;
+  padding: var(--space-2) var(--space-3);
+}
+
+.history-event-icon {
+  display: grid;
+  align-items: start;
+  justify-items: center;
+  padding-top: 2px;
+}
+
+.history-event-content {
+  min-width: 0;
+}
+
+.history-event-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.history-event-item.history-event--change {
+  border-left: 3px solid #5568f8;
+}
+
+.history-event-item.history-event--dose {
+  border-left: 3px solid #2d79f3;
+}
+
+.history-event-item.history-event--checkin {
+  border-left: 3px solid #23bb85;
+}
+
+.history-event-item.history-event--effect {
+  border-left: 3px solid #d84bc8;
+}
+
+.history-event-item.history-event--appointment {
+  border-left: 3px solid #22b7df;
+}
+
+.history-event-item.history-event--decision {
+  border-left: 3px solid #6c5dff;
+}
+
+.share-includes-summary {
+  border: var(--border-subtle);
+  border-radius: var(--radius-2);
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+  padding: var(--space-2) var(--space-3);
+  margin: var(--space-2) 0 var(--space-3);
+  display: grid;
+  gap: 2px;
+  color: var(--color-text-muted);
+  font-size: var(--font-2);
+}
+
+#section-consult .consult-toolbar,
+#section-consult .consult-quicknav,
+#section-consult .consult-grid {
+  max-width: 1020px;
+}
+
+#section-consult .consult-grid {
+  grid-template-columns: 1fr !important;
+  gap: var(--space-3);
+}
+
+#section-consult .consult-section {
+  width: 100%;
+}
+
+#section-consult .consult-section .table-wrap {
+  overflow-x: auto;
+  width: 100%;
+}
+
+#section-consult .consult-section .table-wrap table {
+  min-width: 920px;
+  table-layout: fixed;
+}
+
+#section-consult .consult-section .table-wrap table th,
+#section-consult .consult-section .table-wrap table td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+#section-consult .consult-cards-only .consult-entry {
+  border-radius: var(--radius-2);
+}
+
+.modal.hidden #closeMedicationModal {
+  display: none !important;
+}
+
+@media (max-width: 980px) {
+  .top-navbar {
+    display: none !important;
+  }
+
+  .main {
+    margin-bottom: 82px;
+    padding-bottom: var(--space-5);
+  }
+
+  .history-event-item {
+    grid-template-columns: 24px minmax(0, 1fr);
+    padding: var(--space-2);
+  }
+
+  #section-consult .consult-toolbar,
+  #section-consult .consult-quicknav,
+  #section-consult .consult-grid {
+    max-width: none;
+  }
+
+  #section-consult .consult-section .table-wrap table {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  body {
+    padding-bottom: calc(var(--space-6) + 108px);
+  }
+
+  .main-header {
+    gap: var(--space-3);
+  }
+
+  .header-mode-control {
+    max-width: none;
+  }
+
+  .segmented-control-header button {
+    min-height: 42px;
+    font-size: 12px;
+  }
+
+  .history-event-head {
+    align-items: flex-start;
+  }
+}
+
+/* Canonical cleanup pass: consult readability, overflow safety, and nav clarity */
+[hidden] {
+  display: none !important;
+}
+
+.layout,
+.main,
+.section,
+.card,
+.table-wrap,
+.history-event-content {
+  min-width: 0;
+}
+
+.top-navbar {
+  position: sticky;
+  top: var(--space-2);
+  z-index: 36;
+}
+
+.top-navbar-nav {
+  flex-wrap: nowrap;
+  justify-content: center;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.top-navbar .top-nav-link {
+  flex: 0 0 auto;
+}
+
+.top-navbar .top-nav-link span,
+.section-nav .nav-label,
+.mobile-nav button span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.main-header {
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.main-header-meta {
+  min-width: 0;
+  max-width: 760px;
+}
+
+.header-mode-control {
+  max-width: 360px;
+}
+
+.header-actions {
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.header-actions.header-actions-compact {
+  gap: var(--space-1);
+}
+
+.header-actions .btn,
+.header-actions .role-badge {
+  white-space: nowrap;
+}
+
+#section-consult .consult-toolbar,
+#section-consult .consult-quicknav,
+#section-consult .consult-grid {
+  max-width: 1040px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+#section-consult .consult-toolbar {
+  padding: var(--space-4);
+}
+
+#section-consult .consult-toolbar .card-head-row {
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.consult-toolbar-actions {
+  justify-content: flex-end;
+}
+
+.consult-pane-help {
+  margin-bottom: var(--space-2);
+}
+
+#section-consult .consult-quicknav {
+  position: sticky;
+  top: 88px;
+  z-index: 18;
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: blur(8px);
+}
+
+#section-consult .consult-quicknav .inline-row {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding-bottom: 2px;
+}
+
+#section-consult .consult-quicknav .chip {
+  flex: 0 0 auto;
+  min-height: 38px;
+  max-width: none;
+}
+
+#section-consult .consult-grid {
+  grid-template-columns: 1fr !important;
+  gap: var(--space-3);
+}
+
+#section-consult .consult-section {
+  padding: var(--space-4);
+}
+
+#section-consult .consult-section h3 {
+  font-size: clamp(18px, 1.25vw, 22px);
+  line-height: 1.25;
+  margin-bottom: var(--space-2);
+}
+
+#section-consult .consult-section .subtle {
+  line-height: 1.45;
+}
+
+#section-consult .consult-section .table-wrap {
+  overflow-x: auto;
+  width: 100%;
+  border-radius: var(--radius-2);
+}
+
+#section-consult .consult-section .table-wrap table {
+  width: 100%;
+  min-width: 760px;
+  table-layout: fixed;
+}
+
+#section-consult .consult-section .table-wrap table th,
+#section-consult .consult-section .table-wrap table td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  vertical-align: top;
+}
+
+.consult-entry {
+  gap: var(--space-2);
+}
+
+.consult-entry-head {
+  align-items: center;
+}
+
+.consult-entry-meta {
+  row-gap: 4px;
+}
+
+.consult-editor {
+  border-radius: var(--radius-2);
+}
+
+.consult-editor summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.consult-editor summary::after {
+  content: "";
+  float: none;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.consult-editor[open] summary::after {
+  content: "";
+}
+
+.history-day-groups {
+  gap: var(--space-2);
+}
+
+.history-event-item {
+  align-items: start;
+}
+
+.history-event-head {
+  align-items: flex-start;
+}
+
+.history-event-head strong {
+  min-width: 0;
+}
+
+.table-wrap th,
+.table-wrap td,
+.pill-badge,
+.kpi-badge,
+.status-chip {
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 981px) {
+  .mobile-nav {
+    display: none !important;
+  }
+
+  .top-navbar {
+    display: block !important;
+  }
+
+  #section-consult .consult-table-only {
+    display: block !important;
+  }
+
+  #section-consult .consult-cards-only {
+    display: none !important;
+  }
+}
+
+@media (max-width: 980px) {
+  body {
+    padding-bottom: calc(var(--space-6) + 102px);
+  }
+
+  .top-navbar {
+    display: none !important;
+  }
+
+  .mobile-nav {
+    display: grid !important;
+  }
+
+  .main {
+    padding: var(--space-3);
+    margin-bottom: 84px;
+  }
+
+  .main-header {
+    position: static;
+    border: 0;
+    background: transparent;
+    backdrop-filter: none;
+    padding: 0;
+    margin-bottom: var(--space-3);
+  }
+
+  .main-header-meta {
+    max-width: none;
+  }
+
+  .header-mode-control {
+    max-width: none;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .header-actions .btn,
+  .header-actions .role-badge {
+    flex: 1 1 160px;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .segmented-control-header {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
+
+  .segmented-control-header button {
+    min-width: 0;
+    min-height: 42px;
+    font-size: 12px;
+  }
+
+  #section-consult .consult-toolbar,
+  #section-consult .consult-quicknav,
+  #section-consult .consult-grid {
+    max-width: none;
+  }
+
+  #section-consult .consult-toolbar .card-head-row {
+    flex-direction: column;
+  }
+
+  .consult-toolbar-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  #section-consult .consult-filter-grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
+  }
+
+  #section-consult .consult-quicknav {
+    top: 0;
+    position: static;
+    backdrop-filter: none;
+    background: linear-gradient(180deg, #ffffff, #f8fbff);
+  }
+
+  #section-consult .consult-section {
+    padding: var(--space-3);
+  }
+
+  #section-consult .consult-table-only {
+    display: none !important;
+  }
+
+  #section-consult .consult-cards-only {
+    display: block !important;
+  }
+}
+
+@media (max-width: 760px) {
+  body {
+    padding: var(--space-2);
+    padding-bottom: calc(var(--space-6) + 104px);
+  }
+
+  .app-topbar {
+    margin-bottom: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .app-brand h1 {
+    font-size: clamp(24px, 7vw, 28px);
+  }
+
+  .main {
+    padding: var(--space-3);
+  }
+
+  .mobile-nav button {
+    min-height: 68px;
+  }
+
+  .mobile-nav button span {
+    font-size: 11px;
+    max-width: 62px;
+  }
+
+  .today-summary-line,
+  .card-head-row {
+    align-items: flex-start;
+  }
+
+  .table-wrap table {
+    min-width: 520px;
+  }
+}
+
+@media print {
+  .app-topbar,
+  .top-navbar,
+  .sidebar,
+  .mobile-nav,
+  .header-actions,
+  .header-mode-control,
+  .banner,
+  .status,
+  .icon-dock-wrap {
+    display: none !important;
+  }
+
+  .layout {
+    display: block !important;
+    max-width: none !important;
+    min-height: 0 !important;
+  }
+
+  .main {
+    border: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  #section-consult .consult-pane-hidden {
+    display: block !important;
+  }
+
+  #section-consult .consult-quicknav {
+    display: none !important;
+  }
+}

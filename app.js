@@ -136,6 +136,7 @@ const VIEWER_MODE_OPTIONS = {
   preview_link: { label: "Shared Preview", shortLabel: "Shared Preview" }
 };
 const VIEWER_MODE_ORDER = ["my", "family", "clinician", "preview_link"];
+const PRIMARY_VIEWER_MODE_ORDER = ["my", "clinician"];
 
 const VIEWER_BADGES = {
   owner: "My View (Editable)",
@@ -156,7 +157,7 @@ const MOBILE_TABS = [
   },
   {
     id: "medications",
-    label: "Medications",
+    label: "Meds",
     icon: "capsule",
     primarySection: "medications",
     fallbackSections: ["dashboard"],
@@ -198,22 +199,6 @@ const TOP_NAV_ITEMS = [
     preferredModes: ["daily", "clinical", "personal"]
   },
   {
-    id: "medications",
-    label: "Medications",
-    icon: "capsule",
-    primarySection: "medications",
-    fallbackSections: ["dashboard"],
-    preferredModes: ["daily", "clinical", "personal"]
-  },
-  {
-    id: "trends",
-    label: "Trends",
-    icon: "chart",
-    primarySection: "timeline",
-    fallbackSections: ["changes"],
-    preferredModes: ["clinical", "personal"]
-  },
-  {
     id: "consult",
     label: "Consult",
     icon: "stethoscope",
@@ -246,6 +231,35 @@ const TOP_NAV_ITEMS = [
     preferredModes: ["clinical", "personal"]
   }
 ];
+
+const HISTORY_RANGE_FILTER_OPTIONS = Object.freeze([
+  { value: "today", label: "Today" },
+  { value: "7d", label: "Last 7 days" },
+  { value: "14d", label: "Last 14 days" },
+  { value: "30d", label: "Last 30 days" },
+  { value: "since_last_appointment", label: "Since last appointment" },
+  { value: "since_last_change", label: "Since last medication change" },
+  { value: "custom", label: "Custom range" }
+]);
+
+const HISTORY_EVENT_TYPE_OPTIONS = Object.freeze([
+  { value: "all", label: "All events" },
+  { value: "med_change", label: "Medication changes" },
+  { value: "dose_action", label: "Dose actions" },
+  { value: "checkin", label: "Check-ins" },
+  { value: "side_effect", label: "Side effects" },
+  { value: "appointment", label: "Appointments" },
+  { value: "decision", label: "Decisions" }
+]);
+
+const HISTORY_EVENT_TYPE_META = Object.freeze({
+  med_change: { label: "Medication change", icon: "syringe", tone: "history-event--change" },
+  dose_action: { label: "Dose action", icon: "check", tone: "history-event--dose" },
+  checkin: { label: "Quick check-in", icon: "heart", tone: "history-event--checkin" },
+  side_effect: { label: "Side effect", icon: "note", tone: "history-event--effect" },
+  appointment: { label: "Appointment", icon: "calendar", tone: "history-event--appointment" },
+  decision: { label: "Decision", icon: "stethoscope", tone: "history-event--decision" }
+});
 
 const OWNER_PERMISSIONS = Object.freeze({
   showSensitiveNotes: true,
@@ -409,10 +423,10 @@ const SECTION_META = [
   },
   {
     id: "exports",
-    label: "Exports",
+    label: "Settings",
     icon: "download",
-    title: "Exports",
-    subtitle: "Clinician summary and backup exports.",
+    title: "Settings",
+    subtitle: "Appearance, reminders, data view, sync, and export tools.",
     viewModes: ["clinical", "personal"]
   }
 ];
@@ -446,6 +460,7 @@ const dom = {
   contextPill: document.getElementById("contextPill"),
   sectionTitle: document.getElementById("sectionTitle"),
   sectionSubtitle: document.getElementById("sectionSubtitle"),
+  headerActions: document.querySelector(".header-actions"),
   roleBadge: document.getElementById("roleBadge"),
   installAppButton: document.getElementById("installAppButton"),
   addToConsultButton: document.getElementById("addToConsultButton"),
@@ -504,6 +519,14 @@ const app = {
     changesFilterSearch: "",
     changesFilterMedication: "all",
     changesSortBy: "date_desc",
+    historyFilters: {
+      range: "14d",
+      eventType: "all",
+      medicationName: "all",
+      search: "",
+      fromDate: "",
+      toDate: ""
+    },
     dashboardEdits: {
       summary: false,
       alerts: false,
@@ -578,6 +601,12 @@ if (app.drafts?.ui && typeof app.drafts.ui === "object") {
     app.ui.dashboardCollapsedPanels = {
       ...app.ui.dashboardCollapsedPanels,
       ...app.drafts.ui.dashboardCollapsedPanels
+    };
+  }
+  if (app.drafts.ui.historyFilters && typeof app.drafts.ui.historyFilters === "object") {
+    app.ui.historyFilters = {
+      ...app.ui.historyFilters,
+      ...app.drafts.ui.historyFilters
     };
   }
   if (typeof app.drafts.ui.consultActivePane === "string") {
@@ -2865,10 +2894,14 @@ function renderViewModeSelector(context) {
     dom.viewerModeSelect.disabled = false;
     dom.viewerModeSelect.value = app.ui.viewerMode;
 
-    dom.viewerModeSegment.innerHTML = VIEWER_MODE_ORDER
+    const primaryMode = PRIMARY_VIEWER_MODE_ORDER.includes(app.ui.viewerMode)
+      ? app.ui.viewerMode
+      : "clinician";
+
+    dom.viewerModeSegment.innerHTML = PRIMARY_VIEWER_MODE_ORDER
       .map((value) => {
         const meta = VIEWER_MODE_OPTIONS[value];
-        const active = app.ui.viewerMode === value;
+        const active = primaryMode === value;
         return `<button type="button" role="tab" aria-selected="${active ? "true" : "false"}" class="${active ? "active" : ""}" data-viewer-mode="${value}" title="${escapeHtml(meta.label)}">${escapeHtml(meta.shortLabel || meta.label)}</button>`;
       })
       .join("");
@@ -3252,6 +3285,18 @@ function renderSectionMeta(context) {
       : "My View";
     dom.roleBadge.textContent = roleLabel;
     dom.roleBadge.className = `role-badge ${context.readOnly ? "is-viewer" : "is-owner"}`;
+  }
+  const activeSection = String(app.ui.activeSection || "dashboard");
+  const showQuickCheckin = !context.readOnly && ["dashboard", "checkins", "entry"].includes(activeSection);
+  const showAddToConsult = !context.readOnly && ["dashboard", "medications", "changes", "checkins", "notes", "consult", "timeline"].includes(activeSection);
+  if (dom.quickCheckinButton) {
+    dom.quickCheckinButton.hidden = !showQuickCheckin;
+  }
+  if (dom.addToConsultButton) {
+    dom.addToConsultButton.hidden = !showAddToConsult;
+  }
+  if (dom.headerActions) {
+    dom.headerActions.classList.toggle("header-actions-compact", !showQuickCheckin && !showAddToConsult);
   }
 }
 
@@ -5166,26 +5211,231 @@ function closeMedicationModal() {
   }
 }
 
+function normalizeHistoryFilters(input = {}) {
+  const rangeOptions = new Set(HISTORY_RANGE_FILTER_OPTIONS.map((option) => option.value));
+  const eventTypeOptions = new Set(HISTORY_EVENT_TYPE_OPTIONS.map((option) => option.value));
+  const filters = input && typeof input === "object" ? input : {};
+  const range = rangeOptions.has(String(filters.range || "")) ? String(filters.range) : "14d";
+  const eventType = eventTypeOptions.has(String(filters.eventType || "")) ? String(filters.eventType) : "all";
+  return {
+    range,
+    eventType,
+    medicationName: String(filters.medicationName || "all"),
+    search: String(filters.search || ""),
+    fromDate: String(filters.fromDate || ""),
+    toDate: String(filters.toDate || "")
+  };
+}
+
+function resolveHistoryWindow(data, filters) {
+  const today = getLocalDateKey(new Date());
+  const range = String(filters?.range || "14d");
+  if (range === "today") {
+    return { startDate: today, endDate: today, label: "Today" };
+  }
+  if (["7d", "14d", "30d"].includes(range)) {
+    const days = Number(range.replace("d", "")) || 14;
+    return {
+      startDate: shiftDateKey(today, -(days - 1)),
+      endDate: today,
+      label: `Last ${days} days`
+    };
+  }
+  if (range === "since_last_appointment") {
+    const latestAppointment = (data.appointmentEvents || [])
+      .map((entry) => String(entry?.appointmentDate || "").slice(0, 10))
+      .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value))
+      .sort()
+      .pop();
+    const startDate = latestAppointment || shiftDateKey(today, -30);
+    return {
+      startDate,
+      endDate: today,
+      label: latestAppointment
+        ? `Since last appointment (${niceDate(startDate)})`
+        : `Since last appointment (none logged, default ${niceDate(startDate)})`
+    };
+  }
+  if (range === "since_last_change") {
+    const latestChangeDate = [
+      ...(data.changes || []).map((entry) => String(entry?.date || "").slice(0, 10)),
+      ...resolveExperimentRows(data).map((entry) => String(entry?.dateEffective || "").slice(0, 10))
+    ]
+      .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value))
+      .sort()
+      .pop();
+    const startDate = latestChangeDate || shiftDateKey(today, -30);
+    return {
+      startDate,
+      endDate: today,
+      label: latestChangeDate
+        ? `Since last medication change (${niceDate(startDate)})`
+        : `Since last medication change (none logged, default ${niceDate(startDate)})`
+    };
+  }
+
+  let startDate = String(filters?.fromDate || "");
+  let endDate = String(filters?.toDate || "");
+  if (startDate && !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) startDate = "";
+  if (endDate && !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) endDate = "";
+  if (!startDate && !endDate) {
+    endDate = today;
+    startDate = shiftDateKey(today, -13);
+  } else if (!startDate && endDate) {
+    startDate = shiftDateKey(endDate, -13);
+  } else if (startDate && !endDate) {
+    endDate = today;
+  }
+  return {
+    startDate,
+    endDate,
+    label: `Custom: ${niceDate(startDate)} to ${niceDate(endDate)}`
+  };
+}
+
+function buildHistoryTimelineEvents(data) {
+  const events = [];
+  const pushEvent = (event) => {
+    const dateKey = String(event?.date || "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return;
+    events.push({
+      id: String(event.id || uid()),
+      date: dateKey,
+      sortAt: parseSortableDate(event.sortAt || `${dateKey}T12:00:00.000Z`),
+      type: String(event.type || "checkin"),
+      medicationName: String(event.medicationName || "").trim(),
+      title: String(event.title || "").trim(),
+      detail: String(event.detail || "").trim()
+    });
+  };
+
+  for (const row of data.changes || []) {
+    pushEvent({
+      id: `change_${row.id || uid()}`,
+      type: "med_change",
+      date: row.date,
+      sortAt: row.updatedAt || row.createdAt || row.date,
+      medicationName: row.medicationName,
+      title: `${row.medicationName || "Medication"}: ${row.oldDose || "-"} -> ${row.newDose || "-"}`,
+      detail: row.reasonForChange || row.reason || "Medication change logged."
+    });
+  }
+
+  for (const row of data.adherence || []) {
+    const status = normalizeAdherenceStatus(row.status);
+    pushEvent({
+      id: `dose_${row.id || row.occurrenceId || uid()}`,
+      type: "dose_action",
+      date: row.date,
+      sortAt: row.actionAt || row.updatedAt || row.createdAt || `${row.date}T00:00:00.000Z`,
+      medicationName: row.medicationName || "",
+      title: `${row.medicationName || "Medication"} marked ${status}`,
+      detail: `${row.scheduleTime || "--:--"}${row.actionAt ? ` · ${niceDateTime(row.actionAt)}` : ""}`
+    });
+  }
+
+  for (const row of data.checkins || []) {
+    pushEvent({
+      id: `checkin_${row.id || uid()}`,
+      type: "checkin",
+      date: row.date,
+      sortAt: row.updatedAt || row.createdAt || row.date,
+      title: `Quick check-in logged`,
+      detail: `Mood ${row.mood}/10 · Anxiety ${row.anxiety}/10 · Focus ${row.focus}/10 · Sleep ${row.sleepHours}h`
+    });
+  }
+
+  for (const row of data.sideEffectEvents || []) {
+    const eventDate = String(row.date || row.createdAt || "").slice(0, 10);
+    const symptom = String(row.symptomName || "Side effect").trim();
+    const severity = Number.isFinite(Number(row.severity)) ? `${row.severity}/10` : "severity not set";
+    const timing = sideEffectTimingBucket(row);
+    pushEvent({
+      id: `effect_${row.id || uid()}`,
+      type: "side_effect",
+      date: eventDate,
+      sortAt: row.createdAt || row.date || eventDate,
+      medicationName: row.linkedMedication || "",
+      title: `${symptom} (${severity})`,
+      detail: `${row.linkedMedication ? `${row.linkedMedication} · ` : ""}${timing}`
+    });
+  }
+
+  for (const row of data.appointmentEvents || []) {
+    pushEvent({
+      id: `appointment_${row.id || uid()}`,
+      type: "appointment",
+      date: row.appointmentDate,
+      sortAt: row.createdAt || row.appointmentDate,
+      title: `${String(row.appointmentType || "Consult").replaceAll("_", " ")} appointment`,
+      detail: row.summaryNote || "Appointment marker recorded"
+    });
+  }
+
+  for (const row of data.decisionLog || []) {
+    pushEvent({
+      id: `decision_${row.id || uid()}`,
+      type: "decision",
+      date: row.appointmentDate,
+      sortAt: row.updatedAt || row.createdAt || row.appointmentDate,
+      medicationName: row.linkedMedication || "",
+      title: `Decision logged${row.clinicianName ? ` · ${row.clinicianName}` : ""}`,
+      detail: row.planUntilNextReview || row.notes || "Decision log update"
+    });
+  }
+
+  return events.sort((left, right) => right.sortAt - left.sortAt);
+}
+
 function renderChanges(root, data, context) {
-  const search = String(app.ui.changesFilterSearch || "").trim().toLowerCase();
-  const medicationFilter = String(app.ui.changesFilterMedication || "all");
-  const sortBy = ["date_desc", "date_asc", "medication", "reason"].includes(app.ui.changesSortBy)
+  const historyFilters = normalizeHistoryFilters(app.ui.historyFilters);
+  app.ui.historyFilters = historyFilters;
+  const historyWindow = resolveHistoryWindow(data, historyFilters);
+  const historySearch = String(historyFilters.search || "").trim().toLowerCase();
+
+  const timelineEvents = buildHistoryTimelineEvents(data)
+    .filter((event) => {
+      if (historyFilters.eventType !== "all" && event.type !== historyFilters.eventType) return false;
+      if (historyFilters.medicationName !== "all") {
+        if (normalizeMedicationKey(event.medicationName) !== normalizeMedicationKey(historyFilters.medicationName)) return false;
+      }
+      if (historyWindow.startDate && event.date < historyWindow.startDate) return false;
+      if (historyWindow.endDate && event.date > historyWindow.endDate) return false;
+      if (!historySearch) return true;
+      const haystack = `${event.title} ${event.detail} ${event.medicationName}`.toLowerCase();
+      return haystack.includes(historySearch);
+    })
+    .slice(0, 240);
+
+  const groupedTimeline = timelineEvents.reduce((map, event) => {
+    if (!map.has(event.date)) {
+      map.set(event.date, []);
+    }
+    map.get(event.date).push(event);
+    return map;
+  }, new Map());
+  const groupedEntries = Array.from(groupedTimeline.entries()).sort((left, right) => right[0].localeCompare(left[0]));
+
+  const changeSearch = String(app.ui.changesFilterSearch || "").trim().toLowerCase();
+  const changeMedicationFilter = String(app.ui.changesFilterMedication || "all");
+  const changeSortBy = ["date_desc", "date_asc", "medication", "reason"].includes(app.ui.changesSortBy)
     ? app.ui.changesSortBy
     : "date_desc";
 
   const medicationOptions = Array.from(
     new Set(
-      (data.changes || [])
-        .map((row) => String(row.medicationName || "").trim())
-        .filter(Boolean)
+      [
+        ...(data.changes || []).map((row) => String(row.medicationName || "").trim()),
+        ...timelineEvents.map((row) => String(row.medicationName || "").trim())
+      ].filter(Boolean)
     )
   ).sort((left, right) => left.localeCompare(right));
 
-  const rows = data.changes
+  const rows = (data.changes || [])
     .slice()
     .filter((row) => {
-      if (medicationFilter !== "all" && String(row.medicationName || "") !== medicationFilter) return false;
-      if (!search) return true;
+      if (changeMedicationFilter !== "all" && String(row.medicationName || "") !== changeMedicationFilter) return false;
+      if (!changeSearch) return true;
       const haystack = [
         row.medicationName,
         row.oldDose,
@@ -5198,92 +5448,238 @@ function renderChanges(root, data, context) {
       ]
         .map((value) => String(value || "").toLowerCase())
         .join(" ");
-      return haystack.includes(search);
+      return haystack.includes(changeSearch);
     })
     .sort((left, right) => {
-      if (sortBy === "date_asc") return String(left.date || "").localeCompare(String(right.date || ""));
-      if (sortBy === "medication") return String(left.medicationName || "").localeCompare(String(right.medicationName || ""));
-      if (sortBy === "reason") return String(left.reasonForChange || left.reason || "").localeCompare(String(right.reasonForChange || right.reason || ""));
+      if (changeSortBy === "date_asc") return String(left.date || "").localeCompare(String(right.date || ""));
+      if (changeSortBy === "medication") return String(left.medicationName || "").localeCompare(String(right.medicationName || ""));
+      if (changeSortBy === "reason") return String(left.reasonForChange || left.reason || "").localeCompare(String(right.reasonForChange || right.reason || ""));
       return String(right.date || "").localeCompare(String(left.date || ""));
     });
 
-  if (!data.changes.length) {
-    root.innerHTML = `<div class="empty">No medication changes logged yet.</div>`;
-    return;
-  }
-
   root.innerHTML = `
-    <div class="card" style="margin-bottom:12px;">
+    <div class="card history-controls-card">
+      <div class="card-head-row">
+        <div>
+          <h3>History timeline</h3>
+          <div class="subtle">${escapeHtml(historyWindow.label)} · ${timelineEvents.length} events in view.</div>
+        </div>
+        <div class="chip-group">
+          ${["today", "7d", "14d", "30d"].map((range) => `<button type="button" class="chip ${historyFilters.range === range ? "active" : ""}" data-history-range-chip="${range}">${range === "today" ? "Today" : range.toUpperCase()}</button>`).join("")}
+        </div>
+      </div>
+      <div class="field-grid table-controls-grid">
+        <div>
+          <label for="historySearchInput">Search history</label>
+          <input id="historySearchInput" type="search" value="${escapeHtml(historyFilters.search)}" placeholder="Search events, notes, or medication">
+        </div>
+        <div>
+          <label for="historyRangeSelect">Date range</label>
+          <select id="historyRangeSelect">
+            ${HISTORY_RANGE_FILTER_OPTIONS.map((option) => `<option value="${option.value}" ${historyFilters.range === option.value ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label for="historyEventTypeFilter">Event type</label>
+          <select id="historyEventTypeFilter">
+            ${HISTORY_EVENT_TYPE_OPTIONS.map((option) => `<option value="${option.value}" ${historyFilters.eventType === option.value ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label for="historyMedicationFilter">Medication</label>
+          <select id="historyMedicationFilter">
+            <option value="all">All medications</option>
+            ${medicationOptions.map((name) => `<option value="${escapeHtml(name)}" ${historyFilters.medicationName === name ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label for="historyFromDate">From date</label>
+          <input id="historyFromDate" type="date" value="${escapeHtml(historyFilters.fromDate)}" ${historyFilters.range === "custom" ? "" : "disabled"}>
+        </div>
+        <div>
+          <label for="historyToDate">To date</label>
+          <input id="historyToDate" type="date" value="${escapeHtml(historyFilters.toDate)}" ${historyFilters.range === "custom" ? "" : "disabled"}>
+        </div>
+      </div>
+      <div class="inline-row" style="margin-top:10px;">
+        <button class="btn btn-ghost small" type="button" id="historyClearFilters">Clear filters</button>
+      </div>
+    </div>
+
+    <article class="card history-timeline-card">
+      <h3>Chronological timeline</h3>
+      <div class="subtle">Grouped by date for faster psychiatrist review.</div>
+      ${groupedEntries.length ? `
+        <div class="history-day-groups">
+          ${groupedEntries.map(([date, events]) => `
+            <section class="history-day-group">
+              <h4>${escapeHtml(niceDate(date))}</h4>
+              <ul class="history-event-list">
+                ${events.map((event) => {
+                  const meta = HISTORY_EVENT_TYPE_META[event.type] || HISTORY_EVENT_TYPE_META.checkin;
+                  return `
+                    <li class="history-event-item ${escapeHtml(meta.tone)}">
+                      <div class="history-event-icon">${renderIcon(meta.icon, "mini-icon soft", meta.label)}</div>
+                      <div class="history-event-content">
+                        <div class="history-event-head">
+                          <strong>${escapeHtml(event.title || meta.label)}</strong>
+                          <span class="pill-badge">${escapeHtml(meta.label)}</span>
+                        </div>
+                        <div class="subtle">${escapeHtml(event.detail || "No additional detail.")}${event.medicationName ? ` · ${escapeHtml(event.medicationName)}` : ""}</div>
+                      </div>
+                    </li>
+                  `;
+                }).join("")}
+              </ul>
+            </section>
+          `).join("")}
+        </div>
+      ` : `<div class="empty">No history items match this filter window.</div>`}
+    </article>
+
+    <div class="card">
       <h3>Recent medication changes summary</h3>
       ${renderRecentMedicationSummary()}
     </div>
-    <div class="card table-controls-card" style="margin-bottom:12px;">
+
+    <div class="card table-controls-card">
       <div class="field-grid table-controls-grid">
         <div>
-          <label for="changesSearchInput">Search</label>
+          <label for="changesSearchInput">Search change log</label>
           <input id="changesSearchInput" type="search" value="${escapeHtml(app.ui.changesFilterSearch)}" placeholder="Medication, dose, reason or notes">
         </div>
         <div>
           <label for="changesMedicationFilter">Medication</label>
           <select id="changesMedicationFilter">
             <option value="all">All medications</option>
-            ${medicationOptions.map((name) => `<option value="${escapeHtml(name)}" ${medicationFilter === name ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}
+            ${medicationOptions.map((name) => `<option value="${escapeHtml(name)}" ${changeMedicationFilter === name ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}
           </select>
         </div>
         <div>
           <label for="changesSortBy">Sort by</label>
           <select id="changesSortBy">
-            <option value="date_desc" ${sortBy === "date_desc" ? "selected" : ""}>Newest first</option>
-            <option value="date_asc" ${sortBy === "date_asc" ? "selected" : ""}>Oldest first</option>
-            <option value="medication" ${sortBy === "medication" ? "selected" : ""}>Medication</option>
-            <option value="reason" ${sortBy === "reason" ? "selected" : ""}>Reason</option>
+            <option value="date_desc" ${changeSortBy === "date_desc" ? "selected" : ""}>Newest first</option>
+            <option value="date_asc" ${changeSortBy === "date_asc" ? "selected" : ""}>Oldest first</option>
+            <option value="medication" ${changeSortBy === "medication" ? "selected" : ""}>Medication</option>
+            <option value="reason" ${changeSortBy === "reason" ? "selected" : ""}>Reason</option>
           </select>
         </div>
       </div>
-      <div class="subtle" style="margin-top:8px;">Showing ${rows.length} of ${data.changes.length} changes.</div>
+      <div class="subtle" style="margin-top:8px;">Showing ${rows.length} of ${(data.changes || []).length} medication changes.</div>
     </div>
-    ${rows.length ? "" : `<div class="empty" style="margin-bottom:12px;">No medication changes match this filter.</div>`}
-    <div class="table-wrap">
-      <table>
-        <caption class="sr-only">Medication change history</caption>
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Medication</th>
-            <th>Change</th>
-            <th>Context</th>
-            <th>Interpretation</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows.map((row) => `
+    ${rows.length ? "" : `<div class="empty">No medication changes match this filter.</div>`}
+    ${rows.length ? `
+      <div class="table-wrap">
+        <table>
+          <caption class="sr-only">Medication change history</caption>
+          <thead>
             <tr>
-              <td>${escapeHtml(niceDate(row.date))}</td>
-              <td>${escapeHtml(row.medicationName || "-")}</td>
-              <td>${escapeHtml(row.oldDose || "-")} → ${escapeHtml(row.newDose || "-")}</td>
-              <td>
-                <div><strong>Reason:</strong> ${escapeHtml(row.reasonForChange || row.reason || "-")}</div>
-                <div class="subtle">${row.changedBy ? `Changed by: ${escapeHtml(row.changedBy)}` : ""}${row.route ? `${row.changedBy ? " · " : ""}Route: ${escapeHtml(row.route)}` : ""}${row.reviewDate ? `${(row.changedBy || row.route) ? " · " : ""}Review: ${escapeHtml(niceDate(row.reviewDate))}` : ""}</div>
-                ${row.monitorFor ? `<div class="subtle">Monitor: ${escapeHtml(row.monitorFor)}</div>` : ""}
-                ${row.expectedEffects ? `<div class="subtle">Expected effects: ${escapeHtml(row.expectedEffects)}</div>` : ""}
-                ${row.notes ? `<div class="subtle">Notes: ${escapeHtml(row.notes)}</div>` : ""}
-              </td>
-              <td>
-                <details>
-                  <summary>Open interpretation card</summary>
-                  <div class="interpret-card">
-                    ${renderInterpretationCard(row)}
-                    ${context.readOnly ? "" : renderInterpretationEditor(row)}
-                    <p class="safety-footnote">This interpretation is informational and may change with clinical review. Discuss with prescriber.</p>
-                  </div>
-                </details>
-              </td>
+              <th>Date</th>
+              <th>Medication</th>
+              <th>Change</th>
+              <th>Context</th>
+              <th>Interpretation</th>
             </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            ${rows.map((row) => `
+              <tr>
+                <td>${escapeHtml(niceDate(row.date))}</td>
+                <td>${escapeHtml(row.medicationName || "-")}</td>
+                <td>${escapeHtml(row.oldDose || "-")} → ${escapeHtml(row.newDose || "-")}</td>
+                <td>
+                  <div><strong>Reason:</strong> ${escapeHtml(row.reasonForChange || row.reason || "-")}</div>
+                  <div class="subtle">${row.changedBy ? `Changed by: ${escapeHtml(row.changedBy)}` : ""}${row.route ? `${row.changedBy ? " · " : ""}Route: ${escapeHtml(row.route)}` : ""}${row.reviewDate ? `${(row.changedBy || row.route) ? " · " : ""}Review: ${escapeHtml(niceDate(row.reviewDate))}` : ""}</div>
+                  ${row.monitorFor ? `<div class="subtle">Monitor: ${escapeHtml(row.monitorFor)}</div>` : ""}
+                  ${row.expectedEffects ? `<div class="subtle">Expected effects: ${escapeHtml(row.expectedEffects)}</div>` : ""}
+                  ${row.notes ? `<div class="subtle">Notes: ${escapeHtml(row.notes)}</div>` : ""}
+                </td>
+                <td>
+                  <details>
+                    <summary>Open interpretation card</summary>
+                    <div class="interpret-card">
+                      ${renderInterpretationCard(row)}
+                      ${context.readOnly ? "" : renderInterpretationEditor(row)}
+                      <p class="safety-footnote">This interpretation is informational and may change with clinical review. Discuss with prescriber.</p>
+                    </div>
+                  </details>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    ` : ""}
   `;
+
+  root.querySelector("#historySearchInput")?.addEventListener("input", (event) => {
+    app.ui.historyFilters = normalizeHistoryFilters({
+      ...app.ui.historyFilters,
+      search: String(event.target.value || "")
+    });
+    renderAll();
+  });
+  root.querySelector("#historyRangeSelect")?.addEventListener("change", (event) => {
+    const range = String(event.target.value || "14d");
+    app.ui.historyFilters = normalizeHistoryFilters({
+      ...app.ui.historyFilters,
+      range,
+      ...(range === "custom" ? {} : { fromDate: "", toDate: "" })
+    });
+    renderAll();
+  });
+  root.querySelector("#historyEventTypeFilter")?.addEventListener("change", (event) => {
+    app.ui.historyFilters = normalizeHistoryFilters({
+      ...app.ui.historyFilters,
+      eventType: String(event.target.value || "all")
+    });
+    renderAll();
+  });
+  root.querySelector("#historyMedicationFilter")?.addEventListener("change", (event) => {
+    app.ui.historyFilters = normalizeHistoryFilters({
+      ...app.ui.historyFilters,
+      medicationName: String(event.target.value || "all")
+    });
+    renderAll();
+  });
+  root.querySelector("#historyFromDate")?.addEventListener("change", (event) => {
+    app.ui.historyFilters = normalizeHistoryFilters({
+      ...app.ui.historyFilters,
+      range: "custom",
+      fromDate: String(event.target.value || "")
+    });
+    renderAll();
+  });
+  root.querySelector("#historyToDate")?.addEventListener("change", (event) => {
+    app.ui.historyFilters = normalizeHistoryFilters({
+      ...app.ui.historyFilters,
+      range: "custom",
+      toDate: String(event.target.value || "")
+    });
+    renderAll();
+  });
+  root.querySelectorAll("[data-history-range-chip]").forEach((button) => {
+    button.addEventListener("click", () => {
+      app.ui.historyFilters = normalizeHistoryFilters({
+        ...app.ui.historyFilters,
+        range: String(button.dataset.historyRangeChip || "14d"),
+        fromDate: "",
+        toDate: ""
+      });
+      renderAll();
+    });
+  });
+  root.querySelector("#historyClearFilters")?.addEventListener("click", () => {
+    app.ui.historyFilters = normalizeHistoryFilters({
+      range: "14d",
+      eventType: "all",
+      medicationName: "all",
+      search: "",
+      fromDate: "",
+      toDate: ""
+    });
+    renderAll();
+  });
 
   root.querySelector("#changesSearchInput")?.addEventListener("input", (event) => {
     app.ui.changesFilterSearch = String(event.target.value || "");
@@ -5826,6 +6222,7 @@ function renderConsult(root, data, context) {
   }
   const activeConsultPane = app.ui.consultActivePane;
   const paneClass = (paneId) => (activeConsultPane === paneId ? "" : "consult-pane-hidden");
+  const paneAttrs = (paneId) => (activeConsultPane === paneId ? "" : `hidden aria-hidden="true"`);
   const windowRange = resolveConsultWindow(data, filters);
   const experiments = allExperiments.filter((entry) => {
     if (!inDateRangeKey(entry.dateEffective, windowRange.startDate, windowRange.endDate)) return false;
@@ -5944,10 +6341,10 @@ function renderConsult(root, data, context) {
     <article class="card consult-toolbar">
       <div class="card-head-row">
         <div>
-          <h3>Consult Summary</h3>
-          <div class="subtle">${escapeHtml(windowRange.label)} · Appointment-ready, print-friendly review.</div>
+          <h3>Consult controls</h3>
+          <div class="subtle">${escapeHtml(windowRange.label)} · Choose your review window, then step through each consult section.</div>
         </div>
-        <div class="inline-row">
+        <div class="inline-row consult-toolbar-actions">
           <button class="btn btn-primary small" type="button" data-consult-pack="1">Appointment Pack (14d)</button>
           <button class="btn btn-secondary small" type="button" data-consult-copy="1">Copy summary</button>
           <button class="btn btn-secondary small" type="button" data-consult-print="1">Print / Save PDF</button>
@@ -5985,13 +6382,14 @@ function renderConsult(root, data, context) {
     </article>
 
     <article class="card consult-quicknav">
+      <div class="subtle consult-pane-help">Focus section</div>
       <div class="inline-row">
         <button class="chip ${activeConsultPane === "current" ? "active" : ""}" type="button" data-consult-pane="current">Current meds</button>
-        <button class="chip ${activeConsultPane === "changes" ? "active" : ""}" type="button" data-consult-pane="changes">Changes</button>
-        <button class="chip ${activeConsultPane === "trends" ? "active" : ""}" type="button" data-consult-pane="trends">Trends</button>
+        <button class="chip ${activeConsultPane === "changes" ? "active" : ""}" type="button" data-consult-pane="changes">Change log</button>
+        <button class="chip ${activeConsultPane === "trends" ? "active" : ""}" type="button" data-consult-pane="trends">Trend snapshot</button>
         <button class="chip ${activeConsultPane === "effects" ? "active" : ""}" type="button" data-consult-pane="effects">Side effects</button>
         <button class="chip ${activeConsultPane === "questions" ? "active" : ""}" type="button" data-consult-pane="questions">Questions</button>
-        <button class="chip ${activeConsultPane === "plan" ? "active" : ""}" type="button" data-consult-pane="plan">Plan</button>
+        <button class="chip ${activeConsultPane === "plan" ? "active" : ""}" type="button" data-consult-pane="plan">Decision plan</button>
       </div>
     </article>
 
@@ -6018,7 +6416,7 @@ function renderConsult(root, data, context) {
           </div>
         </div>
       </article>
-      <article class="card consult-section consult-section-main consult-pane ${paneClass("current")}" id="consult-current">
+      <article class="card consult-section consult-section-main consult-pane ${paneClass("current")}" id="consult-current" ${paneAttrs("current")}>
         <h3>Current medications</h3>
         ${meds.length ? `
           <div class="consult-table-only table-wrap">
@@ -6062,7 +6460,7 @@ function renderConsult(root, data, context) {
         ` : `<div class="empty">No active medications recorded.</div>`}
       </article>
 
-      <article class="card consult-section consult-section-main consult-pane ${paneClass("changes")}" id="consult-changes">
+      <article class="card consult-section consult-section-main consult-pane ${paneClass("changes")}" id="consult-changes" ${paneAttrs("changes")}>
         <h3>Medication changes</h3>
         ${experiments.length ? `
           <div class="consult-table-only table-wrap">
@@ -6123,7 +6521,7 @@ function renderConsult(root, data, context) {
         ` : `<div class="empty">No medication changes in this window.</div>`}
       </article>
 
-      <article class="card consult-section consult-section-main consult-pane ${paneClass("trends")}" id="consult-trends">
+      <article class="card consult-section consult-section-main consult-pane ${paneClass("trends")}" id="consult-trends" ${paneAttrs("trends")}>
         <h3>What improved / worsened</h3>
         ${renderDataConfidenceBanner(quality, "trend interpretation")}
         <div class="subtle">${escapeHtml(shiftSummary.summary)}</div>
@@ -6137,7 +6535,7 @@ function renderConsult(root, data, context) {
         </div>
       </article>
 
-      <article class="card consult-section consult-section-main consult-pane ${paneClass("effects")}" id="consult-effects">
+      <article class="card consult-section consult-section-main consult-pane ${paneClass("effects")}" id="consult-effects" ${paneAttrs("effects")}>
         <h3>Side effects summary</h3>
         ${sideEffectSummary.length ? `
           <ul class="timeline-list consult-list consult-effects-list">
@@ -6158,7 +6556,7 @@ function renderConsult(root, data, context) {
         ` : `<div class="empty">No side-effect timing events in this window.</div>`}
       </article>
 
-      <article class="card consult-section consult-section-main consult-pane ${paneClass("trends")}" id="consult-adherence">
+      <article class="card consult-section consult-section-main consult-pane ${paneClass("trends")}" id="consult-adherence" ${paneAttrs("trends")}>
         <h3>Adherence summary</h3>
         <div class="summary-strip-grid consult-summary-strip">
           <div class="summary-strip-item"><div class="summary-strip-label">Taken</div><div class="summary-strip-value">${takenCount}</div></div>
@@ -6168,7 +6566,7 @@ function renderConsult(root, data, context) {
         </div>
       </article>
 
-      <article class="card consult-section consult-section-side consult-pane ${paneClass("questions")}" id="consult-questions">
+      <article class="card consult-section consult-section-side consult-pane ${paneClass("questions")}" id="consult-questions" ${paneAttrs("questions")}>
         <div class="card-head-row">
           <div>
             <h3>Question queue</h3>
@@ -6241,7 +6639,7 @@ function renderConsult(root, data, context) {
         ` : ""}
       </article>
 
-      <article class="card consult-section consult-section-side consult-pane ${paneClass("plan")}" id="consult-plan">
+      <article class="card consult-section consult-section-side consult-pane ${paneClass("plan")}" id="consult-plan" ${paneAttrs("plan")}>
         <h3>Decision log and current plan</h3>
         ${latestDecision ? `
           <div class="consult-plan-highlight">
@@ -6295,7 +6693,7 @@ function renderConsult(root, data, context) {
         ` : ""}
       </article>
 
-      <article class="card consult-section consult-section-side consult-pane ${paneClass("plan")}" id="consult-focus">
+      <article class="card consult-section consult-section-side consult-pane ${paneClass("plan")}" id="consult-focus" ${paneAttrs("plan")}>
         <div class="card-head-row">
           <div>
             <h3>What I want to discuss today</h3>
@@ -6303,7 +6701,7 @@ function renderConsult(root, data, context) {
           </div>
         </div>
         ${ownerEditable ? `
-          <details class="consult-editor" id="consultFocusEditor" ${focusText ? "" : "open"}>
+          <details class="consult-editor" id="consultFocusEditor">
             <summary>${focusText ? "Edit consult focus" : "Add consult focus"}</summary>
           <form id="consultFocusForm" class="edit-inline-form consult-form consult-form-noborder">
             <label for="consultDiscussToday">Consult focus text</label>
@@ -6314,7 +6712,7 @@ function renderConsult(root, data, context) {
         ` : `<div class="subtle">${focusText ? escapeHtml(focusText) : "No consult focus text provided."}</div>`}
       </article>
 
-      <article class="card consult-section consult-section-side consult-section-collapsible consult-pane ${paneClass("plan")}" id="consult-quality">
+      <article class="card consult-section consult-section-side consult-section-collapsible consult-pane ${paneClass("plan")}" id="consult-quality" ${paneAttrs("plan")}>
         <h3>Data quality</h3>
         <ul class="timeline-list consult-list">
           <li>Days without check-in: <strong>${quality.daysWithoutCheckin}</strong></li>
@@ -6325,7 +6723,7 @@ function renderConsult(root, data, context) {
         <div class="subtle">Use this context to avoid over-interpreting sparse data.</div>
       </article>
 
-      <article class="card consult-section consult-section-side consult-section-collapsible consult-pane ${paneClass("plan")}" id="consult-appointments">
+      <article class="card consult-section consult-section-side consult-section-collapsible consult-pane ${paneClass("plan")}" id="consult-appointments" ${paneAttrs("plan")}>
         <h3>Appointment markers</h3>
         ${appointments.length ? `
           <ul class="timeline-list consult-list">
@@ -6351,7 +6749,7 @@ function renderConsult(root, data, context) {
         ` : ""}
       </article>
 
-      <article class="card consult-section consult-section-side consult-section-collapsible consult-pane ${paneClass("changes")}" id="consult-experiments">
+      <article class="card consult-section consult-section-side consult-section-collapsible consult-pane ${paneClass("changes")}" id="consult-experiments" ${paneAttrs("changes")}>
         <h3>Medication change experiment log</h3>
         ${ownerEditable ? `
           <details class="consult-editor" id="consultExperimentEditor" ${editingExperiment ? "open" : ""}>
@@ -8570,6 +8968,10 @@ function renderSharing(root, _data, context) {
     <div class="card">
       <h3>Preview shared link</h3>
       <p class="subtle">Open a recipient-safe read-only preview from here.</p>
+      <div class="share-includes-summary">
+        <strong>This shared view includes:</strong>
+        <span>current medications, recent medication changes, check-in trends, consult questions, and decision summaries.</span>
+      </div>
       ${shareLinksForPreview.length ? `
         <div class="field-grid">
           <div>
@@ -9501,22 +9903,118 @@ function renderExportSummaryPreview(data, rangeDays) {
 function renderExports(root, data, context) {
   const allowedModes = (context?.allowedModes || ["daily", "clinical", "personal"])
     .filter((mode) => VIEW_MODE_META[mode]);
+  const ownerEditable = context.type === "owner" && !context.readOnly;
+  const ownerProfile = normalizeOwnerProfile(app.ownerData.profile);
+  const reminderSettings = normalizeReminderSettings(app.ownerData.reminderSettings);
+  const robotsMeta = String(document.querySelector("meta[name='robots']")?.getAttribute("content") || "index, follow").toLowerCase();
+  const siteVisibilityLabel = robotsMeta.includes("noindex") ? "Private (search engines blocked)" : "Public (indexable)";
+  const syncStatus = app.sync.status === "connected"
+    ? `Connected${app.sync.lastSyncedAt ? ` · last sync ${niceDateTime(app.sync.lastSyncedAt)}` : ""}`
+    : app.sync.status === "syncing"
+      ? "Syncing..."
+      : app.sync.status === "auth-required"
+        ? "Sign in required"
+        : app.sync.status === "error"
+          ? `Error: ${app.sync.lastError || "Unable to sync"}`
+          : "Local-only mode";
+  const syncDisabledAttr = LOCAL_ONLY_MODE ? "disabled" : "";
+  const controlsDisabledAttr = ownerEditable ? "" : "disabled";
   root.innerHTML = `
-    <div class="card">
-      <h3>Display preferences</h3>
-      <div class="field-grid">
+    <div class="card settings-section">
+      <h3>Appearance</h3>
+      <div class="subtle">Set how this app appears and greets you on this device.</div>
+      ${ownerEditable ? "" : `<div class="subtle">Read-only mode: appearance can’t be changed here.</div>`}
+      <div class="field-grid" style="margin-top:10px;">
+        <div>
+          <label for="settingsOwnerDisplayName">Display name (optional)</label>
+          <input id="settingsOwnerDisplayName" value="${escapeHtml(ownerProfile.displayName)}" placeholder="How you want your greeting to appear" ${controlsDisabledAttr}>
+        </div>
+        <div>
+          <label for="settingsThemePreference">Theme</label>
+          <select id="settingsThemePreference" ${controlsDisabledAttr}>
+            <option value="light" ${ownerProfile.themePreference === "light" ? "selected" : ""}>Light</option>
+            <option value="dark" ${ownerProfile.themePreference === "dark" ? "selected" : ""}>Dark</option>
+            <option value="system" ${ownerProfile.themePreference === "system" ? "selected" : ""}>System</option>
+          </select>
+        </div>
+        <div>
+          <label class="check-item">
+            <input type="checkbox" id="settingsPersonalizationEnabled" ${ownerProfile.personalizationEnabled ? "checked" : ""} ${controlsDisabledAttr}>
+            <span>Enable personalized greeting and consistency feedback</span>
+          </label>
+        </div>
         <div>
           <label for="settingsDataViewSelect">Data View</label>
           <select id="settingsDataViewSelect">
             ${allowedModes.map((mode) => `<option value="${mode}" ${app.ui.activeViewMode === mode ? "selected" : ""}>${escapeHtml(VIEW_MODE_META[mode].label)}</option>`).join("")}
           </select>
-          <p class="helper-text">Move between Daily, Clinical, and Personal detail depth from Settings.</p>
+          <p class="helper-text">Adjust detail depth without changing stored data.</p>
         </div>
+      </div>
+      <div class="inline-row" style="margin-top:10px;">
+        <button class="btn btn-secondary" type="button" id="saveSettingsProfileButton" ${controlsDisabledAttr}>Save appearance</button>
       </div>
     </div>
 
-    <div class="card">
-      <h3>Export options</h3>
+    <div class="card settings-section">
+      <h3>Tracking & behaviour</h3>
+      <div class="subtle">Configure reminders and adherence alert behavior.</div>
+      <div class="field-grid" style="margin-top:10px;">
+        <div>
+          <label class="check-item">
+            <input type="checkbox" id="settingsRemindersEnabled" ${reminderSettings.enabled ? "checked" : ""} ${controlsDisabledAttr}>
+            <span>Enable dose reminders</span>
+          </label>
+        </div>
+        <div>
+          <label for="settingsReminderLeadMinutes">Reminder lead time</label>
+          <select id="settingsReminderLeadMinutes" ${controlsDisabledAttr}>
+            ${[0, 5, 10, 15, 30, 45, 60].map((mins) => `<option value="${mins}" ${Number(reminderSettings.leadMinutes) === mins ? "selected" : ""}>${mins === 0 ? "At scheduled time" : `${mins} minutes before`}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label class="check-item">
+            <input type="checkbox" id="settingsDesktopNotificationsEnabled" ${reminderSettings.desktopNotifications ? "checked" : ""} ${controlsDisabledAttr}>
+            <span>Desktop notifications</span>
+          </label>
+        </div>
+        <div>
+          <label class="check-item">
+            <input type="checkbox" id="settingsQuietUntilOverdueEnabled" ${reminderSettings.quietUntilOverdue ? "checked" : ""} ${controlsDisabledAttr}>
+            <span>Quiet reminders until overdue</span>
+          </label>
+        </div>
+        <div>
+          <label for="settingsOverdueEscalationMinutes">Escalate when overdue by</label>
+          <select id="settingsOverdueEscalationMinutes" ${controlsDisabledAttr}>
+            ${[0, 5, 10, 15, 30, 45, 60].map((mins) => `<option value="${mins}" ${Number(reminderSettings.overdueEscalationMinutes) === mins ? "selected" : ""}>${mins === 0 ? "Immediately at due time" : `${mins} minutes`}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label class="check-item">
+            <input type="checkbox" id="settingsRiskAlertsEnabled" ${reminderSettings.riskAlertsEnabled ? "checked" : ""} ${controlsDisabledAttr}>
+            <span>Risk threshold alerts</span>
+          </label>
+        </div>
+        <div>
+          <label for="settingsRiskAlertsMinLevel">Alert from risk level</label>
+          <select id="settingsRiskAlertsMinLevel" ${controlsDisabledAttr}>
+            ${["watch", "elevated", "high"].map((level) => `<option value="${level}" ${reminderSettings.riskAlertsMinLevel === level ? "selected" : ""}>${escapeHtml(level)}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label>Notification permission</label>
+          <div class="subtle">${"Notification" in window ? Notification.permission : "Not supported in this browser"}</div>
+        </div>
+      </div>
+      <div class="inline-row" style="margin-top:10px;">
+        <button class="btn btn-secondary" type="button" id="saveSettingsReminderButton" ${controlsDisabledAttr}>Save tracking settings</button>
+        <button class="btn btn-ghost" type="button" id="requestSettingsReminderPermission">Request notification permission</button>
+      </div>
+    </div>
+
+    <div class="card settings-section">
+      <h3>Data & export</h3>
       <div class="summary-range-row" style="margin-bottom:10px;">
         <label for="exportSummaryRange">Summary range</label>
         <select id="exportSummaryRange">
@@ -9532,6 +10030,47 @@ function renderExports(root, data, context) {
       </div>
       <p class="safety-footnote">Clinician summary text is informational. Discuss with prescriber.</p>
     </div>
+
+    <div class="card settings-section">
+      <h3>Privacy / sharing</h3>
+      <div class="subtle">Search visibility: ${escapeHtml(siteVisibilityLabel)}.</div>
+      <div class="subtle">Share links and recipient previews are managed in the Share tab.</div>
+      <div class="inline-row" style="margin-top:10px;">
+        <button class="btn btn-ghost" type="button" id="openShareFromSettings">Open Share tab</button>
+      </div>
+    </div>
+
+    <details class="card settings-section" id="settingsAdvancedDetails">
+      <summary>Advanced</summary>
+      <div class="subtle" style="margin-top:8px;">Sync status: ${escapeHtml(syncStatus)}</div>
+      <div class="field-grid" style="margin-top:10px;">
+        <div>
+          <label>Enable cloud sync</label>
+          <label class="check-item">
+            <input type="checkbox" id="settingsSyncEnabled" ${app.syncConfig.enabled ? "checked" : ""} ${syncDisabledAttr}>
+            <span>Use backend persistence for multi-device access</span>
+          </label>
+        </div>
+        <div>
+          <label for="settingsSyncEndpoint">API endpoint</label>
+          <input id="settingsSyncEndpoint" value="${escapeHtml(app.syncConfig.endpoint || "")}" placeholder="https://your-api.example.com" ${syncDisabledAttr}>
+        </div>
+        <div>
+          <label for="settingsSyncAccountId">Account ID</label>
+          <input id="settingsSyncAccountId" value="${escapeHtml(app.syncConfig.accountId || "default")}" ${syncDisabledAttr}>
+        </div>
+        <div>
+          <label for="settingsSyncOwnerKey">Owner API key</label>
+          <input id="settingsSyncOwnerKey" type="password" value="${escapeHtml(app.syncConfig.ownerKey || "")}" placeholder="Owner key for write access" ${syncDisabledAttr}>
+        </div>
+      </div>
+      <div class="inline-row" style="margin-top:10px;">
+        <button class="btn btn-secondary" type="button" id="saveSettingsSyncButton" ${syncDisabledAttr}>Save sync settings</button>
+        <button class="btn btn-ghost" type="button" id="syncNowFromSettings" ${syncDisabledAttr}>Sync now</button>
+      </div>
+      ${LOCAL_ONLY_MODE ? `<p class="helper-text" style="margin-top:8px;">Local-only mode is active. Cloud controls are disabled in this build.</p>` : ""}
+    </details>
+
     ${renderExportSummaryPreview(data, app.ui.exportSummaryRangeDays || "14")}
   `;
 
@@ -9542,6 +10081,108 @@ function renderExports(root, data, context) {
     ensureSectionForCurrentMode();
     setStatus(`Data view set to ${VIEW_MODE_META[next].label}.`);
     renderAll();
+  });
+
+  root.querySelector("#saveSettingsProfileButton")?.addEventListener("click", () => {
+    if (!ownerEditable) return;
+    const displayName = String(root.querySelector("#settingsOwnerDisplayName")?.value || "").trim();
+    const personalizationEnabled = Boolean(root.querySelector("#settingsPersonalizationEnabled")?.checked);
+    const themePreference = String(root.querySelector("#settingsThemePreference")?.value || "system");
+    app.ownerData.profile = normalizeOwnerProfile({
+      ...app.ownerData.profile,
+      displayName,
+      personalizationEnabled,
+      themePreference
+    });
+    saveOwnerData(app.ownerData);
+    applyThemePreference(app.ownerData.profile);
+    setStatus("Appearance settings saved.");
+    renderAll();
+  });
+
+  const syncReminderModeControls = () => {
+    const quietUntilOverdueEnabled = root.querySelector("#settingsQuietUntilOverdueEnabled");
+    const overdueEscalationMinutes = root.querySelector("#settingsOverdueEscalationMinutes");
+    if (!overdueEscalationMinutes) return;
+    overdueEscalationMinutes.disabled = !quietUntilOverdueEnabled?.checked || !ownerEditable;
+  };
+  syncReminderModeControls();
+  root.querySelector("#settingsQuietUntilOverdueEnabled")?.addEventListener("change", syncReminderModeControls);
+
+  root.querySelector("#saveSettingsReminderButton")?.addEventListener("click", () => {
+    if (!ownerEditable) return;
+    app.ownerData.reminderSettings = normalizeReminderSettings({
+      ...(app.ownerData.reminderSettings || {}),
+      enabled: Boolean(root.querySelector("#settingsRemindersEnabled")?.checked),
+      leadMinutes: Number(root.querySelector("#settingsReminderLeadMinutes")?.value || 15),
+      desktopNotifications: Boolean(root.querySelector("#settingsDesktopNotificationsEnabled")?.checked),
+      quietUntilOverdue: Boolean(root.querySelector("#settingsQuietUntilOverdueEnabled")?.checked),
+      overdueEscalationMinutes: Number(root.querySelector("#settingsOverdueEscalationMinutes")?.value || 10),
+      riskAlertsEnabled: Boolean(root.querySelector("#settingsRiskAlertsEnabled")?.checked),
+      riskAlertsMinLevel: String(root.querySelector("#settingsRiskAlertsMinLevel")?.value || "elevated")
+    });
+    saveOwnerData(app.ownerData);
+    restartReminderLoop();
+    setStatus("Tracking settings saved.");
+    renderAll();
+  });
+
+  root.querySelector("#requestSettingsReminderPermission")?.addEventListener("click", () => {
+    void requestNotificationPermission();
+  });
+
+  root.querySelector("#openShareFromSettings")?.addEventListener("click", () => {
+    navigateToSection("sharing", {
+      preferredModes: ["clinical", "personal"],
+      fallbackSections: ["exports"]
+    });
+    renderAll();
+  });
+
+  root.querySelector("#saveSettingsSyncButton")?.addEventListener("click", () => {
+    if (LOCAL_ONLY_MODE) {
+      setStatus("Cloud sync is disabled. Local-only mode is active.");
+      return;
+    }
+    app.syncConfig = {
+      ...app.syncConfig,
+      enabled: Boolean(root.querySelector("#settingsSyncEnabled")?.checked),
+      endpoint: String(root.querySelector("#settingsSyncEndpoint")?.value || "").trim(),
+      accountId: String(root.querySelector("#settingsSyncAccountId")?.value || "").trim() || "default",
+      ownerKey: String(root.querySelector("#settingsSyncOwnerKey")?.value || "").trim()
+    };
+    saveSyncConfig();
+    if (!canUseRemoteSync()) {
+      app.sync.status = "local-only";
+    } else if (!hasCloudSession() && !app.syncConfig.ownerKey) {
+      app.sync.status = "auth-required";
+      app.sync.lastError = "Sign in to enable cloud sync.";
+    } else {
+      app.sync.status = "connected";
+      app.sync.lastError = "";
+      queueSyncMutation("sync_settings_saved");
+      scheduleRemoteSync();
+    }
+    setStatus("Sync settings saved.");
+    renderAll();
+  });
+
+  root.querySelector("#syncNowFromSettings")?.addEventListener("click", () => {
+    if (LOCAL_ONLY_MODE) {
+      setStatus("Cloud sync is disabled. Local-only mode is active.");
+      return;
+    }
+    if (!app.syncConfig.enabled || !normalizedApiBase()) {
+      setStatus("Enable sync and set API endpoint first.", "error");
+      return;
+    }
+    if (!hasCloudSession() && !app.syncConfig.ownerKey) {
+      setStatus("Sign in to cloud (or provide legacy owner key) before syncing.", "error");
+      return;
+    }
+    queueSyncMutation("manual_sync");
+    scheduleRemoteSync();
+    setStatus("Sync requested.");
   });
 
   root.querySelector("#exportSummaryRange")?.addEventListener("change", (event) => {
