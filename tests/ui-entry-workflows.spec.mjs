@@ -43,6 +43,37 @@ test.describe("Entry workflow interactions", () => {
     await expect(page.getByText(medName).first()).toBeVisible();
   });
 
+  test("saving daily check-in updates dashboard and persists", async ({ page }) => {
+    const todayIso = new Date().toISOString().slice(0, 10);
+
+    await page.getByRole("button", { name: "Add Entries" }).first().click();
+    await page.getByRole("button", { name: "Daily Wellbeing Check-in" }).click();
+
+    await page.locator('form#formCheckin input[name="date"]').fill(todayIso);
+    await page.locator('form#formCheckin input[name="mood"]').fill("3");
+    await page.locator('form#formCheckin input[name="anxiety"]').fill("7");
+    await page.locator('form#formCheckin input[name="focus"]').fill("5");
+    await page.locator('form#formCheckin input[name="sleepHours"]').fill("6.5");
+    await page.getByRole("button", { name: "Save daily check-in" }).click();
+
+    await expect(page.locator("#sectionTitle")).toContainText("Dashboard");
+    await expect(page.locator("#section-dashboard").getByText("Mood 3").first()).toBeVisible();
+
+    await page.reload({ waitUntil: "networkidle" });
+    await page.getByRole("button", { name: "Dashboard" }).first().click();
+    await expect(page.locator("#section-dashboard").getByText("Mood 3").first()).toBeVisible();
+  });
+
+  test("invalid check-in values show validation feedback instead of silent failure", async ({ page }) => {
+    await page.getByRole("button", { name: "Add Entries" }).first().click();
+    await page.getByRole("button", { name: "Daily Wellbeing Check-in" }).click();
+
+    await page.locator('form#formCheckin input[name="mood"]').fill("22");
+    await page.getByRole("button", { name: "Save daily check-in" }).click();
+
+    await expect(page.locator("#globalStatus")).toContainText("Validation failed");
+  });
+
   test("primary top nav buttons switch sections", async ({ page }) => {
     await page.locator('[data-topnav-id="consult"]').click();
     await expect(page.locator("#sectionTitle")).toContainText("Consult");

@@ -7893,7 +7893,7 @@ function renderWorkflowForm(data) {
     const draft = app.drafts.medication || {};
     const selectedPreset = normalizeSchedulePresetValue(draft.schedulePreset || "custom");
     return `
-      <form id="formMedication" class="card">
+      <form id="formMedication" class="card" novalidate>
         <h3>Add Current Medication</h3>
         <div class="field-grid">
           <div>
@@ -7964,7 +7964,7 @@ function renderWorkflowForm(data) {
   if (app.ui.entryWorkflow === "change") {
     const draft = app.drafts.change || {};
     return `
-      <form id="formChange" class="card">
+      <form id="formChange" class="card" novalidate>
         <h3>Log Medication Change</h3>
         <div class="field-grid">
           <div>
@@ -8041,7 +8041,7 @@ function renderWorkflowForm(data) {
   if (app.ui.entryWorkflow === "note") {
     const draft = app.drafts.note || {};
     return `
-      <form id="formNote" class="card">
+      <form id="formNote" class="card" novalidate>
         <h3>Log Effects / Side Effects Note</h3>
         <div class="field-grid">
           <div>
@@ -8135,7 +8135,7 @@ function renderWorkflowForm(data) {
 
   const draft = buildCheckinDraftDefaults(data, app.drafts.checkin || {});
   return `
-    <form id="formCheckin" class="card">
+    <form id="formCheckin" class="card" novalidate>
       <h3>Daily Wellbeing Check-in</h3>
       <div class="checkin-mode-switch">
         <button class="btn btn-primary small" type="button" data-checkin-mode="full">Full check-in</button>
@@ -8323,8 +8323,23 @@ function bindWorkflowFormHandlers(root, data) {
     medicationForm.addEventListener("submit", (event) => {
       event.preventDefault();
       const values = formToObject(medicationForm);
+      const medicationName = String(values.name || "").trim();
+      const currentDose = String(values.currentDose || "").trim();
+      const startDate = String(values.startDate || "").trim();
 
-      if (!doseLooksValid(values.currentDose)) {
+      if (!medicationName) {
+        return setStatus("Medication name is required.", "error");
+      }
+
+      if (!currentDose) {
+        return setStatus("Current dose is required.", "error");
+      }
+
+      if (!startDate) {
+        return setStatus("Start date is required.", "error");
+      }
+
+      if (!doseLooksValid(currentDose)) {
         return setStatus("Dose format looks invalid. Use a number and unit (for example: 40 mg).", "error");
       }
 
@@ -8336,7 +8351,7 @@ function bindWorkflowFormHandlers(root, data) {
       }
 
       const duplicate = app.ownerData.medications.find(
-        (entry) => entry.active && entry.name.trim().toLowerCase() === (values.name || "").trim().toLowerCase()
+        (entry) => entry.active && entry.name.trim().toLowerCase() === medicationName.toLowerCase()
       );
 
       if (duplicate) {
@@ -8346,14 +8361,14 @@ function bindWorkflowFormHandlers(root, data) {
       const now = isoDateTime(new Date());
       app.ownerData.medications.push({
         id: uid(),
-        name: values.name,
+        name: medicationName,
         genericName: values.genericName || "",
         brandName: values.brandName || "",
         route: values.route || "oral",
-        currentDose: values.currentDose,
+        currentDose,
         schedulePreset: normalizedSchedulePreset,
         scheduleTimes: normalizedScheduleTimes,
-        startDate: values.startDate,
+        startDate,
         indication: values.indication || "",
         moaSimple: (values.moaSimple || "").split("\n").map((line) => line.trim()).filter(Boolean),
         moaTechnical: values.moaTechnical || "",
@@ -8689,6 +8704,33 @@ function bindWorkflowFormHandlers(root, data) {
       event.preventDefault();
       const values = formToObject(checkinForm);
       const checklist = checkedValues(checkinForm, "sideEffectsChecklist");
+      const checkinDate = String(values.date || "").trim();
+
+      if (!checkinDate) {
+        return setStatus("Select a date before saving your check-in.", "error");
+      }
+
+      const numericChecks = [
+        ["Mood", values.mood, 0, 10],
+        ["Anxiety", values.anxiety, 0, 10],
+        ["Focus", values.focus, 0, 10],
+        ["Sleep hours", values.sleepHours, 0, 24],
+        ["Sleep quality", values.sleepQuality, 0, 10],
+        ["Appetite", values.appetite, 0, 10],
+        ["Energy", values.energy, 0, 10],
+        ["Irritability", values.irritability, 0, 10],
+        ["Cravings / impulsivity", values.cravingsImpulsivity, 0, 10]
+      ];
+      const invalidFields = numericChecks
+        .filter(([, raw, min, max]) => {
+          const num = Number(raw);
+          return !Number.isFinite(num) || num < min || num > max;
+        })
+        .map(([label]) => label);
+
+      if (invalidFields.length) {
+        return setStatus(`Validation failed for: ${invalidFields.join(", ")}.`, "error");
+      }
 
       const rangeValid = ["mood", "anxiety", "focus", "sleepQuality", "appetite", "energy", "irritability", "cravingsImpulsivity"].every((field) => {
         const value = Number(values[field]);
@@ -8709,7 +8751,7 @@ function bindWorkflowFormHandlers(root, data) {
       ];
       const derivedFunctionScore = functionChecks.reduce((sum, value) => sum + Number(value), 0);
       const { duplicate } = upsertDailyCheckin({
-        date: values.date,
+        date: checkinDate,
         mood: Number(values.mood),
         anxiety: Number(values.anxiety),
         focus: Number(values.focus),
@@ -8743,7 +8785,7 @@ function bindWorkflowFormHandlers(root, data) {
         const medicationName = String(values.sideEffectMedication || "").trim();
         const onset = Number(values.onsetAfterDoseMinutes);
         const commonMeta = {
-          date: values.date,
+          date: checkinDate,
           linkedMedication: medicationName,
           onsetAfterDoseMinutes: Number.isFinite(onset) ? onset : null,
           timeOfDay: values.timeOfDay || "",
@@ -8775,7 +8817,8 @@ function bindWorkflowFormHandlers(root, data) {
       saveOwnerData(app.ownerData);
       app.drafts.checkin = {};
       saveDrafts();
-      setStatus(duplicate ? "Daily check-in updated." : "Daily check-in saved.");
+      app.ui.activeSection = "dashboard";
+      setStatus(duplicate ? "Daily check-in updated. Dashboard refreshed." : "Daily check-in saved. Dashboard refreshed.");
       renderAll();
     });
   }
