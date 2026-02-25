@@ -3261,6 +3261,7 @@ function renderSectionMeta(context) {
   if (typeof document !== "undefined" && document.body) {
     document.body.classList.toggle("viewer-mode", Boolean(context.readOnly));
     document.body.classList.toggle("owner-mode", !context.readOnly);
+    document.body.classList.toggle("consult-focus-mode", app.ui.activeSection === "consult");
   }
   if (dom.quickCheckinButton) {
     dom.quickCheckinButton.disabled = Boolean(context.readOnly);
@@ -6420,7 +6421,7 @@ function renderConsult(root, data, context) {
         <h3>Current medications</h3>
         ${meds.length ? `
           <div class="consult-table-only table-wrap">
-            <table>
+            <table class="consult-table consult-table-current">
               <caption class="sr-only">Current medication list</caption>
               <thead>
                 <tr>
@@ -6434,10 +6435,10 @@ function renderConsult(root, data, context) {
               <tbody>
                 ${meds.map((med) => `
                   <tr>
-                    <td><span class="table-wrap-text">${escapeHtml(med.name)}</span></td>
-                    <td><span class="table-wrap-text">${escapeHtml(med.currentDose || "-")}</span></td>
-                    <td><span class="table-wrap-text">${escapeHtml(formatSchedule(med))}</span></td>
-                    <td><span class="table-wrap-text">${escapeHtml(med.route || "-")}</span></td>
+                    <td><span class="table-wrap-text consult-cell consult-cell-name">${escapeHtml(med.name)}</span></td>
+                    <td><span class="table-wrap-text consult-cell consult-cell-dose">${escapeHtml(med.currentDose || "-")}</span></td>
+                    <td><span class="table-wrap-text consult-cell consult-cell-schedule">${escapeHtml(formatSchedule(med))}</span></td>
+                    <td><span class="table-wrap-text consult-cell consult-cell-route">${escapeHtml(med.route || "-")}</span></td>
                     <td><span class="pill-badge ${med.active ? "status-open" : "status-discussed"}">${escapeHtml(med.active ? "Active" : "Inactive")}</span></td>
                   </tr>
                 `).join("")}
@@ -6464,7 +6465,7 @@ function renderConsult(root, data, context) {
         <h3>Medication changes</h3>
         ${experiments.length ? `
           <div class="consult-table-only table-wrap">
-            <table>
+            <table class="consult-table consult-table-changes">
               <caption class="sr-only">Medication changes in selected consult window</caption>
               <thead>
                 <tr>
@@ -6480,11 +6481,11 @@ function renderConsult(root, data, context) {
                   const comparison = experimentComparisons.get(entry.id);
                   return `
                     <tr>
-                      <td><span class="table-wrap-text">${escapeHtml(niceDate(entry.dateEffective))}</span></td>
-                      <td><span class="table-wrap-text">${escapeHtml(entry.medicationName || "Medication")}</span></td>
-                      <td><span class="table-wrap-text">${escapeHtml(entry.oldDose || "-")} -> ${escapeHtml(entry.newDose || "-")}</span></td>
-                      <td><span class="table-wrap-text">${escapeHtml(entry.reasonForChange || "-")}</span></td>
-                      <td><span class="table-wrap-text">${escapeHtml(comparison?.summary || "Observed pattern not available.")}</span></td>
+                      <td><span class="table-wrap-text consult-cell consult-cell-date">${escapeHtml(niceDate(entry.dateEffective))}</span></td>
+                      <td><span class="table-wrap-text consult-cell consult-cell-name">${escapeHtml(entry.medicationName || "Medication")}</span></td>
+                      <td><span class="table-wrap-text consult-cell consult-cell-dose">${escapeHtml(entry.oldDose || "-")} -> ${escapeHtml(entry.newDose || "-")}</span></td>
+                      <td><span class="table-wrap-text consult-cell consult-cell-reason">${escapeHtml(entry.reasonForChange || "-")}</span></td>
+                      <td><span class="table-wrap-text consult-cell consult-cell-observed">${escapeHtml(comparison?.summary || "Observed pattern not available.")}</span></td>
                     </tr>
                   `;
                 }).join("")}
