@@ -44,6 +44,12 @@ const ownerKey = String(process.env.MT_OWNER_KEY || "");
 const encryptionKey = String(process.env.MT_ENCRYPTION_KEY || "");
 const sessionTtlDays = Number(process.env.MT_SESSION_TTL_DAYS || 30);
 const inviteTtlDays = Number(process.env.MT_INVITE_TTL_DAYS || 14);
+const siteVisibility = String(
+  process.env.MT_SITE_VISIBILITY
+    || (String(process.env.MT_PRIVATE_SITE || "").toLowerCase() === "false" ? "public" : "private")
+).trim().toLowerCase();
+const isPrivateSite = !["public", "indexable"].includes(siteVisibility);
+const configuredSiteUrl = String(process.env.MT_SITE_URL || "").trim().replace(/\/+$/, "");
 const allowLegacyOwnerKey = String(process.env.MT_ALLOW_LEGACY_OWNER_KEY || "true") !== "false";
 const corsOrigins = String(process.env.CORS_ORIGIN || "*")
   .split(",")
@@ -53,6 +59,8 @@ const allowAnyCorsOrigin = !corsOrigins.length || corsOrigins.includes("*");
 
 const app = express();
 app.use(express.json({ limit: "8mb" }));
+
+let indexTemplateCache = "";
 
 app.use((req, res, next) => {
   const requestOrigin = String(req.header("origin") || "").trim();
@@ -69,6 +77,36 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+app.use((req, res, next) => {
+  if (isPrivateSite) {
+    res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
+  }
+  next();
+});
+
+function resolveSiteUrl(req) {
+  if (configuredSiteUrl) return configuredSiteUrl;
+  return `${req.protocol}://${req.get("host")}`;
+}
+
+async function getIndexTemplate() {
+  if (indexTemplateCache) return indexTemplateCache;
+  indexTemplateCache = await readFile(path.join(projectRoot, "index.html"), "utf8");
+  return indexTemplateCache;
+}
+
+async function renderIndexHtml(req) {
+  const template = await getIndexTemplate();
+  const siteUrl = resolveSiteUrl(req).replace(/\/+$/, "");
+  const canonicalUrl = `${siteUrl}/`;
+  const robotsContent = isPrivateSite ? "noindex, nofollow" : "index, follow";
+  return template
+    .replace(/<meta name="robots" content="[^"]*">/i, `<meta name="robots" content="${robotsContent}">`)
+    .replace(/<meta property="og:url" content="[^"]*">/i, `<meta property="og:url" content="${canonicalUrl}">`)
+    .replace(/<link rel="canonical" href="[^"]*">/i, `<link rel="canonical" href="${canonicalUrl}">`)
+    .replace(/"url":\s*"[^"]*"/i, `"url": "${canonicalUrl}"`);
+}
 
 function accountIdFrom(req) {
   return String(req.header("x-account-id") || "default").trim() || "default";
@@ -291,6 +329,14 @@ app.get("/api/health", async (_req, res) => {
     userCount,
     encryptionEnabled: Boolean(encryptionKey),
     authEnabled: true
+  });
+});
+
+app.get("/api/public-config", (_req, res) => {
+  res.json({
+    ok: true,
+    siteVisibility: isPrivateSite ? "private" : "public",
+    robotsMeta: isPrivateSite ? "noindex, nofollow" : "index, follow"
   });
 });
 
@@ -875,9 +921,50 @@ app.get("/api/audit", async (req, res) => {
   res.json({ ok: true, audit });
 });
 
-app.use(express.static(projectRoot));
-app.get("*", (_req, res) => {
-  res.sendFile(path.join(projectRoot, "index.html"));
+app.get("/robots.txt", (req, res) => {
+  const siteUrl = resolveSiteUrl(req);
+  const body = isPrivateSite
+    ? [
+        "User-agent: *",
+        "Disallow: /",
+        `Sitemap: ${siteUrl}/sitemap.xml`
+      ].join("\n")
+    : [
+        "User-agent: *",
+        "Allow: /",
+        "Disallow: /api/",
+        `Sitemap: ${siteUrl}/sitemap.xml`
+      ].join("\n");
+  res.type("text/plain").send(body);
+});
+
+app.get("/sitemap.xml", (req, res) => {
+  const siteUrl = resolveSiteUrl(req);
+  const now = nowIso();
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>${siteUrl}/</loc>
+    <lastmod>${now}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>
+</urlset>`;
+  res.type("application/xml").send(xml);
+});
+
+app.use(express.static(projectRoot, { index: false }));
+app.get("*", async (req, res) => {
+  if (req.path.startsWith("/api/")) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  try {
+    const html = await renderIndexHtml(req);
+    res.type("html").send(html);
+  } catch {
+    res.sendFile(path.join(projectRoot, "index.html"));
+  }
 });
 
 app.listen(port, () => {

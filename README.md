@@ -22,6 +22,26 @@ Use any static host:
 
 Deploy the contents of this folder as a static site (`index.html`, `app.js`, `styles.css`, etc).
 
+## SEO + Privacy Crawl Controls
+
+This app now supports simple crawl visibility control from server environment variables:
+
+- `MT_SITE_VISIBILITY=private` (default): sets `noindex, nofollow`, serves private-friendly `robots.txt`.
+- `MT_SITE_VISIBILITY=public`: sets `index, follow`, serves public `robots.txt`.
+- `MT_SITE_URL=https://your-domain.com`: sets canonical, Open Graph URL, JSON-LD URL, and sitemap domain.
+
+Endpoints:
+
+- `/robots.txt`
+- `/sitemap.xml`
+
+Google Search Console quick steps (manual):
+
+1. Open Search Console for your domain property.
+2. Go to **Sitemaps**.
+3. Submit `https://your-domain.com/sitemap.xml`.
+4. Re-submit after domain or visibility setting changes.
+
 ## Sharing In Local-Only Mode
 
 - Read-only links still work (they contain a signed snapshot in the URL hash).

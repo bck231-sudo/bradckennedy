@@ -37,6 +37,29 @@ const PRODUCTION_SYNC_ENDPOINT = "https://medication-tracker-api.onrender.com";
 const LOCAL_ONLY_MODE = true;
 const SUMMARY_RANGE_OPTIONS = ["7", "14", "30"];
 const CONSULT_RANGE_OPTIONS = ["7", "14", "30"];
+const QUICK_CHECKIN_30S_OPTIONS = Object.freeze({
+  mood: [
+    { value: "low", label: "Low", score: 3 },
+    { value: "okay", label: "Okay", score: 6 },
+    { value: "good", label: "Good", score: 8 }
+  ],
+  anxiety: [
+    { value: "low", label: "Low", score: 3 },
+    { value: "medium", label: "Medium", score: 6 },
+    { value: "high", label: "High", score: 8 }
+  ],
+  sleep: [
+    { value: "poor", label: "Poor", hours: 4.5, quality: 3 },
+    { value: "okay", label: "Okay", hours: 6.5, quality: 6 },
+    { value: "good", label: "Good", hours: 8, quality: 8 }
+  ]
+});
+const DEFAULT_QUICK_CHECKIN_30S_STATE = Object.freeze({
+  mood: "",
+  anxiety: "",
+  sleep: "",
+  date: ""
+});
 const CONSULT_QUESTION_URGENCY_RANK = Object.freeze({
   high: 0,
   medium: 1,
@@ -61,6 +84,7 @@ const TIMELINE_LAZY_CHART_DEFAULTS = Object.freeze({
   sideEffects: false,
   doseChanges: false
 });
+const DATA_CONFIDENCE_MIN_CHECKINS = 4;
 const storage = createStorageService(typeof window !== "undefined" ? window.localStorage : null);
 
 const SIDE_EFFECT_OPTIONS = [
@@ -142,8 +166,8 @@ const MOBILE_TABS = [
     id: "history",
     label: "History",
     icon: "chart",
-    primarySection: "timeline",
-    fallbackSections: ["changes"],
+    primarySection: "changes",
+    fallbackSections: [],
     preferredModes: ["clinical", "personal"]
   },
   {
@@ -174,6 +198,22 @@ const TOP_NAV_ITEMS = [
     preferredModes: ["daily", "clinical", "personal"]
   },
   {
+    id: "medications",
+    label: "Medications",
+    icon: "capsule",
+    primarySection: "medications",
+    fallbackSections: ["dashboard"],
+    preferredModes: ["daily", "clinical", "personal"]
+  },
+  {
+    id: "trends",
+    label: "Trends",
+    icon: "chart",
+    primarySection: "timeline",
+    fallbackSections: ["changes"],
+    preferredModes: ["clinical", "personal"]
+  },
+  {
     id: "consult",
     label: "Consult",
     icon: "stethoscope",
@@ -185,8 +225,8 @@ const TOP_NAV_ITEMS = [
     id: "history",
     label: "History",
     icon: "chart",
-    primarySection: "timeline",
-    fallbackSections: ["changes"],
+    primarySection: "changes",
+    fallbackSections: ["timeline"],
     preferredModes: ["clinical", "personal"]
   },
   {
@@ -448,6 +488,7 @@ const app = {
     previewLinkId: "",
     activeSection: "dashboard",
     entryWorkflow: "medication",
+    checkinQuickMode: false,
     comparisonChangeId: "",
     pendingDoseActions: new Set(),
     lastDraftSavedAt: "",
@@ -456,12 +497,25 @@ const app = {
     dashboardDoseFilter: "all",
     dashboardDosePage: 1,
     dashboardDoseSearch: "",
+    medicationsFilterSearch: "",
+    medicationsFilterStatus: "all",
+    medicationsSortBy: "name",
+    medicationsSortDir: "asc",
+    changesFilterSearch: "",
+    changesFilterMedication: "all",
+    changesSortBy: "date_desc",
     dashboardEdits: {
       summary: false,
       alerts: false,
       changes: false,
       medications: false,
       actionPlan: false
+    },
+    dashboardCollapsedPanels: {
+      changes: false,
+      medicationDetails: false,
+      consultPrep: false,
+      alerts: false
     },
     dashboardTrendView: "simple",
     dashboardTrendRangeDays: "7",
@@ -480,6 +534,7 @@ const app = {
       openQuestionsOnly: true,
       sideEffectsWindow: "all"
     },
+    consultActivePane: "current",
     consultEditingExperimentId: "",
     consultEditingQuestionId: "",
     consultEditingDecisionId: "",
@@ -518,6 +573,18 @@ const app = {
   queueRemoteSync: () => {}
 };
 
+if (app.drafts?.ui && typeof app.drafts.ui === "object") {
+  if (app.drafts.ui.dashboardCollapsedPanels && typeof app.drafts.ui.dashboardCollapsedPanels === "object") {
+    app.ui.dashboardCollapsedPanels = {
+      ...app.ui.dashboardCollapsedPanels,
+      ...app.drafts.ui.dashboardCollapsedPanels
+    };
+  }
+  if (typeof app.drafts.ui.consultActivePane === "string") {
+    app.ui.consultActivePane = app.drafts.ui.consultActivePane;
+  }
+}
+
 window.__medicationTrackerApp = app;
 
 const inviteTokenFromHash = parseInviteTokenFromHash();
@@ -531,6 +598,7 @@ if (app.shareSession) {
   handleShareSessionInit();
 }
 applySectionRouteFromHash(window.location.hash);
+applyThemePreference(app.ownerData.profile);
 
 hydrateMedicationNameOptions();
 bindGlobalHandlers();
@@ -601,6 +669,8 @@ function buildSeedState() {
       enabled: false,
       leadMinutes: 15,
       desktopNotifications: false,
+      quietUntilOverdue: true,
+      overdueEscalationMinutes: 10,
       riskAlertsEnabled: true,
       riskAlertsMinLevel: "elevated"
     },
@@ -1166,6 +1236,7 @@ function normalizeCheckin(input) {
     functionScore: Number.isFinite(Number(input?.functionScore))
       ? Math.max(0, Math.min(5, Math.round(Number(input.functionScore))))
       : null,
+    entryMode: String(input?.entryMode || "full").toLowerCase() === "quick_30s" ? "quick_30s" : "full",
     vitals: {
       weight: vitals.weight || "",
       bpSystolic: vitals.bpSystolic || "",
@@ -1214,11 +1285,14 @@ function normalizeDoseSnooze(input) {
 function normalizeReminderSettings(input) {
   const source = input || {};
   const leadMinutes = Number(source.leadMinutes);
+  const overdueEscalationMinutes = Number(source.overdueEscalationMinutes);
   const minLevel = String(source.riskAlertsMinLevel || "elevated").toLowerCase();
   return {
     enabled: Boolean(source.enabled),
     leadMinutes: Number.isFinite(leadMinutes) ? Math.min(120, Math.max(0, Math.round(leadMinutes))) : 15,
     desktopNotifications: Boolean(source.desktopNotifications),
+    quietUntilOverdue: source.quietUntilOverdue !== false,
+    overdueEscalationMinutes: Number.isFinite(overdueEscalationMinutes) ? Math.min(120, Math.max(0, Math.round(overdueEscalationMinutes))) : 10,
     riskAlertsEnabled: source.riskAlertsEnabled !== false,
     riskAlertsMinLevel: ["watch", "elevated", "high"].includes(minLevel) ? minLevel : "elevated"
   };
@@ -1368,7 +1442,9 @@ function loadDrafts() {
       medication: {},
       change: {},
       note: {},
-      checkin: {}
+      checkin: {},
+      checkinQuick: { ...DEFAULT_QUICK_CHECKIN_30S_STATE },
+      ui: {}
     };
   }
 
@@ -1378,14 +1454,18 @@ function loadDrafts() {
       medication: parsed.medication || {},
       change: parsed.change || {},
       note: parsed.note || {},
-      checkin: parsed.checkin || {}
+      checkin: parsed.checkin || {},
+      checkinQuick: normalizeQuickCheckin30sDraft(parsed.checkinQuick || {}),
+      ui: parsed.ui && typeof parsed.ui === "object" ? parsed.ui : {}
     };
   } catch (_error) {
     return {
       medication: {},
       change: {},
       note: {},
-      checkin: {}
+      checkin: {},
+      checkinQuick: { ...DEFAULT_QUICK_CHECKIN_30S_STATE },
+      ui: {}
     };
   }
 }
@@ -1395,18 +1475,44 @@ function saveDrafts() {
   app.ui.lastDraftSavedAt = isoDateTime(new Date());
 }
 
+function persistUiDraftPreferences() {
+  app.drafts.ui = {
+    ...(app.drafts.ui || {}),
+    dashboardCollapsedPanels: { ...(app.ui.dashboardCollapsedPanels || {}) },
+    consultActivePane: String(app.ui.consultActivePane || "current")
+  };
+  saveDrafts();
+}
+
 function defaultOwnerProfile() {
   return {
     displayName: "",
-    personalizationEnabled: true
+    personalizationEnabled: true,
+    themePreference: "light"
   };
 }
 
 function normalizeOwnerProfile(input) {
+  const themePreference = String(input?.themePreference || "light").toLowerCase();
   return {
     displayName: String(input?.displayName || "").trim(),
-    personalizationEnabled: input?.personalizationEnabled !== false
+    personalizationEnabled: input?.personalizationEnabled !== false,
+    themePreference: ["light", "dark", "system"].includes(themePreference) ? themePreference : "light"
   };
+}
+
+function resolvedThemePreference(themePreference) {
+  if (themePreference === "system") {
+    return window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ? "dark" : "light";
+  }
+  return themePreference === "dark" ? "dark" : "light";
+}
+
+function applyThemePreference(profile) {
+  const normalized = normalizeOwnerProfile(profile);
+  const resolved = resolvedThemePreference(normalized.themePreference);
+  document.documentElement.setAttribute("data-theme", resolved);
+  document.body.dataset.themePreference = normalized.themePreference;
 }
 
 function defaultDashboardConfig() {
@@ -1998,6 +2104,7 @@ function bindGlobalHandlers() {
     if (getActiveContext().readOnly) return;
     app.ui.activeSection = "entry";
     app.ui.entryWorkflow = "checkin";
+    app.ui.checkinQuickMode = false;
     renderAll();
   });
 
@@ -2018,6 +2125,8 @@ function bindGlobalHandlers() {
     }));
     saveOwnerData(app.ownerData);
     app.ui.activeSection = "consult";
+    app.ui.consultActivePane = "questions";
+    persistUiDraftPreferences();
     setStatus("Added to consult question queue.");
     renderAll();
   });
@@ -2056,6 +2165,13 @@ function bindGlobalHandlers() {
     updateInstallButtonVisibility();
     setStatus("App installed.");
   });
+
+  window.matchMedia?.("(prefers-color-scheme: dark)")?.addEventListener?.("change", () => {
+    const profile = normalizeOwnerProfile(app.ownerData.profile);
+    if (profile.themePreference === "system") {
+      applyThemePreference(profile);
+    }
+  });
 }
 
 function parseSectionRouteFromHash(hashValue) {
@@ -2064,8 +2180,10 @@ function parseSectionRouteFromHash(hashValue) {
   const route = normalized.replace(/^#/, "");
   if (!route) return null;
   if (route === "dashboard") return { sectionId: "dashboard", preferredModes: ["daily", "clinical", "personal"], fallbackSections: [] };
+  if (route === "medications") return { sectionId: "medications", preferredModes: ["daily", "clinical", "personal"], fallbackSections: ["dashboard"] };
+  if (route === "trends") return { sectionId: "timeline", preferredModes: ["clinical", "personal"], fallbackSections: ["changes"] };
   if (route === "consult") return { sectionId: "consult", preferredModes: ["clinical", "personal"], fallbackSections: ["timeline"] };
-  if (route === "history") return { sectionId: "timeline", preferredModes: ["clinical", "personal"], fallbackSections: ["changes"] };
+  if (route === "history") return { sectionId: "changes", preferredModes: ["clinical", "personal"], fallbackSections: ["timeline"] };
   if (route === "settings") return { sectionId: "exports", preferredModes: ["personal", "clinical"], fallbackSections: ["sharing"] };
   if (route === "share") return { sectionId: "sharing", preferredModes: ["clinical", "personal"], fallbackSections: ["exports"] };
   return null;
@@ -2126,7 +2244,21 @@ async function registerPwaServiceWorker() {
   if (typeof window === "undefined") return;
   if (!("serviceWorker" in navigator)) return;
   try {
-    await navigator.serviceWorker.register("./sw.js");
+    const registration = await navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" });
+    registration.update().catch(() => {});
+    if (registration.waiting) {
+      registration.waiting.postMessage({ type: "SKIP_WAITING" });
+    }
+    registration.addEventListener("updatefound", () => {
+      const installing = registration.installing;
+      if (!installing) return;
+      installing.addEventListener("statechange", () => {
+        if (installing.state === "installed" && navigator.serviceWorker.controller) {
+          setStatus("Updating app shell… reloading to apply latest design.");
+          setTimeout(() => window.location.reload(), 350);
+        }
+      });
+    });
     if (window.matchMedia?.("(display-mode: standalone)").matches || window.navigator.standalone === true) {
       app.pwa.installed = true;
       app.pwa.installPromptEvent = null;
@@ -2573,12 +2705,14 @@ function runReminderSweep() {
   const settings = normalizeReminderSettings(app.ownerData.reminderSettings);
   if (!settings.enabled || app.shareSession) return;
   const leadMinutes = Number(settings.leadMinutes || 0);
+  const overdueEscalationMinutes = Number(settings.overdueEscalationMinutes || 0);
   const now = new Date();
   const today = getLocalDateKey(now);
   let reminderLogChanged = false;
   for (const [key, value] of Object.entries(app.reminderLog)) {
-    if (!value?.date) continue;
-    if (value.date < shiftDateKey(today, -7)) {
+    const recordDate = value?.date || value?.quietDate || value?.overdueDate;
+    if (!recordDate) continue;
+    if (recordDate < shiftDateKey(today, -7)) {
       delete app.reminderLog[key];
       reminderLogChanged = true;
     }
@@ -2588,27 +2722,54 @@ function runReminderSweep() {
   }
   const activeMeds = resolveCurrentMedications(app.ownerData).filter((med) => med.isCurrent);
   const dueState = getDoseState(activeMeds, app.ownerData.adherence, app.ownerData.doseSnoozes);
-  const candidates = [...dueState.dueNow, ...dueState.next].filter((item) => {
-    const scheduled = parseDateTime(today, item.time);
-    const diffMinutes = (scheduled.getTime() - now.getTime()) / 60000;
-    return diffMinutes <= leadMinutes;
-  });
+  const candidates = [...dueState.dueNow, ...dueState.next];
 
   for (const item of candidates) {
-    const log = app.reminderLog[item.occurrenceId];
-    if (log?.date === today) continue;
     const scheduled = parseDateTime(today, item.time);
     const diffMinutes = Math.round((scheduled.getTime() - now.getTime()) / 60000);
+    const log = app.reminderLog[item.occurrenceId] || {};
+
+    if (settings.quietUntilOverdue) {
+      if (diffMinutes <= leadMinutes && diffMinutes >= 0 && log.quietDate !== today) {
+        app.reminderLog[item.occurrenceId] = {
+          ...log,
+          quietDate: today,
+          quietAt: isoDateTime(now),
+          scheduledFor: isoDateTime(scheduled)
+        };
+        saveReminderLog();
+      }
+
+      if (diffMinutes < -overdueEscalationMinutes && log.overdueDate !== today) {
+        const message = `Overdue dose: ${item.medicationName} was due at ${item.time}`;
+        app.reminderLog[item.occurrenceId] = {
+          ...log,
+          date: today,
+          overdueDate: today,
+          overdueAt: isoDateTime(now),
+          scheduledFor: isoDateTime(scheduled)
+        };
+        saveReminderLog();
+        pushToast(message, "warning");
+        if (settings.desktopNotifications && "Notification" in window && Notification.permission === "granted") {
+          new Notification("Overdue medication reminder", { body: message });
+        }
+      }
+      continue;
+    }
+
+    if (diffMinutes > leadMinutes || log?.date === today) continue;
     const message = diffMinutes <= 0
       ? `Dose due now: ${item.medicationName} at ${item.time}`
       : `Dose due in ${diffMinutes}m: ${item.medicationName} at ${item.time}`;
-
     app.reminderLog[item.occurrenceId] = {
+      ...log,
       date: today,
-      firedAt: isoDateTime(now)
+      firedAt: isoDateTime(now),
+      scheduledFor: isoDateTime(scheduled)
     };
     saveReminderLog();
-    pushToast(message, "success");
+    pushToast(message, diffMinutes <= 0 ? "warning" : "info");
     if (settings.desktopNotifications && "Notification" in window && Notification.permission === "granted") {
       new Notification("Medication reminder", { body: message });
     }
@@ -2662,6 +2823,7 @@ async function requestNotificationPermission() {
 }
 
 function renderAll() {
+  applyThemePreference(app.ownerData.profile);
   const context = getActiveContext();
 
   if (!context.allowedModes.includes(app.ui.activeViewMode)) {
@@ -2827,8 +2989,10 @@ function findModeForSection(context, sectionId, preferredModes = []) {
 
 function hashForSection(sectionId) {
   if (sectionId === "dashboard") return "#dashboard";
+  if (sectionId === "medications") return "#medications";
   if (sectionId === "consult") return "#consult";
-  if (sectionId === "timeline" || sectionId === "changes") return "#history";
+  if (sectionId === "timeline") return "#trends";
+  if (sectionId === "changes") return "#history";
   if (sectionId === "sharing") return "#share";
   if (sectionId === "exports") return "#settings";
   return "";
@@ -3025,7 +3189,7 @@ function renderUtilityPanel(context, data) {
                 ? "Error"
                 : "Local-only"
       )}</div>`}
-      ${context.readOnly ? "" : `<div class="subtle">Reminders: ${app.ownerData.reminderSettings?.enabled ? `On (${app.ownerData.reminderSettings.leadMinutes || 0}m)` : "Off"}</div>`}
+      ${context.readOnly ? "" : `<div class="subtle">Reminders: ${app.ownerData.reminderSettings?.enabled ? `On (${app.ownerData.reminderSettings.leadMinutes || 0}m${app.ownerData.reminderSettings?.quietUntilOverdue ? ", quiet until overdue" : ""})` : "Off"}</div>`}
       ${hasCloudSession() ? `<button class="btn btn-ghost small" type="button" data-utility-action="cloud-logout">Sign out cloud</button>` : ""}
       ${context.readOnly ? "" : `<button class="btn btn-ghost small" type="button" data-utility-action="sharing">Manage sharing</button>`}
     </div>
@@ -3037,6 +3201,7 @@ function renderUtilityPanel(context, data) {
       if (action === "checkin") {
         app.ui.activeSection = "entry";
         app.ui.entryWorkflow = "checkin";
+        app.ui.checkinQuickMode = false;
       }
       if (action === "sharing") {
         app.ui.activeSection = "sharing";
@@ -3515,9 +3680,9 @@ function renderDashboardDoseCards(items, context, medications) {
               </div>
               ${context.readOnly ? "" : `
                 <div class="inline-row dose-actions-primary">
-                  <button class="btn btn-secondary small ${isPending ? "is-loading" : ""}" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.TAKEN}" aria-label="Mark ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)} as taken" ${isPending ? "disabled" : ""}>${isPending ? "Saving" : "Taken"}</button>
-                  <button class="btn btn-secondary small ${isPending ? "is-loading" : ""}" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.SKIPPED}" aria-label="Mark ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)} as skipped" ${isPending ? "disabled" : ""}>${isPending ? "Saving" : "Skip"}</button>
-                  <button class="btn btn-ghost small" type="button" data-dose-snooze="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" aria-label="Snooze ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)}" ${isPending ? "disabled" : ""}>Snooze</button>
+                  <button class="btn btn-secondary small ${isPending ? "is-loading" : ""}" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.TAKEN}" aria-label="Mark ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)} as taken" title="Taken: confirms this scheduled dose and saves the timestamp." ${isPending ? "disabled" : ""}>${isPending ? "Saving" : "Taken"}</button>
+                  <button class="btn btn-secondary small ${isPending ? "is-loading" : ""}" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.SKIPPED}" aria-label="Mark ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)} as skipped" title="Skip: records this scheduled dose as not taken." ${isPending ? "disabled" : ""}>${isPending ? "Saving" : "Skip"}</button>
+                  <button class="btn btn-ghost small" type="button" data-dose-snooze="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" aria-label="Snooze ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)}" title="Snooze: delays this reminder by ${DOSE_SNOOZE_MINUTES} minutes." ${isPending ? "disabled" : ""}>Snooze</button>
                   <button class="btn btn-ghost small" type="button" data-dose-note="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-medication-name="${escapeHtml(item.medicationName)}" aria-label="Add note for ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)}">Note</button>
                 </div>
               `}
@@ -3606,6 +3771,25 @@ function renderDashboardTrendPreview(data, recentChanges, context) {
     return `<div class="empty">No wellbeing check-ins yet.${context.readOnly ? "" : ` <button class="btn btn-secondary small" type="button" data-dashboard-checkin="1">Add check-in</button>`}</div>`;
   }
 
+  const windowStart = windowed[0]?.date || getLocalDateKey(new Date());
+  const windowEnd = windowed[windowed.length - 1]?.date || windowStart;
+  const quality = buildDataQualityIndicators(
+    {
+      ...data,
+      checkins: windowed,
+      adherence: (data.adherence || []).filter((entry) => entry.date >= windowStart && entry.date <= windowEnd),
+      notes: (data.notes || []).filter((entry) => entry.date >= windowStart && entry.date <= windowEnd),
+      sideEffectEvents: (data.sideEffectEvents || []).filter((entry) => {
+        const key = String(entry.date || entry.createdAt || "").slice(0, 10);
+        return key >= windowStart && key <= windowEnd;
+      })
+    },
+    {
+      startDate: windowStart,
+      endDate: windowEnd
+    }
+  );
+
   if (app.ui.dashboardTrendView === "simple") {
     const moodAvg = average(windowed.map((entry) => toNumber(entry.mood)));
     const anxietyAvg = average(windowed.map((entry) => toNumber(entry.anxiety)));
@@ -3613,6 +3797,7 @@ function renderDashboardTrendPreview(data, recentChanges, context) {
     const sleepAvg = average(windowed.map((entry) => toNumber(entry.sleepHours)));
 
     return `
+      ${renderDataConfidenceBanner(quality, `${rangeDays}-day trends`)}
       <div class="dashboard-trend-simple">
         <div class="kpi-badge">Mood avg: ${Number.isFinite(moodAvg) ? roundNumber(moodAvg, 1) : "-"}</div>
         <div class="kpi-badge">Anxiety avg: ${Number.isFinite(anxietyAvg) ? roundNumber(anxietyAvg, 1) : "-"}</div>
@@ -3623,7 +3808,9 @@ function renderDashboardTrendPreview(data, recentChanges, context) {
   }
 
   const changeDates = (recentChanges || []).map((change) => change.date).slice(0, 10);
-  return renderLineChart(
+  return `
+    ${renderDataConfidenceBanner(quality, `${rangeDays}-day trends`)}
+    ${renderLineChart(
     [
       {
         label: "Mood",
@@ -3642,7 +3829,8 @@ function renderDashboardTrendPreview(data, recentChanges, context) {
       }
     ],
     { yMin: 0, yMax: 10, changeDates }
-  );
+  )}
+  `;
 }
 
 function dashboardGreetingLabel(context, profile) {
@@ -3709,6 +3897,21 @@ function renderDashboard(root, data, context) {
     actionPlan: false,
     ...(app.ui.dashboardEdits || {})
   };
+  if (!app.ui.dashboardCollapsedPanels || typeof app.ui.dashboardCollapsedPanels !== "object") {
+    app.ui.dashboardCollapsedPanels = {
+      changes: false,
+      medicationDetails: false,
+      consultPrep: false,
+      alerts: false
+    };
+  }
+  app.ui.dashboardCollapsedPanels = {
+    changes: false,
+    medicationDetails: false,
+    consultPrep: false,
+    alerts: false,
+    ...(app.ui.dashboardCollapsedPanels || {})
+  };
 
   const ownerEditable = context.type === "owner" && !context.readOnly;
   if (!ownerEditable) {
@@ -3720,6 +3923,9 @@ function renderDashboard(root, data, context) {
       actionPlan: false
     };
   }
+  const collapsedPanels = app.ui.dashboardCollapsedPanels;
+  const isCollapsed = (panelKey) => Boolean(collapsedPanels?.[panelKey]);
+  const collapseLabel = (panelKey) => (isCollapsed(panelKey) ? "Expand" : "Collapse");
 
   const dashboardConfig = normalizeDashboardConfig(app.ownerData.dashboardConfig || data.dashboardConfig);
   const summaryNote = dashboardConfig.summaryNote;
@@ -3797,6 +4003,16 @@ function renderDashboard(root, data, context) {
           <article class="summary-strip-item">
             <div class="summary-strip-label">${renderIcon("check", "mini-icon soft", "Adherence")}<span>Adherence today</span></div>
             <div class="summary-strip-value">${escapeHtml(`${adherencePct}%`)}</div>
+            <div
+              class="adherence-progress"
+              role="progressbar"
+              aria-label="Adherence today"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="${adherencePct}"
+            >
+              <span style="width:${Math.max(0, Math.min(100, adherencePct))}%"></span>
+            </div>
             <div class="summary-strip-help">${escapeHtml(`${dueState.counts.taken} taken · ${dueState.counts.remaining} due · ${dueState.counts.missed} missed`)}</div>
           </article>
           <article class="summary-strip-item">
@@ -3865,7 +4081,7 @@ function renderDashboard(root, data, context) {
             <button class="btn btn-ghost small" type="button" data-dose-undo="1">Undo</button>
           </div>
         ` : ""}
-        <div class="subtle" style="margin: 8px 0 10px;">Actions update immediately. Use filters to focus overdue doses.</div>
+        <div class="subtle dose-action-help" style="margin: 8px 0 10px;">Actions update immediately. Taken confirms and timestamps, Skip logs not taken, Snooze delays reminders by ${DOSE_SNOOZE_MINUTES} minutes.</div>
         ${renderDashboardDoseQueue(dueState, context, activeMeds)}
       </article>
 
@@ -3873,9 +4089,14 @@ function renderDashboard(root, data, context) {
         <div class="card-head-row">
           <div>
             <h3>Quick check-in</h3>
-            <div class="subtle">${todayCheckin ? "Today’s check-in completed." : "No check-in recorded yet today."}</div>
+            <div class="subtle">${todayCheckin ? `Today’s check-in completed.${todayCheckin.entryMode === "quick_30s" ? " (30-second mode)" : ""}` : "No check-in recorded yet today."}</div>
           </div>
-          ${ownerEditable ? `<button class="btn btn-secondary small" type="button" data-dashboard-checkin="1">${todayCheckin ? "Update" : "Start"}</button>` : ""}
+          ${ownerEditable ? `
+            <div class="inline-row">
+              <button class="btn btn-secondary small" type="button" data-dashboard-checkin="1">${todayCheckin ? "Update" : "Start"}</button>
+              <button class="btn btn-ghost small" type="button" data-dashboard-checkin-fast="1">30-second mode</button>
+            </div>
+          ` : ""}
         </div>
         ${todayCheckin ? `
           <div class="today-snapshot-grid compact-kpi-grid">
@@ -3896,7 +4117,7 @@ function renderDashboard(root, data, context) {
               <strong class="snapshot-value">${Number.isFinite(checkinSleepHours) ? `${roundNumber(checkinSleepHours, 1)}h` : "-"}</strong>
             </article>
           </div>
-        ` : `<div class="empty">Complete your quick check-in to generate daily trend signals.</div>`}
+        ` : `<div class="empty">Complete your quick check-in to generate daily trend signals.${ownerEditable ? ` <button class="btn btn-secondary small" type="button" data-dashboard-checkin-fast="1">Use 30-second mode</button>` : ""}</div>`}
         <div class="dashboard-summary-note">
           <div class="card-head-row">
             <div class="label">Summary note</div>
@@ -3921,9 +4142,14 @@ function renderDashboard(root, data, context) {
             <h3>Alerts / monitoring reminders</h3>
             <div class="subtle">Prioritised alerts from notes, recent changes, and custom reminders.</div>
           </div>
-          ${ownerEditable ? `<button class="btn btn-ghost small" type="button" data-dashboard-edit="alerts">${app.ui.dashboardEdits.alerts ? "Editing" : "Edit"}</button>` : ""}
+          <div class="inline-row">
+            <button class="btn btn-ghost small" type="button" data-dashboard-collapse="alerts" aria-expanded="${isCollapsed("alerts") ? "false" : "true"}">${collapseLabel("alerts")}</button>
+            ${ownerEditable ? `<button class="btn btn-ghost small" type="button" data-dashboard-edit="alerts">${app.ui.dashboardEdits.alerts ? "Editing" : "Edit"}</button>` : ""}
+          </div>
         </div>
-        ${ownerEditable && app.ui.dashboardEdits.alerts ? `
+        ${isCollapsed("alerts")
+          ? `<div class="subtle">Collapsed. Expand to review alerts and reminders.</div>`
+          : ownerEditable && app.ui.dashboardEdits.alerts ? `
           <form id="dashboardAlertsForm" class="edit-inline-form">
             <label for="dashboardMonitoringReminders">Monitoring reminders (one per line)</label>
             <textarea id="dashboardMonitoringReminders" name="monitoringReminders" placeholder="Example: Check BP before evening clonidine dose.">${escapeHtml(dashboardConfig.monitoringReminders.join("\n"))}</textarea>
@@ -3945,9 +4171,14 @@ function renderDashboard(root, data, context) {
             <h3>Recent medication changes (14 days)</h3>
             <div class="subtle">Timeline shown in reverse chronological order.</div>
           </div>
-          ${ownerEditable ? `<button class="btn btn-ghost small" type="button" data-dashboard-edit="changes">${app.ui.dashboardEdits.changes ? "Editing" : "Edit"}</button>` : ""}
+          <div class="inline-row">
+            <button class="btn btn-ghost small" type="button" data-dashboard-collapse="changes" aria-expanded="${isCollapsed("changes") ? "false" : "true"}">${collapseLabel("changes")}</button>
+            ${ownerEditable ? `<button class="btn btn-ghost small" type="button" data-dashboard-edit="changes">${app.ui.dashboardEdits.changes ? "Editing" : "Edit"}</button>` : ""}
+          </div>
         </div>
-        ${ownerEditable && app.ui.dashboardEdits.changes ? `
+        ${isCollapsed("changes")
+          ? `<div class="subtle">Collapsed. Expand to review recent medication changes.</div>`
+          : ownerEditable && app.ui.dashboardEdits.changes ? `
           ${topChanges.length ? `
             <form id="dashboardChangesForm" class="edit-inline-form">
               ${topChanges.map((entry) => `
@@ -3993,11 +4224,14 @@ function renderDashboard(root, data, context) {
             <div class="subtle">Current medications, doses, and schedules.</div>
           </div>
           <div class="inline-row">
+            <button class="btn btn-ghost small" type="button" data-dashboard-collapse="medicationDetails" aria-expanded="${isCollapsed("medicationDetails") ? "false" : "true"}">${collapseLabel("medicationDetails")}</button>
             ${ownerEditable ? `<button class="btn btn-ghost small" type="button" data-dashboard-edit="medications">${app.ui.dashboardEdits.medications ? "Editing" : "Edit"}</button>` : ""}
             <button class="btn btn-ghost small" type="button" data-dashboard-open-meds="1">Open full medications</button>
           </div>
         </div>
-        ${activeMeds.length ? (
+        ${isCollapsed("medicationDetails")
+          ? `<div class="subtle">Collapsed. Expand to review current medication details.</div>`
+          : activeMeds.length ? (
           ownerEditable && app.ui.dashboardEdits.medications
             ? `
               <form id="dashboardMedicationForm" class="dashboard-med-edit-grid">
@@ -4056,16 +4290,19 @@ function renderDashboard(root, data, context) {
             <div class="subtle">Keep appointment priorities concise and review-ready.</div>
           </div>
           <div class="inline-row">
+            <button class="btn btn-ghost small" type="button" data-dashboard-collapse="consultPrep" aria-expanded="${isCollapsed("consultPrep") ? "false" : "true"}">${collapseLabel("consultPrep")}</button>
             <span class="kpi-badge">${openConsultQuestions.length} open</span>
             <button class="btn btn-ghost small" type="button" data-dashboard-open-consult="1">Open consult</button>
           </div>
         </div>
-        ${topConsultQuestions.length ? `
+        ${isCollapsed("consultPrep")
+          ? `<div class="subtle">Collapsed. Expand to view consult questions and focus notes.</div>`
+          : topConsultQuestions.length ? `
           <ul class="timeline-list">
             ${topConsultQuestions.map((entry) => `<li><strong>${escapeHtml(entry.text)}</strong><div class="subtle">${escapeHtml(entry.urgency)} urgency${entry.linkedMedication ? ` · ${escapeHtml(entry.linkedMedication)}` : ""}</div></li>`).join("")}
           </ul>
         ` : `<div class="empty">No open consult questions.${ownerEditable ? ` <button class="btn btn-secondary small" type="button" data-dashboard-new-question="1">Add question</button>` : ""}</div>`}
-        <div class="subtle" style="margin-top:8px;">${consultFocusText ? `Focus: ${escapeHtml(consultFocusText)}` : "No consult focus text set yet."}</div>
+        ${isCollapsed("consultPrep") ? "" : `<div class="subtle" style="margin-top:8px;">${consultFocusText ? `Focus: ${escapeHtml(consultFocusText)}` : "No consult focus text set yet."}</div>`}
       </article>
 
       ${showActionPlanCard ? `
@@ -4145,6 +4382,19 @@ function renderDashboard(root, data, context) {
       const section = button.dataset.dashboardEditCancel || "";
       if (!["summary", "alerts", "changes", "medications", "actionPlan"].includes(section)) return;
       app.ui.dashboardEdits = { ...app.ui.dashboardEdits, [section]: false };
+      renderAll();
+    });
+  });
+
+  root.querySelectorAll("[data-dashboard-collapse]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = String(button.dataset.dashboardCollapse || "").trim();
+      if (!["changes", "medicationDetails", "consultPrep", "alerts"].includes(key)) return;
+      app.ui.dashboardCollapsedPanels = {
+        ...(app.ui.dashboardCollapsedPanels || {}),
+        [key]: !Boolean(app.ui.dashboardCollapsedPanels?.[key])
+      };
+      persistUiDraftPreferences();
       renderAll();
     });
   });
@@ -4430,6 +4680,17 @@ function renderDashboard(root, data, context) {
       if (context.readOnly) return;
       app.ui.activeSection = "entry";
       app.ui.entryWorkflow = "checkin";
+      app.ui.checkinQuickMode = false;
+      renderAll();
+    });
+  });
+
+  root.querySelectorAll("[data-dashboard-checkin-fast]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (context.readOnly) return;
+      app.ui.activeSection = "entry";
+      app.ui.entryWorkflow = "checkin";
+      app.ui.checkinQuickMode = true;
       renderAll();
     });
   });
@@ -4457,6 +4718,8 @@ function renderDashboard(root, data, context) {
     button.addEventListener("click", () => {
       if (context.readOnly) return;
       app.ui.activeSection = "consult";
+      app.ui.consultActivePane = "questions";
+      persistUiDraftPreferences();
       renderAll();
       window.setTimeout(() => {
         dom.sections.consult?.querySelector("#consultQuestionForm input[name='text']")?.focus();
@@ -4521,12 +4784,12 @@ function renderDoseTable(dueState, context, medications, itemsOverride = null) {
               <td><span class="status-chip ${escapeHtml(statusChipClass(item.statusLabel))}">${escapeHtml(item.statusLabel)}</span></td>
               ${context.readOnly ? "" : `<td class="dose-actions-cell">
                 <div class="inline-row dose-actions-primary">
-                  <button class="btn btn-secondary small ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "is-loading" : ""}" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.TAKEN}" aria-label="Mark ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)} as taken" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>${app.ui.pendingDoseActions.has(item.occurrenceId) ? "Saving" : "Taken"}</button>
-                  <button class="btn btn-secondary small ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "is-loading" : ""}" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.SKIPPED}" aria-label="Mark ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)} as skipped" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>${app.ui.pendingDoseActions.has(item.occurrenceId) ? "Saving" : "Skip"}</button>
+                  <button class="btn btn-secondary small ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "is-loading" : ""}" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.TAKEN}" aria-label="Mark ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)} as taken" title="Taken: confirms this scheduled dose and saves the timestamp." ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>${app.ui.pendingDoseActions.has(item.occurrenceId) ? "Saving" : "Taken"}</button>
+                  <button class="btn btn-secondary small ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "is-loading" : ""}" type="button" data-dose-action="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-dose-status="${ADHERENCE_STATUS.SKIPPED}" aria-label="Mark ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)} as skipped" title="Skip: records this scheduled dose as not taken." ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>${app.ui.pendingDoseActions.has(item.occurrenceId) ? "Saving" : "Skip"}</button>
                   <details class="dose-actions-more">
                     <summary>More</summary>
                     <div class="inline-row">
-                      <button class="btn btn-ghost small" type="button" data-dose-snooze="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" aria-label="Snooze ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)}" ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>Snooze</button>
+                      <button class="btn btn-ghost small" type="button" data-dose-snooze="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" aria-label="Snooze ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)}" title="Snooze: delays this reminder by ${DOSE_SNOOZE_MINUTES} minutes." ${app.ui.pendingDoseActions.has(item.occurrenceId) ? "disabled" : ""}>Snooze</button>
                       <button class="btn btn-ghost small" type="button" data-dose-note="1" data-dose-occurrence-id="${escapeHtml(item.occurrenceId)}" data-medication-name="${escapeHtml(item.medicationName)}" aria-label="Add note for ${escapeHtml(item.medicationName)} dose at ${escapeHtml(item.time)}">Note</button>
                     </div>
                   </details>
@@ -4571,6 +4834,58 @@ function renderMedications(root, data, context) {
   const current = resolved.filter((med) => med.isCurrent);
   const historical = resolved.filter((med) => !med.isCurrent);
   const currentMedsLastUpdated = resolveCurrentMedsLastUpdatedDate(data);
+  const search = String(app.ui.medicationsFilterSearch || "").trim().toLowerCase();
+  const statusFilter = ["all", "current", "historical"].includes(app.ui.medicationsFilterStatus)
+    ? app.ui.medicationsFilterStatus
+    : "all";
+  const sortBy = ["name", "dose", "schedule", "start", "status"].includes(app.ui.medicationsSortBy)
+    ? app.ui.medicationsSortBy
+    : "name";
+  const sortDir = app.ui.medicationsSortDir === "desc" ? "desc" : "asc";
+  const sortFactor = sortDir === "desc" ? -1 : 1;
+
+  const doseSortValue = (dose) => {
+    const match = String(dose || "").match(/-?\d+(\.\d+)?/);
+    const value = Number(match?.[0] || Number.NaN);
+    return Number.isFinite(value) ? value : -Infinity;
+  };
+
+  const rows = [...current, ...historical]
+    .filter((med) => {
+      if (statusFilter === "current" && !med.isCurrent) return false;
+      if (statusFilter === "historical" && med.isCurrent) return false;
+      if (!search) return true;
+      const haystack = [
+        med.name,
+        med.genericName,
+        med.brandName,
+        med.currentDose,
+        med.route,
+        formatSchedule(med),
+        med.confirmationNotes
+      ]
+        .map((value) => String(value || "").toLowerCase())
+        .join(" ");
+      return haystack.includes(search);
+    })
+    .sort((left, right) => {
+      let result = 0;
+      if (sortBy === "dose") {
+        result = doseSortValue(left.currentDose) - doseSortValue(right.currentDose);
+      } else if (sortBy === "schedule") {
+        result = formatSchedule(left).localeCompare(formatSchedule(right));
+      } else if (sortBy === "start") {
+        result = parseSortableDate(left.startDate) - parseSortableDate(right.startDate);
+      } else if (sortBy === "status") {
+        result = Number(right.isCurrent) - Number(left.isCurrent);
+      } else {
+        result = String(left.name || "").localeCompare(String(right.name || ""));
+      }
+      if (result === 0) {
+        result = String(left.name || "").localeCompare(String(right.name || ""));
+      }
+      return result * sortFactor;
+    });
 
   root.innerHTML = resolved.length
     ? `
@@ -4581,8 +4896,40 @@ function renderMedications(root, data, context) {
         </div>
         <div class="subtle" style="margin-top:6px;"><strong>Last updated:</strong> ${escapeHtml(niceDate(currentMedsLastUpdated))}</div>
       </div>
+      <div class="card table-controls-card" style="margin-bottom:12px;">
+        <div class="field-grid table-controls-grid">
+          <div>
+            <label for="medicationsSearchInput">Search</label>
+            <input id="medicationsSearchInput" type="search" value="${escapeHtml(app.ui.medicationsFilterSearch)}" placeholder="Medication, dose, route or note">
+          </div>
+          <div>
+            <label for="medicationsStatusFilter">Status</label>
+            <select id="medicationsStatusFilter">
+              <option value="all" ${statusFilter === "all" ? "selected" : ""}>All</option>
+              <option value="current" ${statusFilter === "current" ? "selected" : ""}>Current</option>
+              <option value="historical" ${statusFilter === "historical" ? "selected" : ""}>Historical</option>
+            </select>
+          </div>
+          <div>
+            <label for="medicationsSortBy">Sort by</label>
+            <select id="medicationsSortBy">
+              <option value="name" ${sortBy === "name" ? "selected" : ""}>Name</option>
+              <option value="dose" ${sortBy === "dose" ? "selected" : ""}>Dose</option>
+              <option value="schedule" ${sortBy === "schedule" ? "selected" : ""}>Schedule</option>
+              <option value="start" ${sortBy === "start" ? "selected" : ""}>Start date</option>
+              <option value="status" ${sortBy === "status" ? "selected" : ""}>Status</option>
+            </select>
+          </div>
+          <div>
+            <label>&nbsp;</label>
+            <button class="btn btn-ghost" type="button" id="medicationsSortDirButton" aria-label="Toggle medication sort direction">${sortDir === "asc" ? "Ascending" : "Descending"}</button>
+          </div>
+        </div>
+        <div class="subtle" style="margin-top:8px;">Showing ${rows.length} of ${resolved.length} medication rows.</div>
+      </div>
       <div class="table-wrap">
         <table>
+          <caption class="sr-only">Medication list with current and historical entries</caption>
           <thead>
             <tr>
               <th>Medication</th>
@@ -4596,7 +4943,7 @@ function renderMedications(root, data, context) {
             </tr>
           </thead>
           <tbody>
-            ${[...current, ...historical].map((med) => `
+            ${rows.map((med) => `
               <tr>
                 <td>
                   <strong>${escapeHtml(med.name)}</strong>
@@ -4619,9 +4966,27 @@ function renderMedications(root, data, context) {
           </tbody>
         </table>
       </div>
+      ${rows.length ? "" : `<div class="empty" style="margin-top:12px;">No medications match this filter.</div>`}
       <div class="subtle" style="margin-top:8px;">Underlying medication records stored: ${recordCount}. Current list rows: ${current.length}.</div>
     `
     : `<div class="empty">No medications added yet.</div>`;
+
+  root.querySelector("#medicationsSearchInput")?.addEventListener("input", (event) => {
+    app.ui.medicationsFilterSearch = String(event.target.value || "");
+    renderAll();
+  });
+  root.querySelector("#medicationsStatusFilter")?.addEventListener("change", (event) => {
+    app.ui.medicationsFilterStatus = String(event.target.value || "all");
+    renderAll();
+  });
+  root.querySelector("#medicationsSortBy")?.addEventListener("change", (event) => {
+    app.ui.medicationsSortBy = String(event.target.value || "name");
+    renderAll();
+  });
+  root.querySelector("#medicationsSortDirButton")?.addEventListener("click", () => {
+    app.ui.medicationsSortDir = app.ui.medicationsSortDir === "asc" ? "desc" : "asc";
+    renderAll();
+  });
 
   root.querySelectorAll("[data-open-medication]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -4802,9 +5167,47 @@ function closeMedicationModal() {
 }
 
 function renderChanges(root, data, context) {
-  const rows = data.changes.slice().sort((a, b) => b.date.localeCompare(a.date));
+  const search = String(app.ui.changesFilterSearch || "").trim().toLowerCase();
+  const medicationFilter = String(app.ui.changesFilterMedication || "all");
+  const sortBy = ["date_desc", "date_asc", "medication", "reason"].includes(app.ui.changesSortBy)
+    ? app.ui.changesSortBy
+    : "date_desc";
 
-  if (!rows.length) {
+  const medicationOptions = Array.from(
+    new Set(
+      (data.changes || [])
+        .map((row) => String(row.medicationName || "").trim())
+        .filter(Boolean)
+    )
+  ).sort((left, right) => left.localeCompare(right));
+
+  const rows = data.changes
+    .slice()
+    .filter((row) => {
+      if (medicationFilter !== "all" && String(row.medicationName || "") !== medicationFilter) return false;
+      if (!search) return true;
+      const haystack = [
+        row.medicationName,
+        row.oldDose,
+        row.newDose,
+        row.reasonForChange,
+        row.reason,
+        row.monitorFor,
+        row.expectedEffects,
+        row.notes
+      ]
+        .map((value) => String(value || "").toLowerCase())
+        .join(" ");
+      return haystack.includes(search);
+    })
+    .sort((left, right) => {
+      if (sortBy === "date_asc") return String(left.date || "").localeCompare(String(right.date || ""));
+      if (sortBy === "medication") return String(left.medicationName || "").localeCompare(String(right.medicationName || ""));
+      if (sortBy === "reason") return String(left.reasonForChange || left.reason || "").localeCompare(String(right.reasonForChange || right.reason || ""));
+      return String(right.date || "").localeCompare(String(left.date || ""));
+    });
+
+  if (!data.changes.length) {
     root.innerHTML = `<div class="empty">No medication changes logged yet.</div>`;
     return;
   }
@@ -4814,8 +5217,35 @@ function renderChanges(root, data, context) {
       <h3>Recent medication changes summary</h3>
       ${renderRecentMedicationSummary()}
     </div>
+    <div class="card table-controls-card" style="margin-bottom:12px;">
+      <div class="field-grid table-controls-grid">
+        <div>
+          <label for="changesSearchInput">Search</label>
+          <input id="changesSearchInput" type="search" value="${escapeHtml(app.ui.changesFilterSearch)}" placeholder="Medication, dose, reason or notes">
+        </div>
+        <div>
+          <label for="changesMedicationFilter">Medication</label>
+          <select id="changesMedicationFilter">
+            <option value="all">All medications</option>
+            ${medicationOptions.map((name) => `<option value="${escapeHtml(name)}" ${medicationFilter === name ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label for="changesSortBy">Sort by</label>
+          <select id="changesSortBy">
+            <option value="date_desc" ${sortBy === "date_desc" ? "selected" : ""}>Newest first</option>
+            <option value="date_asc" ${sortBy === "date_asc" ? "selected" : ""}>Oldest first</option>
+            <option value="medication" ${sortBy === "medication" ? "selected" : ""}>Medication</option>
+            <option value="reason" ${sortBy === "reason" ? "selected" : ""}>Reason</option>
+          </select>
+        </div>
+      </div>
+      <div class="subtle" style="margin-top:8px;">Showing ${rows.length} of ${data.changes.length} changes.</div>
+    </div>
+    ${rows.length ? "" : `<div class="empty" style="margin-bottom:12px;">No medication changes match this filter.</div>`}
     <div class="table-wrap">
       <table>
+        <caption class="sr-only">Medication change history</caption>
         <thead>
           <tr>
             <th>Date</th>
@@ -4854,6 +5284,19 @@ function renderChanges(root, data, context) {
       </table>
     </div>
   `;
+
+  root.querySelector("#changesSearchInput")?.addEventListener("input", (event) => {
+    app.ui.changesFilterSearch = String(event.target.value || "");
+    renderAll();
+  });
+  root.querySelector("#changesMedicationFilter")?.addEventListener("change", (event) => {
+    app.ui.changesFilterMedication = String(event.target.value || "all");
+    renderAll();
+  });
+  root.querySelector("#changesSortBy")?.addEventListener("change", (event) => {
+    app.ui.changesSortBy = String(event.target.value || "date_desc");
+    renderAll();
+  });
 
   if (!context.readOnly) {
     root.querySelectorAll("[data-save-interpretation]").forEach((button) => {
@@ -4981,6 +5424,7 @@ function renderCheckins(root, data, context) {
       if (context.readOnly) return;
       app.ui.activeSection = "entry";
       app.ui.entryWorkflow = "checkin";
+      app.ui.checkinQuickMode = false;
       renderAll();
     });
   });
@@ -5289,6 +5733,81 @@ function buildConsultClipboardSummary({
   return lines.join("\n");
 }
 
+function buildAppointmentPackSummary(data) {
+  const snapshot = buildRangeSnapshot(data, "14");
+  const sideEffectSummary = summarizeSideEffects(snapshot.sideEffectEvents || []);
+  const openQuestions = (snapshot.consultQuestions || [])
+    .map((entry) => normalizeConsultQuestion(entry))
+    .filter((entry) => String(entry.status || "").toLowerCase() === "open")
+    .slice(0, 12);
+  const riskAssessment = computeRiskAssessment({
+    now: new Date(),
+    checkins: snapshot.checkins,
+    notes: snapshot.notes,
+    adherence: snapshot.adherence,
+    dueState: null,
+    warningSigns: data.warningSigns,
+    riskConfig: data.riskConfig
+  });
+
+  const meds = resolveCurrentMedications(snapshot).filter((med) => med.isCurrent);
+  const experiments = resolveExperimentRows(snapshot).slice(0, 12);
+  const takenCount = snapshot.adherence.filter((entry) => normalizeAdherenceStatus(entry.status) === ADHERENCE_STATUS.TAKEN).length;
+  const skippedCount = snapshot.adherence.filter((entry) => normalizeAdherenceStatus(entry.status) === ADHERENCE_STATUS.SKIPPED).length;
+  const adherencePct = takenCount + skippedCount
+    ? roundNumber((takenCount / (takenCount + skippedCount)) * 100, 1)
+    : null;
+
+  const lines = [];
+  lines.push("Appointment Pack (14 days)");
+  lines.push(`Window: ${niceDate(snapshot.startDate)} to ${niceDate(snapshot.endDate)}`);
+  lines.push(`Risk: ${riskAssessment.label} (${riskAssessment.reasons[0] || "No active triggers."})`);
+  lines.push("");
+  lines.push("Current medications");
+  if (meds.length) {
+    meds.forEach((med) => {
+      lines.push(`- ${med.name}: ${med.currentDose || "-"} (${formatSchedule(med)})`);
+    });
+  } else {
+    lines.push("- None recorded");
+  }
+  lines.push("");
+  lines.push("Recent medication changes");
+  if (experiments.length) {
+    experiments.forEach((entry) => {
+      lines.push(`- ${niceDate(entry.dateEffective)} · ${experimentLabelForSummary(entry)} · ${entry.reasonForChange || "-"}`);
+    });
+  } else {
+    lines.push("- None");
+  }
+  lines.push("");
+  lines.push("Adherence");
+  lines.push(`- Taken: ${takenCount}`);
+  lines.push(`- Skipped: ${skippedCount}`);
+  lines.push(`- Logged adherence: ${adherencePct === null ? "-" : `${adherencePct}%`}`);
+  lines.push("");
+  lines.push("Open questions for consult");
+  if (openQuestions.length) {
+    openQuestions.forEach((entry) => {
+      lines.push(`- [${entry.urgency}] ${entry.text}`);
+    });
+  } else {
+    lines.push("- None");
+  }
+  lines.push("");
+  lines.push("Side effects (top patterns)");
+  if (sideEffectSummary.length) {
+    sideEffectSummary.slice(0, 6).forEach((row) => {
+      lines.push(`- ${row.medication} · ${row.timing}: ${row.count} events, avg severity ${row.avgSeverity}`);
+    });
+  } else {
+    lines.push("- None in selected window");
+  }
+  lines.push("");
+  lines.push("Discuss with prescriber: this summary highlights observed patterns, not causality.");
+  return lines.join("\n");
+}
+
 function renderConsult(root, data, context) {
   const ownerEditable = context.type === "owner" && !context.readOnly;
   const meds = resolveCurrentMedications(data).filter((med) => med.isCurrent);
@@ -5301,6 +5820,12 @@ function renderConsult(root, data, context) {
     ...(app.ui.consultFilters || {})
   };
   app.ui.consultFilters = filters;
+  const consultPaneOptions = ["current", "changes", "trends", "effects", "questions", "plan"];
+  if (!consultPaneOptions.includes(app.ui.consultActivePane)) {
+    app.ui.consultActivePane = "current";
+  }
+  const activeConsultPane = app.ui.consultActivePane;
+  const paneClass = (paneId) => (activeConsultPane === paneId ? "" : "consult-pane-hidden");
   const windowRange = resolveConsultWindow(data, filters);
   const experiments = allExperiments.filter((entry) => {
     if (!inDateRangeKey(entry.dateEffective, windowRange.startDate, windowRange.endDate)) return false;
@@ -5385,6 +5910,7 @@ function renderConsult(root, data, context) {
       endDate: windowRange.endDate
     }
   );
+  const confidenceBanner = renderDataConfidenceBanner(quality, "consult window");
 
   const focusText = String(consultConfig.discussToday || "").trim();
   const latestDecision = decisions[0] || null;
@@ -5412,15 +5938,17 @@ function renderConsult(root, data, context) {
     decisions,
     focusText
   });
+  const appointmentPackSummary = buildAppointmentPackSummary(data);
 
   root.innerHTML = `
     <article class="card consult-toolbar">
       <div class="card-head-row">
         <div>
-          <h3>Consult review mode</h3>
-          <div class="subtle">${escapeHtml(windowRange.label)} · Built for psychiatrist appointment review and print/PDF handoff.</div>
+          <h3>Consult Summary</h3>
+          <div class="subtle">${escapeHtml(windowRange.label)} · Appointment-ready, print-friendly review.</div>
         </div>
         <div class="inline-row">
+          <button class="btn btn-primary small" type="button" data-consult-pack="1">Appointment Pack (14d)</button>
           <button class="btn btn-secondary small" type="button" data-consult-copy="1">Copy summary</button>
           <button class="btn btn-secondary small" type="button" data-consult-print="1">Print / Save PDF</button>
         </div>
@@ -5456,26 +5984,90 @@ function renderConsult(root, data, context) {
       </div>
     </article>
 
+    <article class="card consult-quicknav">
+      <div class="inline-row">
+        <button class="chip ${activeConsultPane === "current" ? "active" : ""}" type="button" data-consult-pane="current">Current meds</button>
+        <button class="chip ${activeConsultPane === "changes" ? "active" : ""}" type="button" data-consult-pane="changes">Changes</button>
+        <button class="chip ${activeConsultPane === "trends" ? "active" : ""}" type="button" data-consult-pane="trends">Trends</button>
+        <button class="chip ${activeConsultPane === "effects" ? "active" : ""}" type="button" data-consult-pane="effects">Side effects</button>
+        <button class="chip ${activeConsultPane === "questions" ? "active" : ""}" type="button" data-consult-pane="questions">Questions</button>
+        <button class="chip ${activeConsultPane === "plan" ? "active" : ""}" type="button" data-consult-pane="plan">Plan</button>
+      </div>
+    </article>
+
     <div class="consult-grid">
-      <article class="card consult-section">
-        <h3>A. Current medications</h3>
+      ${confidenceBanner}
+      <article class="card consult-section consult-kpi-overview consult-section-full" id="consult-snapshot">
+        <h3>Consult snapshot</h3>
+        <div class="summary-strip-grid consult-summary-strip">
+          <div class="summary-strip-item">
+            <div class="summary-strip-label">Current medications</div>
+            <div class="summary-strip-value">${meds.length}</div>
+          </div>
+          <div class="summary-strip-item">
+            <div class="summary-strip-label">Changes in range</div>
+            <div class="summary-strip-value">${experiments.length}</div>
+          </div>
+          <div class="summary-strip-item">
+            <div class="summary-strip-label">Open questions</div>
+            <div class="summary-strip-value">${questions.filter((entry) => String(entry.status || "").toLowerCase() === "open").length}</div>
+          </div>
+          <div class="summary-strip-item">
+            <div class="summary-strip-label">Logged adherence</div>
+            <div class="summary-strip-value">${adherencePct === null ? "-" : `${adherencePct}%`}</div>
+          </div>
+        </div>
+      </article>
+      <article class="card consult-section consult-section-main consult-pane ${paneClass("current")}" id="consult-current">
+        <h3>Current medications</h3>
         ${meds.length ? `
-          <div class="table-wrap">
+          <div class="consult-table-only table-wrap">
             <table>
-              <thead><tr><th>Medication</th><th>Dose</th><th>Schedule</th><th>Status</th></tr></thead>
+              <caption class="sr-only">Current medication list</caption>
+              <thead>
+                <tr>
+                  <th>Medication</th>
+                  <th>Dose</th>
+                  <th>Schedule</th>
+                  <th>Route</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
               <tbody>
-                ${meds.map((med) => `<tr><td>${escapeHtml(med.name)}</td><td>${escapeHtml(med.currentDose || "-")}</td><td>${escapeHtml(formatSchedule(med))}</td><td>${escapeHtml(med.active ? "Active" : "Inactive")}</td></tr>`).join("")}
+                ${meds.map((med) => `
+                  <tr>
+                    <td><span class="table-wrap-text">${escapeHtml(med.name)}</span></td>
+                    <td><span class="table-wrap-text">${escapeHtml(med.currentDose || "-")}</span></td>
+                    <td><span class="table-wrap-text">${escapeHtml(formatSchedule(med))}</span></td>
+                    <td><span class="table-wrap-text">${escapeHtml(med.route || "-")}</span></td>
+                    <td><span class="pill-badge ${med.active ? "status-open" : "status-discussed"}">${escapeHtml(med.active ? "Active" : "Inactive")}</span></td>
+                  </tr>
+                `).join("")}
               </tbody>
             </table>
           </div>
+          <ul class="timeline-list consult-list consult-med-list consult-cards-only">
+            ${meds.map((med) => `
+              <li>
+                <div class="inline-row consult-med-head">
+                  <strong>${escapeHtml(med.name)}</strong>
+                  <span class="pill-badge ${med.active ? "status-open" : "status-discussed"}">${escapeHtml(med.active ? "Active" : "Inactive")}</span>
+                </div>
+                <div class="subtle">Dose: ${escapeHtml(med.currentDose || "-")}</div>
+                <div class="subtle">Schedule: ${escapeHtml(formatSchedule(med))}</div>
+                <div class="subtle">Route: ${escapeHtml(med.route || "-")}</div>
+              </li>
+            `).join("")}
+          </ul>
         ` : `<div class="empty">No active medications recorded.</div>`}
       </article>
 
-      <article class="card consult-section">
-        <h3>B. Changes in selected window</h3>
+      <article class="card consult-section consult-section-main consult-pane ${paneClass("changes")}" id="consult-changes">
+        <h3>Medication changes</h3>
         ${experiments.length ? `
-          <div class="table-wrap consult-table-only">
+          <div class="consult-table-only table-wrap">
             <table>
+              <caption class="sr-only">Medication changes in selected consult window</caption>
               <thead>
                 <tr>
                   <th>Date</th>
@@ -5483,7 +6075,6 @@ function renderConsult(root, data, context) {
                   <th>Old -> New</th>
                   <th>Reason</th>
                   <th>Observed pattern</th>
-                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -5491,51 +6082,50 @@ function renderConsult(root, data, context) {
                   const comparison = experimentComparisons.get(entry.id);
                   return `
                     <tr>
-                      <td>${escapeHtml(niceDate(entry.dateEffective))}</td>
-                      <td>${escapeHtml(entry.medicationName || "Medication")}</td>
-                      <td>${escapeHtml(entry.oldDose || "-")} -> ${escapeHtml(entry.newDose || "-")}</td>
-                      <td>${escapeHtml(entry.reasonForChange || "-")}</td>
-                      <td>${escapeHtml(comparison?.summary || "-")}</td>
-                      <td>
-                        ${ownerEditable ? `
-                          <div class="inline-row">
-                            <button class="btn btn-ghost small" type="button" data-edit-experiment="${entry.id}">Edit</button>
-                            <button class="btn btn-ghost small" type="button" data-delete-experiment="${entry.id}">Delete</button>
-                          </div>
-                        ` : `<span class="subtle">Read-only</span>`}
-                      </td>
+                      <td><span class="table-wrap-text">${escapeHtml(niceDate(entry.dateEffective))}</span></td>
+                      <td><span class="table-wrap-text">${escapeHtml(entry.medicationName || "Medication")}</span></td>
+                      <td><span class="table-wrap-text">${escapeHtml(entry.oldDose || "-")} -> ${escapeHtml(entry.newDose || "-")}</span></td>
+                      <td><span class="table-wrap-text">${escapeHtml(entry.reasonForChange || "-")}</span></td>
+                      <td><span class="table-wrap-text">${escapeHtml(comparison?.summary || "Observed pattern not available.")}</span></td>
                     </tr>
                   `;
                 }).join("")}
               </tbody>
             </table>
           </div>
-          <div class="consult-cards-only">
-            <ul class="timeline-list consult-list">
-              ${experiments.map((entry) => {
-                const comparison = experimentComparisons.get(entry.id);
-                return `
-                  <li>
-                    <div><strong>${escapeHtml(niceDate(entry.dateEffective))}</strong> · ${escapeHtml(entry.medicationName || "Medication")} · ${escapeHtml(entry.oldDose || "-")} -> ${escapeHtml(entry.newDose || "-")}</div>
-                    <div class="subtle">${escapeHtml(entry.reasonForChange || "-")} · Changed by ${escapeHtml(entry.changedBy || "self")}${entry.reviewDate ? ` · review ${escapeHtml(niceDate(entry.reviewDate))}` : ""}</div>
-                    <div class="subtle">${escapeHtml(comparison?.summary || "Observed pattern not available.")}</div>
-                    ${comparison?.dataQuality?.note ? `<div class="subtle">Data quality: ${escapeHtml(comparison.dataQuality.note)}</div>` : ""}
-                    ${ownerEditable ? `
-                      <div class="inline-row" style="margin-top:6px;">
-                        <button class="btn btn-ghost small" type="button" data-edit-experiment="${entry.id}">Edit</button>
-                        <button class="btn btn-ghost small" type="button" data-delete-experiment="${entry.id}">Delete</button>
-                      </div>
-                    ` : ""}
-                  </li>
-                `;
-              }).join("")}
-            </ul>
-          </div>
+          <ul class="timeline-list consult-list consult-entry-list consult-cards-only">
+            ${experiments.map((entry) => {
+              const comparison = experimentComparisons.get(entry.id);
+              return `
+                <li class="consult-entry">
+                  <div class="consult-entry-head">
+                    <strong>${escapeHtml(entry.medicationName || "Medication")}</strong>
+                    <span class="pill-badge status-open">${escapeHtml(entry.oldDose || "-")} -> ${escapeHtml(entry.newDose || "-")}</span>
+                  </div>
+                  <div class="consult-entry-meta">
+                    <span>${escapeHtml(niceDate(entry.dateEffective))}</span>
+                    <span>Changed by ${escapeHtml(entry.changedBy || "self")}</span>
+                    ${entry.reviewDate ? `<span>Review ${escapeHtml(niceDate(entry.reviewDate))}</span>` : ""}
+                  </div>
+                  <div class="subtle"><strong>Reason:</strong> ${escapeHtml(entry.reasonForChange || "-")}</div>
+                  <div class="subtle"><strong>Observed:</strong> ${escapeHtml(comparison?.summary || "Observed pattern not available.")}</div>
+                  ${comparison?.dataQuality?.note ? `<div class="subtle">Data quality: ${escapeHtml(comparison.dataQuality.note)}</div>` : ""}
+                  ${ownerEditable ? `
+                    <div class="inline-row" style="margin-top:6px;">
+                      <button class="btn btn-ghost small" type="button" data-edit-experiment="${entry.id}">Edit</button>
+                      <button class="btn btn-ghost small" type="button" data-delete-experiment="${entry.id}">Delete</button>
+                    </div>
+                  ` : ""}
+                </li>
+              `;
+            }).join("")}
+          </ul>
         ` : `<div class="empty">No medication changes in this window.</div>`}
       </article>
 
-      <article class="card consult-section">
-        <h3>C. What improved / worsened</h3>
+      <article class="card consult-section consult-section-main consult-pane ${paneClass("trends")}" id="consult-trends">
+        <h3>What improved / worsened</h3>
+        ${renderDataConfidenceBanner(quality, "trend interpretation")}
         <div class="subtle">${escapeHtml(shiftSummary.summary)}</div>
         <div class="inline-row" style="margin-top:10px;">
           <span class="kpi-badge">Check-ins: ${checkins.length}</span>
@@ -5547,22 +6137,29 @@ function renderConsult(root, data, context) {
         </div>
       </article>
 
-      <article class="card consult-section">
-        <h3>D. Side effects summary</h3>
+      <article class="card consult-section consult-section-main consult-pane ${paneClass("effects")}" id="consult-effects">
+        <h3>Side effects summary</h3>
         ${sideEffectSummary.length ? `
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Medication</th><th>Timing</th><th>Frequency</th><th>Avg severity</th><th>Top symptom</th></tr></thead>
-              <tbody>
-                ${sideEffectSummary.map((row) => `<tr><td>${escapeHtml(row.medication)}</td><td>${escapeHtml(row.timing)}</td><td>${row.count}</td><td>${escapeHtml(String(row.avgSeverity))}</td><td>${escapeHtml(row.topSymptom)}</td></tr>`).join("")}
-              </tbody>
-            </table>
-          </div>
+          <ul class="timeline-list consult-list consult-effects-list">
+            ${sideEffectSummary.map((row) => `
+              <li>
+                <div class="inline-row consult-med-head">
+                  <strong>${escapeHtml(row.medication)}</strong>
+                  <span class="pill-badge urgency-medium">${escapeHtml(row.timing)}</span>
+                </div>
+                <div class="inline-row">
+                  <span class="kpi-badge">Frequency: ${escapeHtml(String(row.count))}</span>
+                  <span class="kpi-badge">Avg severity: ${escapeHtml(String(row.avgSeverity))}</span>
+                </div>
+                <div class="subtle">Top symptom: ${escapeHtml(row.topSymptom)}</div>
+              </li>
+            `).join("")}
+          </ul>
         ` : `<div class="empty">No side-effect timing events in this window.</div>`}
       </article>
 
-      <article class="card consult-section">
-        <h3>E. Adherence summary</h3>
+      <article class="card consult-section consult-section-main consult-pane ${paneClass("trends")}" id="consult-adherence">
+        <h3>Adherence summary</h3>
         <div class="summary-strip-grid consult-summary-strip">
           <div class="summary-strip-item"><div class="summary-strip-label">Taken</div><div class="summary-strip-value">${takenCount}</div></div>
           <div class="summary-strip-item"><div class="summary-strip-label">Skipped</div><div class="summary-strip-value">${skippedCount}</div></div>
@@ -5571,53 +6168,15 @@ function renderConsult(root, data, context) {
         </div>
       </article>
 
-      <article class="card consult-section">
+      <article class="card consult-section consult-section-side consult-pane ${paneClass("questions")}" id="consult-questions">
         <div class="card-head-row">
           <div>
-            <h3>F. Question Queue</h3>
+            <h3>Question queue</h3>
             <div class="subtle">Open topics for psychiatrist review during consult.</div>
           </div>
           ${ownerEditable ? `<button class="btn btn-secondary small" type="button" data-consult-focus-questions="1">Add question</button>` : ""}
         </div>
         ${questions.length ? `
-          <div class="table-wrap consult-table-only">
-            <table>
-              <thead>
-                <tr>
-                  <th>Question</th>
-                  <th>Category</th>
-                  <th>Urgency</th>
-                  <th>Status</th>
-                  <th>Linked medication</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${questions.map((entry) => {
-                  const urgency = String(entry.urgency || "medium").toLowerCase();
-                  const status = String(entry.status || "open").toLowerCase();
-                  return `
-                    <tr>
-                      <td>${escapeHtml(entry.text)}</td>
-                      <td>${escapeHtml(entry.category || "-")}</td>
-                      <td>${escapeHtml(urgency)}</td>
-                      <td>${escapeHtml(CONSULT_QUESTION_STATUS_LABELS[status] || status)}</td>
-                      <td>${escapeHtml(entry.linkedMedication || "-")}</td>
-                      <td>
-                        ${ownerEditable ? `
-                          <div class="inline-row">
-                            <button class="btn btn-ghost small" type="button" data-edit-question="${entry.id}">Edit</button>
-                            <button class="btn btn-ghost small" type="button" data-delete-question="${entry.id}">Delete</button>
-                          </div>
-                        ` : `<span class="subtle">Read-only</span>`}
-                      </td>
-                    </tr>
-                  `;
-                }).join("")}
-              </tbody>
-            </table>
-          </div>
-          <div class="consult-cards-only">
           <ul class="timeline-list consult-list">
             ${questions.map((entry) => {
               const urgency = String(entry.urgency || "medium").toLowerCase();
@@ -5633,14 +6192,17 @@ function renderConsult(root, data, context) {
                     ? "status-carry-forward"
                     : "status-open";
               return `
-              <li class="consult-question-row">
-                <div><strong>${escapeHtml(entry.text)}</strong></div>
-                <div class="inline-row consult-question-meta">
-                  <span class="pill-badge ${urgencyClass}">${escapeHtml(urgencyLabel)}</span>
+              <li class="consult-question-row consult-entry">
+                <div class="consult-entry-head">
+                  <strong>${escapeHtml(entry.text)}</strong>
                   <span class="pill-badge ${statusClass}">${escapeHtml(statusLabel)}</span>
-                  <span class="subtle">Created ${escapeHtml(niceDateTime(entry.createdAt))}</span>
                 </div>
-                <div class="subtle">${escapeHtml(entry.category)}${entry.linkedMedication ? ` · ${escapeHtml(entry.linkedMedication)}` : ""}</div>
+                <div class="inline-row consult-question-meta consult-entry-meta">
+                  <span class="pill-badge ${urgencyClass}">${escapeHtml(urgencyLabel)}</span>
+                  <span>Created ${escapeHtml(niceDateTime(entry.createdAt))}</span>
+                  ${entry.linkedMedication ? `<span>Linked: ${escapeHtml(entry.linkedMedication)}</span>` : ""}
+                  <span>${escapeHtml(entry.category)}</span>
+                </div>
                 ${entry.note ? `<div class="subtle">${escapeHtml(entry.note)}</div>` : ""}
                 ${ownerEditable ? `
                   <div class="inline-row" style="margin-top:6px;">
@@ -5656,10 +6218,11 @@ function renderConsult(root, data, context) {
             `;
             }).join("")}
           </ul>
-          </div>
         ` : `<div class="empty">No open consult questions.${ownerEditable ? " Add one to prep for the next appointment." : ""}</div>`}
         ${ownerEditable ? `
-          <form id="consultQuestionForm" class="edit-inline-form consult-form">
+          <details class="consult-editor" id="consultQuestionEditor" ${editingQuestion ? "open" : ""}>
+            <summary>${editingQuestion ? "Edit question" : "Add question"}</summary>
+          <form id="consultQuestionForm" class="edit-inline-form consult-form consult-form-noborder">
             <input type="hidden" name="editingId" value="${escapeHtml(editingQuestion?.id || "")}">
             <div class="field-grid">
               <div style="grid-column: 1 / -1;"><label>Question / concern</label><input name="text" required placeholder="What do I want to ask?" value="${escapeHtml(editingQuestion?.text || "")}"></div>
@@ -5674,11 +6237,12 @@ function renderConsult(root, data, context) {
               <button class="btn btn-ghost small" type="button" data-cancel-question-edit="1">Cancel</button>
             </div>
           </form>
+          </details>
         ` : ""}
       </article>
 
-      <article class="card consult-section">
-        <h3>G. Past decisions and current plan</h3>
+      <article class="card consult-section consult-section-side consult-pane ${paneClass("plan")}" id="consult-plan">
+        <h3>Decision log and current plan</h3>
         ${latestDecision ? `
           <div class="consult-plan-highlight">
             <div><strong>Last decision:</strong> ${escapeHtml(niceDate(latestDecision.appointmentDate))}${latestDecision.clinicianName ? ` · ${escapeHtml(latestDecision.clinicianName)}` : ""}</div>
@@ -5705,7 +6269,9 @@ function renderConsult(root, data, context) {
           </ul>
         ` : ""}
         ${ownerEditable ? `
-          <form id="consultDecisionForm" class="edit-inline-form consult-form">
+          <details class="consult-editor" id="consultDecisionEditor" ${editingDecision ? "open" : ""}>
+            <summary>${editingDecision ? "Edit decision log entry" : "Add decision log entry"}</summary>
+          <form id="consultDecisionForm" class="edit-inline-form consult-form consult-form-noborder">
             <input type="hidden" name="editingId" value="${escapeHtml(editingDecision?.id || "")}">
             <div class="field-grid">
               <div><label>Appointment date</label><input name="appointmentDate" type="date" value="${escapeHtml(editingDecision?.appointmentDate || isoDate(new Date()))}" required></div>
@@ -5725,26 +6291,30 @@ function renderConsult(root, data, context) {
               <button class="btn btn-ghost small" type="button" data-cancel-decision-edit="1">Cancel</button>
             </div>
           </form>
+          </details>
         ` : ""}
       </article>
 
-      <article class="card consult-section">
+      <article class="card consult-section consult-section-side consult-pane ${paneClass("plan")}" id="consult-focus">
         <div class="card-head-row">
           <div>
-            <h3>H. What I want to discuss today</h3>
+            <h3>What I want to discuss today</h3>
             <div class="subtle">Owner editable consult agenda for appointment focus.</div>
           </div>
         </div>
         ${ownerEditable ? `
-          <form id="consultFocusForm" class="edit-inline-form consult-form">
+          <details class="consult-editor" id="consultFocusEditor" ${focusText ? "" : "open"}>
+            <summary>${focusText ? "Edit consult focus" : "Add consult focus"}</summary>
+          <form id="consultFocusForm" class="edit-inline-form consult-form consult-form-noborder">
             <label for="consultDiscussToday">Consult focus text</label>
             <textarea id="consultDiscussToday" name="discussToday" maxlength="500" placeholder="Key goals, concerns, and decision points for this appointment.">${escapeHtml(focusText)}</textarea>
             <div class="inline-row"><button class="btn btn-primary small" type="submit">Save</button><button class="btn btn-ghost small" type="reset">Cancel</button></div>
           </form>
+          </details>
         ` : `<div class="subtle">${focusText ? escapeHtml(focusText) : "No consult focus text provided."}</div>`}
       </article>
 
-      <article class="card consult-section">
+      <article class="card consult-section consult-section-side consult-section-collapsible consult-pane ${paneClass("plan")}" id="consult-quality">
         <h3>Data quality</h3>
         <ul class="timeline-list consult-list">
           <li>Days without check-in: <strong>${quality.daysWithoutCheckin}</strong></li>
@@ -5755,7 +6325,7 @@ function renderConsult(root, data, context) {
         <div class="subtle">Use this context to avoid over-interpreting sparse data.</div>
       </article>
 
-      <article class="card consult-section">
+      <article class="card consult-section consult-section-side consult-section-collapsible consult-pane ${paneClass("plan")}" id="consult-appointments">
         <h3>Appointment markers</h3>
         ${appointments.length ? `
           <ul class="timeline-list consult-list">
@@ -5763,7 +6333,9 @@ function renderConsult(root, data, context) {
           </ul>
         ` : `<div class="empty">No appointments logged yet.</div>`}
         ${ownerEditable ? `
-          <form id="consultAppointmentForm" class="edit-inline-form consult-form">
+          <details class="consult-editor" id="consultAppointmentEditor" ${editingAppointment ? "open" : ""}>
+            <summary>${editingAppointment ? "Edit appointment marker" : "Add appointment marker"}</summary>
+          <form id="consultAppointmentForm" class="edit-inline-form consult-form consult-form-noborder">
             <input type="hidden" name="editingId" value="${escapeHtml(editingAppointment?.id || "")}">
             <div class="field-grid">
               <div><label>Date</label><input name="appointmentDate" type="date" value="${escapeHtml(editingAppointment?.appointmentDate || isoDate(new Date()))}" required></div>
@@ -5775,13 +6347,16 @@ function renderConsult(root, data, context) {
               <button class="btn btn-ghost small" type="button" data-cancel-appointment-edit="1">Cancel</button>
             </div>
           </form>
+          </details>
         ` : ""}
       </article>
 
-      <article class="card consult-section">
+      <article class="card consult-section consult-section-side consult-section-collapsible consult-pane ${paneClass("changes")}" id="consult-experiments">
         <h3>Medication change experiment log</h3>
         ${ownerEditable ? `
-          <form id="consultExperimentForm" class="edit-inline-form consult-form">
+          <details class="consult-editor" id="consultExperimentEditor" ${editingExperiment ? "open" : ""}>
+            <summary>${editingExperiment ? "Edit experiment entry" : "Add experiment entry"}</summary>
+          <form id="consultExperimentForm" class="edit-inline-form consult-form consult-form-noborder">
             <input type="hidden" name="editingId" value="${escapeHtml(editingExperiment?.id || "")}">
             <div class="field-grid">
               <div><label>Date effective</label><input name="dateEffective" type="date" value="${escapeHtml(editingExperiment?.dateEffective || isoDate(new Date()))}" required></div>
@@ -5805,6 +6380,7 @@ function renderConsult(root, data, context) {
               <button class="btn btn-ghost small" type="button" data-cancel-experiment-edit="1">Cancel</button>
             </div>
           </form>
+          </details>
         ` : `<div class="subtle">Experiment log is editable in owner mode only.</div>`}
       </article>
     </div>
@@ -5875,9 +6451,40 @@ function renderConsult(root, data, context) {
       setStatus("Could not copy consult summary. Try Print / Save PDF instead.", "error");
     }
   });
+  root.querySelector("[data-consult-pack]")?.addEventListener("click", async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(appointmentPackSummary);
+      }
+      const html = buildClinicianSummaryHtml(data, "14");
+      const popup = window.open("", "_blank", "noopener,noreferrer,width=1024,height=900");
+      if (!popup) {
+        setStatus("Popup blocked. Allow popups to open the Appointment Pack preview.", "error");
+        return;
+      }
+      popup.document.write(html);
+      popup.document.close();
+      popup.focus();
+      setStatus("Appointment Pack ready: 14-day summary copied and print view opened.");
+    } catch (error) {
+      console.error("Failed to generate appointment pack", error);
+      setStatus("Could not generate Appointment Pack. Try again or use Print / Save PDF.", "error");
+    }
+  });
   root.querySelector("[data-consult-print]")?.addEventListener("click", () => window.print());
   root.querySelector("[data-consult-focus-questions]")?.addEventListener("click", () => {
+    const editor = root.querySelector("#consultQuestionEditor");
+    if (editor) editor.open = true;
     root.querySelector("#consultQuestionForm input[name='text']")?.focus();
+  });
+  root.querySelectorAll("[data-consult-pane]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const targetPane = String(button.dataset.consultPane || "").trim();
+      if (!consultPaneOptions.includes(targetPane)) return;
+      app.ui.consultActivePane = targetPane;
+      persistUiDraftPreferences();
+      renderAll();
+    });
   });
 
   if (!ownerEditable) return;
@@ -6198,6 +6805,12 @@ function renderTimeline(root, data) {
   }
 
   const filtered = applyTimelineFilters(data);
+  const timelineWindow = resolveTimelineDateWindow();
+  const inferredWindow = inferDateBoundsFromTimelineData(filtered);
+  const quality = buildDataQualityIndicators(filtered, {
+    startDate: timelineWindow.startDate || inferredWindow.startDate,
+    endDate: timelineWindow.endDate || inferredWindow.endDate
+  });
   app.ui.timelineLazyCharts = {
     ...TIMELINE_LAZY_CHART_DEFAULTS,
     ...(app.ui.timelineLazyCharts || {})
@@ -6241,6 +6854,8 @@ function renderTimeline(root, data) {
           <button class="btn btn-ghost small" type="button" data-reset-timeline-charts="1">Keep essential charts only</button>
         </div>
       </article>
+
+      ${renderDataConfidenceBanner(quality, "timeline trends")}
 
       ${renderDeferredTimelineChart(
         "adherence",
@@ -6380,6 +6995,7 @@ function renderTimeline(root, data) {
       if (action === "checkin") {
         app.ui.activeSection = "entry";
         app.ui.entryWorkflow = "checkin";
+        app.ui.checkinQuickMode = false;
       } else if (action === "change") {
         app.ui.activeSection = "entry";
         app.ui.entryWorkflow = "change";
@@ -6389,18 +7005,48 @@ function renderTimeline(root, data) {
   });
 }
 
-function applyTimelineFilters(data) {
-  const medicationId = app.ui.timelineFilters.medicationId || "all";
-  const selectedMedication = (data.medications || []).find((med) => med.id === medicationId);
-  const selectedKey = selectedMedication ? normalizeMedicationKey(selectedMedication.name) : "";
-  let fromDate = app.ui.timelineFilters.fromDate || "";
-  let toDate = app.ui.timelineFilters.toDate || "";
+function resolveTimelineDateWindow() {
+  let fromDate = String(app.ui.timelineFilters.fromDate || "");
+  let toDate = String(app.ui.timelineFilters.toDate || "");
   const rangeDays = Number(app.ui.timelineFilters.rangeDays || 0);
-
   if (!fromDate && !toDate && Number.isFinite(rangeDays) && rangeDays > 0) {
     toDate = getLocalDateKey(new Date());
     fromDate = shiftDateKey(toDate, -(rangeDays - 1));
   }
+  if (fromDate && !toDate) toDate = getLocalDateKey(new Date());
+  if (!fromDate && toDate) fromDate = shiftDateKey(toDate, -13);
+  return {
+    startDate: fromDate || "",
+    endDate: toDate || ""
+  };
+}
+
+function inferDateBoundsFromTimelineData(data) {
+  const keys = [];
+  for (const row of data.checkins || []) keys.push(String(row.date || "").slice(0, 10));
+  for (const row of data.adherence || []) keys.push(String(row.date || "").slice(0, 10));
+  for (const row of data.changes || []) keys.push(String(row.date || "").slice(0, 10));
+  for (const row of data.notes || []) keys.push(String(row.date || "").slice(0, 10));
+  for (const row of data.sideEffectEvents || []) keys.push(String(row.date || row.createdAt || "").slice(0, 10));
+  const normalized = keys.filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value)).sort();
+  if (!normalized.length) {
+    const today = getLocalDateKey(new Date());
+    return { startDate: today, endDate: today };
+  }
+  return {
+    startDate: normalized[0],
+    endDate: normalized[normalized.length - 1]
+  };
+}
+
+function applyTimelineFilters(data) {
+  const medicationId = app.ui.timelineFilters.medicationId || "all";
+  const selectedMedication = (data.medications || []).find((med) => med.id === medicationId);
+  const selectedKey = selectedMedication ? normalizeMedicationKey(selectedMedication.name) : "";
+  const timelineWindow = resolveTimelineDateWindow();
+  let fromDate = timelineWindow.startDate;
+  let toDate = timelineWindow.endDate;
+  const rangeDays = Number(app.ui.timelineFilters.rangeDays || 0);
 
   const memoKey = [
     derivedStateMemoKey(data),
@@ -6536,6 +7182,10 @@ function renderBeforeAfterComparison(data) {
   const comparison14 = computeBeforeAfterComparison(data, selectedChange.date, { beforeDays: 14, afterDays: 14 });
   const rows = comparison7.metrics
     .filter((metric) => ["adherencePct", "moodAvg", "anxietyAvg", "focusAvg", "sleepHoursAvg", "sideEffectCount"].includes(metric.key));
+  const comparisonConfidence = buildDataQualityIndicators(data, {
+    startDate: comparison7.windows?.before?.startDate || selectedChange.date,
+    endDate: comparison7.windows?.after?.endDate || selectedChange.date
+  });
 
   return `
     <div class="field-grid">
@@ -6546,6 +7196,8 @@ function renderBeforeAfterComparison(data) {
         </select>
       </div>
     </div>
+
+    ${renderDataConfidenceBanner(comparisonConfidence, "before/after comparison")}
 
     <div class="table-wrap" style="margin-top:10px;">
       <table>
@@ -6609,6 +7261,9 @@ function renderEntryWorkflows(root, data, context) {
   root.querySelectorAll("[data-workflow]").forEach((button) => {
     button.addEventListener("click", () => {
       app.ui.entryWorkflow = button.dataset.workflow;
+      if (app.ui.entryWorkflow !== "checkin") {
+        app.ui.checkinQuickMode = false;
+      }
       renderAll();
     });
   });
@@ -6715,6 +7370,123 @@ function buildCheckinDraftDefaults(data, draftInput = {}) {
       ? draft.sideEffectsChecklist
       : base.sideEffectsChecklist
   };
+}
+
+function normalizeQuickCheckin30sDraft(input) {
+  const draft = input && typeof input === "object" ? input : {};
+  return {
+    mood: String(draft.mood || ""),
+    anxiety: String(draft.anxiety || ""),
+    sleep: String(draft.sleep || ""),
+    date: String(draft.date || isoDate(new Date()))
+  };
+}
+
+function quickCheckin30sOption(field, value) {
+  const options = QUICK_CHECKIN_30S_OPTIONS[field] || [];
+  return options.find((entry) => String(entry.value || "") === String(value || "")) || null;
+}
+
+function buildQuickCheckin30sPayload(draftInput) {
+  const draft = normalizeQuickCheckin30sDraft(draftInput);
+  const mood = quickCheckin30sOption("mood", draft.mood);
+  const anxiety = quickCheckin30sOption("anxiety", draft.anxiety);
+  const sleep = quickCheckin30sOption("sleep", draft.sleep);
+  if (!mood || !anxiety || !sleep) return null;
+
+  const energy = mood.score >= 8 ? 7 : mood.score >= 6 ? 6 : 4;
+  const irritability = anxiety.score >= 8 ? 7 : anxiety.score >= 6 ? 5 : 3;
+  const cravings = anxiety.score >= 8 ? 6 : anxiety.score >= 6 ? 4 : 3;
+  const socialContactLevel = mood.score <= 4 ? "limited" : "normal";
+
+  return {
+    date: draft.date || isoDate(new Date()),
+    mood: mood.score,
+    anxiety: anxiety.score,
+    focus: mood.score >= 8 ? 7 : mood.score >= 6 ? 6 : 4,
+    sleepHours: sleep.hours,
+    sleepQuality: sleep.quality,
+    appetite: 5,
+    energy,
+    irritability,
+    cravingsImpulsivity: cravings,
+    sideEffectsChecklist: [],
+    sideEffectsText: "",
+    trainingNotes: "",
+    gotOutOfBedOnTime: mood.score >= 6,
+    selfCareCompleted: mood.score >= 6,
+    keyTaskCompleted: mood.score >= 6,
+    exerciseOrWalkDone: false,
+    avoidedImpulsiveBehaviour: anxiety.score <= 6,
+    socialContactLevel,
+    functionScore: mood.score >= 8 ? 4 : mood.score >= 6 ? 3 : 2,
+    vitals: {
+      weight: "",
+      bpSystolic: "",
+      bpDiastolic: "",
+      hr: ""
+    },
+    entryMode: "quick_30s"
+  };
+}
+
+function upsertDailyCheckin(payloadInput) {
+  const payloadSource = payloadInput && typeof payloadInput === "object" ? payloadInput : {};
+  const duplicate = app.ownerData.checkins.find((entry) => entry.date === payloadSource.date);
+  const nowIso = isoDateTime(new Date());
+  const payload = normalizeCheckin({
+    ...payloadSource,
+    id: duplicate?.id || payloadSource.id || uid(),
+    createdAt: duplicate?.createdAt || payloadSource.createdAt || nowIso,
+    updatedAt: nowIso
+  });
+  if (duplicate) {
+    app.ownerData.checkins = app.ownerData.checkins.map((entry) => (entry.id === duplicate.id ? payload : entry));
+  } else {
+    app.ownerData.checkins.push(payload);
+  }
+  return { duplicate, payload };
+}
+
+function resolveDataConfidence(quality) {
+  const indicators = quality || {};
+  const checkinDays = Number(indicators.checkinDays || 0);
+  const missingDoseLogs = Number(indicators.missingDoseLogs || 0);
+  const incomplete = Number(indicators.incompleteExperiments || 0);
+  const lowConfidence = Number(indicators.lowConfidenceEntries || 0);
+
+  if (checkinDays < DATA_CONFIDENCE_MIN_CHECKINS || missingDoseLogs > 8 || incomplete > 0 || lowConfidence > 2) {
+    return {
+      level: "low",
+      label: "Low confidence",
+      summary: "Sparse coverage detected. Treat trend direction as provisional."
+    };
+  }
+
+  if (checkinDays < 7 || missingDoseLogs > 3 || lowConfidence > 0) {
+    return {
+      level: "medium",
+      label: "Moderate confidence",
+      summary: "Useful directional signal, but some gaps remain."
+    };
+  }
+
+  return {
+    level: "high",
+    label: "High confidence",
+    summary: "Coverage is stable enough for directional review."
+  };
+}
+
+function renderDataConfidenceBanner(quality, contextLabel = "selected window") {
+  const confidence = resolveDataConfidence(quality);
+  return `
+    <div class="confidence-banner confidence-${escapeHtml(confidence.level)}" role="status" aria-live="polite">
+      <strong>Data confidence (${escapeHtml(contextLabel)}): ${escapeHtml(confidence.label)}.</strong>
+      <span>${escapeHtml(confidence.summary)}</span>
+      <span>Check-ins ${escapeHtml(String(quality?.checkinDays ?? 0))}, missing dose logs ${escapeHtml(String(quality?.missingDoseLogs ?? 0))}, low-confidence entries ${escapeHtml(String(quality?.lowConfidenceEntries ?? 0))}.</span>
+    </div>
+  `;
 }
 
 function renderWorkflowForm(data) {
@@ -6958,10 +7730,18 @@ function renderWorkflowForm(data) {
     `;
   }
 
+  if (app.ui.checkinQuickMode) {
+    return renderQuickCheckin30sForm();
+  }
+
   const draft = buildCheckinDraftDefaults(data, app.drafts.checkin || {});
   return `
     <form id="formCheckin" class="card">
       <h3>Daily Wellbeing Check-in</h3>
+      <div class="checkin-mode-switch">
+        <button class="btn btn-primary small" type="button" data-checkin-mode="full">Full check-in</button>
+        <button class="btn btn-ghost small" type="button" data-checkin-mode="quick">30-second mode</button>
+      </div>
       <div class="inline-row">
         <button class="btn btn-ghost small" type="button" id="applyLastCheckinDefaults">Use last check-in values</button>
         <button class="btn btn-ghost small" type="button" id="resetCheckinDefaults">Reset to neutral</button>
@@ -7057,7 +7837,69 @@ function renderWorkflowForm(data) {
   `;
 }
 
+function renderQuickCheckin30sForm() {
+  const draft = normalizeQuickCheckin30sDraft(app.drafts.checkinQuick || DEFAULT_QUICK_CHECKIN_30S_STATE);
+  const selectionsDone = Number(Boolean(draft.mood)) + Number(Boolean(draft.anxiety)) + Number(Boolean(draft.sleep));
+  const isComplete = selectionsDone === 3;
+  const renderQuickGroup = (field, label, options) => `
+    <div class="quick30-group">
+      <div class="quick30-label">${escapeHtml(label)}</div>
+      <div class="chip-group">
+        ${options.map((option) => `
+          <button
+            class="chip ${String(draft[field] || "") === option.value ? "active" : ""}"
+            type="button"
+            data-quick-checkin-field="${escapeHtml(field)}"
+            data-quick-checkin-value="${escapeHtml(option.value)}"
+          >
+            ${escapeHtml(option.label)}
+          </button>
+        `).join("")}
+      </div>
+    </div>
+  `;
+
+  return `
+    <form id="formCheckinQuick" class="card quick30-card">
+      <h3>Daily Wellbeing Check-in (30-second mode)</h3>
+      <p class="helper-text">Three taps only: mood, anxiety, sleep. The check-in saves automatically when all three are selected.</p>
+      <div class="checkin-mode-switch">
+        <button class="btn btn-ghost small" type="button" data-checkin-mode="full">Full check-in</button>
+        <button class="btn btn-primary small" type="button" data-checkin-mode="quick">30-second mode</button>
+      </div>
+      <div class="field-grid">
+        <div>
+          <label for="quickCheckinDate">Date</label>
+          <input id="quickCheckinDate" name="date" type="date" value="${escapeHtml(draft.date || isoDate(new Date()))}" required>
+        </div>
+      </div>
+      ${renderQuickGroup("mood", "Mood", QUICK_CHECKIN_30S_OPTIONS.mood)}
+      ${renderQuickGroup("anxiety", "Anxiety", QUICK_CHECKIN_30S_OPTIONS.anxiety)}
+      ${renderQuickGroup("sleep", "Sleep", QUICK_CHECKIN_30S_OPTIONS.sleep)}
+      <div class="quick30-progress">
+        <span>${selectionsDone}/3 selected</span>
+        <span>${isComplete ? "Saving now..." : "Select all three to save."}</span>
+      </div>
+      <div class="inline-row">
+        <button class="btn btn-secondary small" type="button" data-quick-checkin-clear="1">Clear 30-second draft</button>
+      </div>
+    </form>
+  `;
+}
+
 function bindWorkflowFormHandlers(root, data) {
+  root.querySelectorAll("[data-checkin-mode]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const mode = String(button.dataset.checkinMode || "full");
+      app.ui.checkinQuickMode = mode === "quick";
+      if (!app.ui.checkinQuickMode) {
+        app.drafts.checkinQuick = { ...DEFAULT_QUICK_CHECKIN_30S_STATE };
+        saveDrafts();
+      }
+      renderAll();
+    });
+  });
+
   const medicationForm = root.querySelector("#formMedication");
   if (medicationForm) {
     medicationForm.addEventListener("input", () => {
@@ -7309,6 +8151,62 @@ function bindWorkflowFormHandlers(root, data) {
     });
   }
 
+  const quickCheckinForm = root.querySelector("#formCheckinQuick");
+  if (quickCheckinForm) {
+    const writeQuickDraft = (nextDraft) => {
+      app.drafts.checkinQuick = normalizeQuickCheckin30sDraft(nextDraft);
+      saveDrafts();
+    };
+
+    const tryAutoSaveQuickCheckin = () => {
+      const draft = normalizeQuickCheckin30sDraft(app.drafts.checkinQuick || {});
+      const payload = buildQuickCheckin30sPayload(draft);
+      if (!payload) {
+        renderAll();
+        return;
+      }
+
+      upsertDailyCheckin(payload);
+      saveOwnerData(app.ownerData);
+      app.drafts.checkinQuick = { ...DEFAULT_QUICK_CHECKIN_30S_STATE, date: draft.date || isoDate(new Date()) };
+      app.ui.checkinQuickMode = false;
+      saveDrafts();
+      setStatus("30-second check-in saved.");
+      app.ui.activeSection = "dashboard";
+      renderAll();
+    };
+
+    quickCheckinForm.querySelector("#quickCheckinDate")?.addEventListener("change", (event) => {
+      writeQuickDraft({
+        ...(app.drafts.checkinQuick || {}),
+        date: String(event.target.value || isoDate(new Date()))
+      });
+    });
+
+    quickCheckinForm.querySelectorAll("[data-quick-checkin-field]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const field = String(button.dataset.quickCheckinField || "");
+        const value = String(button.dataset.quickCheckinValue || "");
+        if (!["mood", "anxiety", "sleep"].includes(field)) return;
+        writeQuickDraft({
+          ...(app.drafts.checkinQuick || {}),
+          date: String(quickCheckinForm.elements.date?.value || isoDate(new Date())),
+          [field]: value
+        });
+        tryAutoSaveQuickCheckin();
+      });
+    });
+
+    quickCheckinForm.querySelectorAll("[data-quick-checkin-clear]").forEach((button) => {
+      button.addEventListener("click", () => {
+        app.drafts.checkinQuick = { ...DEFAULT_QUICK_CHECKIN_30S_STATE, date: isoDate(new Date()) };
+        saveDrafts();
+        setStatus("30-second draft cleared.");
+        renderAll();
+      });
+    });
+  }
+
   const checkinForm = root.querySelector("#formCheckin");
   if (checkinForm) {
     const writeCheckinDraftFromForm = () => {
@@ -7381,8 +8279,6 @@ function bindWorkflowFormHandlers(root, data) {
       const values = formToObject(checkinForm);
       const checklist = checkedValues(checkinForm, "sideEffectsChecklist");
 
-      const duplicate = app.ownerData.checkins.find((entry) => entry.date === values.date);
-
       const rangeValid = ["mood", "anxiety", "focus", "sleepQuality", "appetite", "energy", "irritability", "cravingsImpulsivity"].every((field) => {
         const value = Number(values[field]);
         return Number.isFinite(value) && value >= 0 && value <= 10;
@@ -7401,8 +8297,7 @@ function bindWorkflowFormHandlers(root, data) {
         Boolean(checkinForm.elements.avoidedImpulsiveBehaviour?.checked)
       ];
       const derivedFunctionScore = functionChecks.reduce((sum, value) => sum + Number(value), 0);
-      const payload = normalizeCheckin({
-        id: duplicate?.id || uid(),
+      const { duplicate } = upsertDailyCheckin({
         date: values.date,
         mood: Number(values.mood),
         anxiety: Number(values.anxiety),
@@ -7423,21 +8318,14 @@ function bindWorkflowFormHandlers(root, data) {
         avoidedImpulsiveBehaviour: Boolean(checkinForm.elements.avoidedImpulsiveBehaviour?.checked),
         socialContactLevel: values.socialContactLevel || "limited",
         functionScore: derivedFunctionScore,
+        entryMode: "full",
         vitals: {
           weight: values.weight || "",
           bpSystolic: values.bpSystolic || "",
           bpDiastolic: values.bpDiastolic || "",
           hr: values.hr || ""
-        },
-        createdAt: duplicate?.createdAt || nowIso,
-        updatedAt: nowIso
+        }
       });
-
-      if (duplicate) {
-        app.ownerData.checkins = app.ownerData.checkins.map((entry) => (entry.id === duplicate.id ? payload : entry));
-      } else {
-        app.ownerData.checkins.push(payload);
-      }
 
       const sideEffectText = String(values.sideEffectsText || "").trim();
       if (checklist.length || sideEffectText) {
@@ -7513,6 +8401,8 @@ function renderSharing(root, _data, context) {
   const defaultExpiry = draftShare.expiresAt || shiftDateKey(today, 30);
   const reminderSettings = normalizeReminderSettings(app.ownerData.reminderSettings);
   const ownerProfile = normalizeOwnerProfile(app.ownerData.profile);
+  const robotsMeta = String(document.querySelector("meta[name='robots']")?.getAttribute("content") || "index, follow").toLowerCase();
+  const siteVisibilityLabel = robotsMeta.includes("noindex") ? "Private (search engines blocked)" : "Public (indexable)";
   const warningSigns = normalizeWarningSigns(app.ownerData.warningSigns);
   const riskConfig = normalizeRiskConfig(app.ownerData.riskConfig);
   const shareLinksForPreview = app.ownerData.shareLinks.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -7714,10 +8604,20 @@ function renderSharing(root, _data, context) {
             <span>Enable personalized greeting and consistency feedback</span>
           </label>
         </div>
+        <div>
+          <label for="themePreference">Theme</label>
+          <select id="themePreference">
+            <option value="light" ${ownerProfile.themePreference === "light" ? "selected" : ""}>Light</option>
+            <option value="dark" ${ownerProfile.themePreference === "dark" ? "selected" : ""}>Dark</option>
+            <option value="system" ${ownerProfile.themePreference === "system" ? "selected" : ""}>System</option>
+          </select>
+          <p class="helper-text">Applies instantly and stays saved on this device.</p>
+        </div>
       </div>
       <div class="inline-row" style="margin-top:10px;">
         <button class="btn btn-secondary" type="button" id="saveProfileSettingsButton">Save personalization</button>
       </div>
+      <p class="helper-text" style="margin-top:8px;">Search visibility: ${escapeHtml(siteVisibilityLabel)}</p>
       ${LOCAL_ONLY_MODE
         ? `<p class="helper-text" style="margin-top:10px;">Local-only mode is active. No login or cloud account setup is required.</p>`
         : ""}
@@ -7777,6 +8677,18 @@ function renderSharing(root, _data, context) {
             <input type="checkbox" id="desktopNotificationsEnabled" ${reminderSettings.desktopNotifications ? "checked" : ""}>
             <span>Desktop notifications</span>
           </label>
+        </div>
+        <div>
+          <label class="check-item">
+            <input type="checkbox" id="quietUntilOverdueEnabled" ${reminderSettings.quietUntilOverdue ? "checked" : ""}>
+            <span>Quiet reminders until overdue</span>
+          </label>
+        </div>
+        <div>
+          <label for="overdueEscalationMinutes">Escalate when overdue by</label>
+          <select id="overdueEscalationMinutes">
+            ${[0, 5, 10, 15, 30, 45, 60].map((mins) => `<option value="${mins}" ${Number(reminderSettings.overdueEscalationMinutes) === mins ? "selected" : ""}>${mins === 0 ? "Immediately at due time" : `${mins} minutes`}</option>`).join("")}
+          </select>
         </div>
         <div>
           <label class="check-item">
@@ -7965,11 +8877,20 @@ function renderSharing(root, _data, context) {
   const syncOwnerKey = root.querySelector("#syncOwnerKey");
   const ownerDisplayName = root.querySelector("#ownerDisplayName");
   const personalizationEnabled = root.querySelector("#personalizationEnabled");
+  const themePreference = root.querySelector("#themePreference");
   const remindersEnabled = root.querySelector("#remindersEnabled");
   const reminderLeadMinutes = root.querySelector("#reminderLeadMinutes");
   const desktopNotificationsEnabled = root.querySelector("#desktopNotificationsEnabled");
+  const quietUntilOverdueEnabled = root.querySelector("#quietUntilOverdueEnabled");
+  const overdueEscalationMinutes = root.querySelector("#overdueEscalationMinutes");
   const riskAlertsEnabled = root.querySelector("#riskAlertsEnabled");
   const riskAlertsMinLevel = root.querySelector("#riskAlertsMinLevel");
+  const syncReminderModeControls = () => {
+    if (!overdueEscalationMinutes) return;
+    overdueEscalationMinutes.disabled = !quietUntilOverdueEnabled?.checked;
+  };
+  syncReminderModeControls();
+  quietUntilOverdueEnabled?.addEventListener("change", syncReminderModeControls);
   const requireCloudEndpoint = () => {
     if (normalizedApiBase()) return true;
     setStatus("Set your API endpoint first: Share -> Settings, then save sync settings.", "error");
@@ -8168,11 +9089,19 @@ function renderSharing(root, _data, context) {
   root.querySelector("#saveProfileSettingsButton")?.addEventListener("click", () => {
     app.ownerData.profile = normalizeOwnerProfile({
       displayName: String(ownerDisplayName?.value || ""),
-      personalizationEnabled: Boolean(personalizationEnabled?.checked)
+      personalizationEnabled: Boolean(personalizationEnabled?.checked),
+      themePreference: String(themePreference?.value || "light")
     });
     saveOwnerData(app.ownerData);
     setStatus("Personalization settings saved.");
     renderAll();
+  });
+
+  themePreference?.addEventListener("change", () => {
+    applyThemePreference({
+      ...ownerProfile,
+      themePreference: String(themePreference.value || "light")
+    });
   });
 
   root.querySelector("#saveSyncConfigButton")?.addEventListener("click", () => {
@@ -8226,6 +9155,8 @@ function renderSharing(root, _data, context) {
       enabled: remindersEnabled?.checked,
       leadMinutes: Number(reminderLeadMinutes?.value || 15),
       desktopNotifications: desktopNotificationsEnabled?.checked,
+      quietUntilOverdue: quietUntilOverdueEnabled?.checked,
+      overdueEscalationMinutes: Number(overdueEscalationMinutes?.value || 10),
       riskAlertsEnabled: riskAlertsEnabled?.checked,
       riskAlertsMinLevel: String(riskAlertsMinLevel?.value || "elevated")
     });
@@ -8676,6 +9607,7 @@ function renderExports(root, data, context) {
       cravings_impulsivity: entry.cravingsImpulsivity,
       function_score: entry.functionScore ?? "",
       social_contact_level: entry.socialContactLevel || "",
+      entry_mode: entry.entryMode || "full",
       got_out_of_bed_on_time: entry.gotOutOfBedOnTime ? "yes" : "no",
       self_care_completed: entry.selfCareCompleted ? "yes" : "no",
       key_task_completed: entry.keyTaskCompleted ? "yes" : "no",
@@ -9435,7 +10367,8 @@ function setFormBusy(form, busy, busyLabel) {
 function pushToast(message, type = "success") {
   if (!dom.toastStack) return;
   const toast = document.createElement("div");
-  toast.className = `toast ${type === "error" ? "error" : "success"}`;
+  const normalizedType = ["success", "error", "info", "warning"].includes(type) ? type : "success";
+  toast.className = `toast ${normalizedType}`;
   toast.textContent = message;
   dom.toastStack.appendChild(toast);
 
