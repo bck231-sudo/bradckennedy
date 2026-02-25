@@ -1395,7 +1395,35 @@ h4 {
 
 .today-summary-copy {
   display: grid;
-  gap: var(--space-1);
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.today-summary-pill {
+  border: var(--border-subtle);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffffff, #f4f8ff);
+  padding: 6px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: #435a76;
+  font-size: var(--font-2);
+  line-height: 1.35;
+  max-width: 100%;
+}
+
+.today-summary-pill .mini-icon {
+  flex: 0 0 auto;
+}
+
+.today-summary-pill span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.today-summary-pill-muted {
+  background: linear-gradient(180deg, #f8fbff, #f1f6ff);
 }
 
 .icon-dock-wrap {
@@ -1583,7 +1611,46 @@ h4 {
 }
 
 .dose-action-help {
-  max-width: 68ch;
+  margin: 10px 0 12px;
+  border: var(--border-subtle);
+  border-radius: var(--radius-2);
+  background: linear-gradient(180deg, #ffffff, #f7faff);
+  padding: var(--space-3);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.dose-action-help-head {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: #3f5876;
+}
+
+.dose-action-help-head strong {
+  font-size: var(--font-2);
+  letter-spacing: 0.01em;
+}
+
+.dose-action-help-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.dose-action-help-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: #536883;
+  font-size: var(--font-2);
+}
+
+.dose-action-help-list li span:last-child {
+  overflow-wrap: anywhere;
 }
 
 table {
@@ -2844,6 +2911,12 @@ body.app-ready .skeleton-shell {
   .today-summary-line {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .today-summary-pill {
+    width: 100%;
+    border-radius: var(--radius-2);
+    padding: 8px 10px;
   }
 
   .today-snapshot-grid {
@@ -5191,6 +5264,14 @@ body.consult-focus-mode .main {
 
   .table-wrap table {
     min-width: 520px;
+  }
+
+  .dose-action-help {
+    padding: var(--space-2);
+  }
+
+  .dose-action-help-list li {
+    align-items: flex-start;
   }
 }
 

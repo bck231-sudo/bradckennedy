@@ -4116,8 +4116,17 @@ function renderDashboard(root, data, context) {
         </div>
         <div class="today-summary-line">
           <div class="today-summary-copy">
-            <div class="subtle">${escapeHtml(nextDueLabel)}</div>
-            ${profile.personalizationEnabled ? `<div class="subtle">${escapeHtml(consistencyMessage)} ${checkinStreak ? `(${checkinStreak}d streak)` : ""}</div>` : ""}
+            <div class="today-summary-pill">
+              ${renderIcon("clock", "mini-icon soft", "Next dose")}
+              <span>${escapeHtml(nextDueLabel)}</span>
+            </div>
+            ${profile.personalizationEnabled ? `
+              <div class="today-summary-pill today-summary-pill-muted">
+                ${renderIcon("check", "mini-icon soft", "Consistency message")}
+                <span>${escapeHtml(consistencyMessage)}</span>
+                ${checkinStreak ? `<span class="pill-badge status-open">${checkinStreak}d streak</span>` : ""}
+              </div>
+            ` : ""}
           </div>
           ${ownerEditable ? `
             <div class="inline-row">
@@ -4133,7 +4142,17 @@ function renderDashboard(root, data, context) {
             <button class="btn btn-ghost small" type="button" data-dose-undo="1">Undo</button>
           </div>
         ` : ""}
-        <div class="subtle dose-action-help" style="margin: 8px 0 10px;">Actions update immediately. Taken confirms and timestamps, Skip logs not taken, Snooze delays reminders by ${DOSE_SNOOZE_MINUTES} minutes.</div>
+        <div class="dose-action-help" aria-label="Dose action guide">
+          <div class="dose-action-help-head">
+            ${renderIcon("bell", "mini-icon soft", "Dose action guide")}
+            <strong>Dose actions</strong>
+          </div>
+          <ul class="dose-action-help-list">
+            <li><span class="pill-badge status-open">Taken</span><span>confirms and adds a timestamp</span></li>
+            <li><span class="pill-badge status-discussed">Skip</span><span>logs as not taken</span></li>
+            <li><span class="pill-badge urgency-medium">Snooze</span><span>delays reminders by ${DOSE_SNOOZE_MINUTES} minutes</span></li>
+          </ul>
+        </div>
         ${renderDashboardDoseQueue(dueState, context, activeMeds)}
       </article>
 
