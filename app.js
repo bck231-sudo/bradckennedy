@@ -557,6 +557,7 @@ const app = {
       openQuestionsOnly: true,
       sideEffectsWindow: "all"
     },
+    consultWorkflowStep: "prepare",
     consultActivePane: "current",
     consultEditingExperimentId: "",
     consultEditingQuestionId: "",
@@ -611,6 +612,9 @@ if (app.drafts?.ui && typeof app.drafts.ui === "object") {
   }
   if (typeof app.drafts.ui.consultActivePane === "string") {
     app.ui.consultActivePane = app.drafts.ui.consultActivePane;
+  }
+  if (typeof app.drafts.ui.consultWorkflowStep === "string") {
+    app.ui.consultWorkflowStep = app.drafts.ui.consultWorkflowStep;
   }
 }
 
@@ -1508,7 +1512,8 @@ function persistUiDraftPreferences() {
   app.drafts.ui = {
     ...(app.drafts.ui || {}),
     dashboardCollapsedPanels: { ...(app.ui.dashboardCollapsedPanels || {}) },
-    consultActivePane: String(app.ui.consultActivePane || "current")
+    consultActivePane: String(app.ui.consultActivePane || "current"),
+    consultWorkflowStep: String(app.ui.consultWorkflowStep || "prepare")
   };
   saveDrafts();
 }
@@ -2154,6 +2159,7 @@ function bindGlobalHandlers() {
     }));
     saveOwnerData(app.ownerData);
     app.ui.activeSection = "consult";
+    app.ui.consultWorkflowStep = "prepare";
     app.ui.consultActivePane = "questions";
     persistUiDraftPreferences();
     setStatus("Added to consult question queue.");
@@ -3289,7 +3295,7 @@ function renderSectionMeta(context) {
   }
   const activeSection = String(app.ui.activeSection || "dashboard");
   const showQuickCheckin = !context.readOnly && ["dashboard", "checkins", "entry"].includes(activeSection);
-  const showAddToConsult = !context.readOnly && ["dashboard", "medications", "changes", "checkins", "notes", "consult", "timeline"].includes(activeSection);
+  const showAddToConsult = !context.readOnly && ["dashboard", "medications", "changes", "checkins", "notes", "timeline"].includes(activeSection);
   if (dom.quickCheckinButton) {
     dom.quickCheckinButton.hidden = !showQuickCheckin;
   }
@@ -4764,6 +4770,7 @@ function renderDashboard(root, data, context) {
     button.addEventListener("click", () => {
       if (context.readOnly) return;
       app.ui.activeSection = "consult";
+      app.ui.consultWorkflowStep = "prepare";
       app.ui.consultActivePane = "questions";
       persistUiDraftPreferences();
       renderAll();
@@ -6217,13 +6224,46 @@ function renderConsult(root, data, context) {
     ...(app.ui.consultFilters || {})
   };
   app.ui.consultFilters = filters;
-  const consultPaneOptions = ["current", "changes", "trends", "effects", "questions", "plan"];
-  if (!consultPaneOptions.includes(app.ui.consultActivePane)) {
-    app.ui.consultActivePane = "current";
+  const consultWorkflowSteps = [
+    {
+      id: "prepare",
+      label: "1. Prepare",
+      title: "Prepare",
+      hint: "Set your review window, confirm open questions, and define what to discuss."
+    },
+    {
+      id: "review",
+      label: "2. Review",
+      title: "Review",
+      hint: "Review meds, recent changes, trends, side effects, and adherence together."
+    },
+    {
+      id: "decide",
+      label: "3. Decide",
+      title: "Decide",
+      hint: "Capture decisions, plan next steps, and save appointment markers."
+    },
+    {
+      id: "export",
+      label: "4. Export",
+      title: "Export",
+      hint: "Generate a clean summary for print or PDF sharing."
+    }
+  ];
+  if (!consultWorkflowSteps.some((step) => step.id === app.ui.consultWorkflowStep)) {
+    app.ui.consultWorkflowStep = "prepare";
   }
-  const activeConsultPane = app.ui.consultActivePane;
-  const paneClass = (paneId) => (activeConsultPane === paneId ? "" : "consult-pane-hidden");
-  const paneAttrs = (paneId) => (activeConsultPane === paneId ? "" : `hidden aria-hidden="true"`);
+  const activeConsultStep = app.ui.consultWorkflowStep;
+  const activeStepIndex = Math.max(
+    0,
+    consultWorkflowSteps.findIndex((step) => step.id === activeConsultStep)
+  );
+  const currentStepMeta = consultWorkflowSteps[activeStepIndex];
+  const prevStep = consultWorkflowSteps[activeStepIndex - 1] || null;
+  const nextStep = consultWorkflowSteps[activeStepIndex + 1] || null;
+  const stepVisible = (...stepIds) => stepIds.includes(activeConsultStep);
+  const stepClass = (...stepIds) => (stepVisible(...stepIds) ? "" : "consult-pane-hidden");
+  const stepAttrs = (...stepIds) => (stepVisible(...stepIds) ? "" : `hidden aria-hidden="true"`);
   const windowRange = resolveConsultWindow(data, filters);
   const experiments = allExperiments.filter((entry) => {
     if (!inDateRangeKey(entry.dateEffective, windowRange.startDate, windowRange.endDate)) return false;
@@ -6339,16 +6379,35 @@ function renderConsult(root, data, context) {
   const appointmentPackSummary = buildAppointmentPackSummary(data);
 
   root.innerHTML = `
+    <article class="card consult-workflow">
+      <div class="card-head-row">
+        <div>
+          <h3>Consult workflow</h3>
+          <div class="subtle">Follow each step in order for a cleaner appointment flow.</div>
+        </div>
+        <div class="pill-badge status-upcoming">Step ${activeStepIndex + 1} of ${consultWorkflowSteps.length}: ${escapeHtml(currentStepMeta.title)}</div>
+      </div>
+      <div class="consult-stepper-row">
+        ${consultWorkflowSteps.map((step, index) => `
+          <button
+            class="consult-step-btn ${step.id === activeConsultStep ? "active" : ""}"
+            type="button"
+            data-consult-step="${step.id}"
+            aria-current="${step.id === activeConsultStep ? "step" : "false"}"
+          >
+            <span class="consult-step-index">${index + 1}</span>
+            <span>${escapeHtml(step.title)}</span>
+          </button>
+        `).join("")}
+      </div>
+      <div class="subtle consult-step-hint">${escapeHtml(currentStepMeta.hint)}</div>
+    </article>
+
     <article class="card consult-toolbar">
       <div class="card-head-row">
         <div>
           <h3>Consult controls</h3>
-          <div class="subtle">${escapeHtml(windowRange.label)} · Choose your review window, then step through each consult section.</div>
-        </div>
-        <div class="inline-row consult-toolbar-actions">
-          <button class="btn btn-primary small" type="button" data-consult-pack="1">Appointment Pack (14d)</button>
-          <button class="btn btn-secondary small" type="button" data-consult-copy="1">Copy summary</button>
-          <button class="btn btn-secondary small" type="button" data-consult-print="1">Print / Save PDF</button>
+          <div class="subtle">${escapeHtml(windowRange.label)} · tune the window before reviewing each step.</div>
         </div>
       </div>
       <div class="field-grid consult-filter-grid">
@@ -6382,21 +6441,9 @@ function renderConsult(root, data, context) {
       </div>
     </article>
 
-    <article class="card consult-quicknav">
-      <div class="subtle consult-pane-help">Focus section</div>
-      <div class="inline-row">
-        <button class="chip ${activeConsultPane === "current" ? "active" : ""}" type="button" data-consult-pane="current">Current meds</button>
-        <button class="chip ${activeConsultPane === "changes" ? "active" : ""}" type="button" data-consult-pane="changes">Change log</button>
-        <button class="chip ${activeConsultPane === "trends" ? "active" : ""}" type="button" data-consult-pane="trends">Trend snapshot</button>
-        <button class="chip ${activeConsultPane === "effects" ? "active" : ""}" type="button" data-consult-pane="effects">Side effects</button>
-        <button class="chip ${activeConsultPane === "questions" ? "active" : ""}" type="button" data-consult-pane="questions">Questions</button>
-        <button class="chip ${activeConsultPane === "plan" ? "active" : ""}" type="button" data-consult-pane="plan">Decision plan</button>
-      </div>
-    </article>
-
     <div class="consult-grid">
-      ${confidenceBanner}
-      <article class="card consult-section consult-kpi-overview consult-section-full" id="consult-snapshot">
+      ${stepVisible("prepare", "review", "decide") ? confidenceBanner : ""}
+      <article class="card consult-section consult-kpi-overview consult-section-full consult-pane ${stepClass("prepare", "review", "decide")}" id="consult-snapshot" ${stepAttrs("prepare", "review", "decide")}>
         <h3>Consult snapshot</h3>
         <div class="summary-strip-grid consult-summary-strip">
           <div class="summary-strip-item">
@@ -6417,7 +6464,7 @@ function renderConsult(root, data, context) {
           </div>
         </div>
       </article>
-      <article class="card consult-section consult-section-main consult-pane ${paneClass("current")}" id="consult-current" ${paneAttrs("current")}>
+      <article class="card consult-section consult-section-main consult-pane ${stepClass("review", "export")}" id="consult-current" ${stepAttrs("review", "export")}>
         <h3>Current medications</h3>
         ${meds.length ? `
           <div class="consult-table-only table-wrap">
@@ -6461,7 +6508,7 @@ function renderConsult(root, data, context) {
         ` : `<div class="empty">No active medications recorded.</div>`}
       </article>
 
-      <article class="card consult-section consult-section-main consult-pane ${paneClass("changes")}" id="consult-changes" ${paneAttrs("changes")}>
+      <article class="card consult-section consult-section-main consult-pane ${stepClass("review", "export")}" id="consult-changes" ${stepAttrs("review", "export")}>
         <h3>Medication changes</h3>
         ${experiments.length ? `
           <div class="consult-table-only table-wrap">
@@ -6522,7 +6569,7 @@ function renderConsult(root, data, context) {
         ` : `<div class="empty">No medication changes in this window.</div>`}
       </article>
 
-      <article class="card consult-section consult-section-main consult-pane ${paneClass("trends")}" id="consult-trends" ${paneAttrs("trends")}>
+      <article class="card consult-section consult-section-main consult-pane ${stepClass("review")}" id="consult-trends" ${stepAttrs("review")}>
         <h3>What improved / worsened</h3>
         ${renderDataConfidenceBanner(quality, "trend interpretation")}
         <div class="subtle">${escapeHtml(shiftSummary.summary)}</div>
@@ -6536,7 +6583,7 @@ function renderConsult(root, data, context) {
         </div>
       </article>
 
-      <article class="card consult-section consult-section-main consult-pane ${paneClass("effects")}" id="consult-effects" ${paneAttrs("effects")}>
+      <article class="card consult-section consult-section-main consult-pane ${stepClass("review")}" id="consult-effects" ${stepAttrs("review")}>
         <h3>Side effects summary</h3>
         ${sideEffectSummary.length ? `
           <ul class="timeline-list consult-list consult-effects-list">
@@ -6557,7 +6604,7 @@ function renderConsult(root, data, context) {
         ` : `<div class="empty">No side-effect timing events in this window.</div>`}
       </article>
 
-      <article class="card consult-section consult-section-main consult-pane ${paneClass("trends")}" id="consult-adherence" ${paneAttrs("trends")}>
+      <article class="card consult-section consult-section-main consult-pane ${stepClass("review", "export")}" id="consult-adherence" ${stepAttrs("review", "export")}>
         <h3>Adherence summary</h3>
         <div class="summary-strip-grid consult-summary-strip">
           <div class="summary-strip-item"><div class="summary-strip-label">Taken</div><div class="summary-strip-value">${takenCount}</div></div>
@@ -6567,7 +6614,7 @@ function renderConsult(root, data, context) {
         </div>
       </article>
 
-      <article class="card consult-section consult-section-side consult-pane ${paneClass("questions")}" id="consult-questions" ${paneAttrs("questions")}>
+      <article class="card consult-section consult-section-side consult-pane ${stepClass("prepare", "decide", "export")}" id="consult-questions" ${stepAttrs("prepare", "decide", "export")}>
         <div class="card-head-row">
           <div>
             <h3>Question queue</h3>
@@ -6640,7 +6687,7 @@ function renderConsult(root, data, context) {
         ` : ""}
       </article>
 
-      <article class="card consult-section consult-section-side consult-pane ${paneClass("plan")}" id="consult-plan" ${paneAttrs("plan")}>
+      <article class="card consult-section consult-section-side consult-pane ${stepClass("decide", "export")}" id="consult-plan" ${stepAttrs("decide", "export")}>
         <h3>Decision log and current plan</h3>
         ${latestDecision ? `
           <div class="consult-plan-highlight">
@@ -6694,7 +6741,7 @@ function renderConsult(root, data, context) {
         ` : ""}
       </article>
 
-      <article class="card consult-section consult-section-side consult-pane ${paneClass("plan")}" id="consult-focus" ${paneAttrs("plan")}>
+      <article class="card consult-section consult-section-side consult-pane ${stepClass("prepare", "decide", "export")}" id="consult-focus" ${stepAttrs("prepare", "decide", "export")}>
         <div class="card-head-row">
           <div>
             <h3>What I want to discuss today</h3>
@@ -6713,7 +6760,7 @@ function renderConsult(root, data, context) {
         ` : `<div class="subtle">${focusText ? escapeHtml(focusText) : "No consult focus text provided."}</div>`}
       </article>
 
-      <article class="card consult-section consult-section-side consult-section-collapsible consult-pane ${paneClass("plan")}" id="consult-quality" ${paneAttrs("plan")}>
+      <article class="card consult-section consult-section-side consult-section-collapsible consult-pane ${stepClass("decide", "export")}" id="consult-quality" ${stepAttrs("decide", "export")}>
         <h3>Data quality</h3>
         <ul class="timeline-list consult-list">
           <li>Days without check-in: <strong>${quality.daysWithoutCheckin}</strong></li>
@@ -6724,7 +6771,7 @@ function renderConsult(root, data, context) {
         <div class="subtle">Use this context to avoid over-interpreting sparse data.</div>
       </article>
 
-      <article class="card consult-section consult-section-side consult-section-collapsible consult-pane ${paneClass("plan")}" id="consult-appointments" ${paneAttrs("plan")}>
+      <article class="card consult-section consult-section-side consult-section-collapsible consult-pane ${stepClass("decide", "export")}" id="consult-appointments" ${stepAttrs("decide", "export")}>
         <h3>Appointment markers</h3>
         ${appointments.length ? `
           <ul class="timeline-list consult-list">
@@ -6750,7 +6797,7 @@ function renderConsult(root, data, context) {
         ` : ""}
       </article>
 
-      <article class="card consult-section consult-section-side consult-section-collapsible consult-pane ${paneClass("changes")}" id="consult-experiments" ${paneAttrs("changes")}>
+      <article class="card consult-section consult-section-side consult-section-collapsible consult-pane ${stepClass("review", "decide")}" id="consult-experiments" ${stepAttrs("review", "decide")}>
         <h3>Medication change experiment log</h3>
         ${ownerEditable ? `
           <details class="consult-editor" id="consultExperimentEditor" ${editingExperiment ? "open" : ""}>
@@ -6782,7 +6829,26 @@ function renderConsult(root, data, context) {
           </details>
         ` : `<div class="subtle">Experiment log is editable in owner mode only.</div>`}
       </article>
+      <article class="card consult-section consult-section-full consult-pane consult-export-pane ${stepClass("export")}" id="consult-export" ${stepAttrs("export")}>
+        <div class="card-head-row">
+          <div>
+            <h3>Export-ready consult summary</h3>
+            <div class="subtle">Use this section to print or share a concise appointment summary.</div>
+          </div>
+          <div class="inline-row consult-toolbar-actions">
+            <button class="btn btn-primary small" type="button" data-consult-pack="1">Appointment Pack (14d)</button>
+            <button class="btn btn-secondary small" type="button" data-consult-copy="1">Copy summary</button>
+            <button class="btn btn-secondary small" type="button" data-consult-print="1">Print / Save PDF</button>
+          </div>
+        </div>
+        <pre class="consult-export-preview">${escapeHtml(clipboardSummary)}</pre>
+      </article>
     </div>
+    <article class="card consult-step-actions" aria-label="Consult workflow navigation">
+      <button class="btn btn-secondary" type="button" data-consult-step-prev="1" ${prevStep ? "" : "disabled"}>Back</button>
+      <div class="subtle">Step ${activeStepIndex + 1} of ${consultWorkflowSteps.length}: ${escapeHtml(currentStepMeta.title)}</div>
+      <button class="btn btn-primary" type="button" data-consult-step-next="1" ${nextStep ? "" : "disabled"}>${nextStep ? "Next" : "Done"}</button>
+    </article>
   `;
 
   root.querySelector("#consultRangeFilter")?.addEventListener("change", (event) => {
@@ -6829,61 +6895,81 @@ function renderConsult(root, data, context) {
     }
     renderAll();
   });
-  root.querySelector("[data-consult-copy]")?.addEventListener("click", async () => {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(clipboardSummary);
-      } else {
-        const temp = document.createElement("textarea");
-        temp.value = clipboardSummary;
-        temp.setAttribute("readonly", "true");
-        temp.style.position = "fixed";
-        temp.style.opacity = "0";
-        document.body.appendChild(temp);
-        temp.select();
-        document.execCommand("copy");
-        temp.remove();
-      }
-      setStatus("Consult summary copied to clipboard.");
-    } catch (error) {
-      console.error("Failed to copy consult summary", error);
-      setStatus("Could not copy consult summary. Try Print / Save PDF instead.", "error");
-    }
-  });
-  root.querySelector("[data-consult-pack]")?.addEventListener("click", async () => {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(appointmentPackSummary);
-      }
-      const html = buildClinicianSummaryHtml(data, "14");
-      const popup = window.open("", "_blank", "noopener,noreferrer,width=1024,height=900");
-      if (!popup) {
-        setStatus("Popup blocked. Allow popups to open the Appointment Pack preview.", "error");
-        return;
-      }
-      popup.document.write(html);
-      popup.document.close();
-      popup.focus();
-      setStatus("Appointment Pack ready: 14-day summary copied and print view opened.");
-    } catch (error) {
-      console.error("Failed to generate appointment pack", error);
-      setStatus("Could not generate Appointment Pack. Try again or use Print / Save PDF.", "error");
-    }
-  });
-  root.querySelector("[data-consult-print]")?.addEventListener("click", () => window.print());
-  root.querySelector("[data-consult-focus-questions]")?.addEventListener("click", () => {
-    const editor = root.querySelector("#consultQuestionEditor");
-    if (editor) editor.open = true;
-    root.querySelector("#consultQuestionForm input[name='text']")?.focus();
-  });
-  root.querySelectorAll("[data-consult-pane]").forEach((button) => {
+  root.querySelectorAll("[data-consult-step]").forEach((button) => {
     button.addEventListener("click", () => {
-      const targetPane = String(button.dataset.consultPane || "").trim();
-      if (!consultPaneOptions.includes(targetPane)) return;
-      app.ui.consultActivePane = targetPane;
+      const targetStep = String(button.dataset.consultStep || "").trim();
+      if (!consultWorkflowSteps.some((step) => step.id === targetStep)) return;
+      app.ui.consultWorkflowStep = targetStep;
       persistUiDraftPreferences();
       renderAll();
     });
+  });
+  root.querySelector("[data-consult-step-prev]")?.addEventListener("click", () => {
+    if (!prevStep) return;
+    app.ui.consultWorkflowStep = prevStep.id;
+    persistUiDraftPreferences();
+    renderAll();
+  });
+  root.querySelector("[data-consult-step-next]")?.addEventListener("click", () => {
+    if (!nextStep) return;
+    app.ui.consultWorkflowStep = nextStep.id;
+    persistUiDraftPreferences();
+    renderAll();
+  });
+  root.querySelectorAll("[data-consult-copy]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(clipboardSummary);
+        } else {
+          const temp = document.createElement("textarea");
+          temp.value = clipboardSummary;
+          temp.setAttribute("readonly", "true");
+          temp.style.position = "fixed";
+          temp.style.opacity = "0";
+          document.body.appendChild(temp);
+          temp.select();
+          document.execCommand("copy");
+          temp.remove();
+        }
+        setStatus("Consult summary copied to clipboard.");
+      } catch (error) {
+        console.error("Failed to copy consult summary", error);
+        setStatus("Could not copy consult summary. Try Print / Save PDF instead.", "error");
+      }
+    });
+  });
+  root.querySelectorAll("[data-consult-pack]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(appointmentPackSummary);
+        }
+        const html = buildClinicianSummaryHtml(data, "14");
+        const popup = window.open("", "_blank", "noopener,noreferrer,width=1024,height=900");
+        if (!popup) {
+          setStatus("Popup blocked. Allow popups to open the Appointment Pack preview.", "error");
+          return;
+        }
+        popup.document.write(html);
+        popup.document.close();
+        popup.focus();
+        setStatus("Appointment Pack ready: 14-day summary copied and print view opened.");
+      } catch (error) {
+        console.error("Failed to generate appointment pack", error);
+        setStatus("Could not generate Appointment Pack. Try again or use Print / Save PDF.", "error");
+      }
+    });
+  });
+  root.querySelectorAll("[data-consult-print]").forEach((button) => {
+    button.addEventListener("click", () => window.print());
+  });
+  root.querySelector("[data-consult-focus-questions]")?.addEventListener("click", () => {
+    app.ui.consultWorkflowStep = "prepare";
+    persistUiDraftPreferences();
+    const editor = root.querySelector("#consultQuestionEditor");
+    if (editor) editor.open = true;
+    root.querySelector("#consultQuestionForm input[name='text']")?.focus();
   });
 
   if (!ownerEditable) return;
@@ -6942,6 +7028,8 @@ function renderConsult(root, data, context) {
   root.querySelectorAll("[data-edit-question]").forEach((button) => {
     button.addEventListener("click", () => {
       app.ui.consultEditingQuestionId = String(button.dataset.editQuestion || "");
+      app.ui.consultWorkflowStep = "prepare";
+      persistUiDraftPreferences();
       renderAll();
     });
   });
@@ -6963,6 +7051,8 @@ function renderConsult(root, data, context) {
   root.querySelectorAll("[data-edit-experiment]").forEach((button) => {
     button.addEventListener("click", () => {
       app.ui.consultEditingExperimentId = String(button.dataset.editExperiment || "");
+      app.ui.consultWorkflowStep = "review";
+      persistUiDraftPreferences();
       renderAll();
     });
   });
@@ -7008,6 +7098,8 @@ function renderConsult(root, data, context) {
   root.querySelectorAll("[data-edit-decision]").forEach((button) => {
     button.addEventListener("click", () => {
       app.ui.consultEditingDecisionId = String(button.dataset.editDecision || "");
+      app.ui.consultWorkflowStep = "decide";
+      persistUiDraftPreferences();
       renderAll();
     });
   });
@@ -7070,6 +7162,8 @@ function renderConsult(root, data, context) {
   root.querySelectorAll("[data-edit-appointment]").forEach((button) => {
     button.addEventListener("click", () => {
       app.ui.consultEditingAppointmentId = String(button.dataset.editAppointment || "");
+      app.ui.consultWorkflowStep = "decide";
+      persistUiDraftPreferences();
       renderAll();
     });
   });

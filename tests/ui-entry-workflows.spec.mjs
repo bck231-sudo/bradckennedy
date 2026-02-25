@@ -90,4 +90,31 @@ test.describe("Entry workflow interactions", () => {
     await page.locator('[data-topnav-id="dashboard"]').click();
     await expect(page.locator("#sectionTitle")).toContainText("Dashboard");
   });
+
+  test("consult workflow stepper moves through prepare, review, decide, and export", async ({ page }) => {
+    await page.locator('[data-topnav-id="consult"]').click();
+    await expect(page.locator("#sectionTitle")).toContainText("Consult");
+
+    const stepPrepare = page.locator('[data-consult-step="prepare"]');
+    const stepReview = page.locator('[data-consult-step="review"]');
+    const stepDecide = page.locator('[data-consult-step="decide"]');
+    const stepExport = page.locator('[data-consult-step="export"]');
+
+    await expect(stepPrepare).toHaveClass(/active/);
+    await page.locator('[data-consult-step-next="1"]').click();
+    await expect(stepReview).toHaveClass(/active/);
+    await expect(page.locator("#consult-current")).toBeVisible();
+
+    await page.locator('[data-consult-step-next="1"]').click();
+    await expect(stepDecide).toHaveClass(/active/);
+    await expect(page.locator("#consult-plan")).toBeVisible();
+
+    await page.locator('[data-consult-step-next="1"]').click();
+    await expect(stepExport).toHaveClass(/active/);
+    await expect(page.locator("#consult-export")).toBeVisible();
+    await expect(page.locator('[data-consult-copy]').first()).toBeVisible();
+
+    await page.locator('[data-consult-step-prev="1"]').click();
+    await expect(stepDecide).toHaveClass(/active/);
+  });
 });

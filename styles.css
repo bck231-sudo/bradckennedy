@@ -3907,6 +3907,205 @@ body.viewer-mode #readOnlyBanner {
   }
 }
 
+/* Consult wizard renovation */
+#section-consult {
+  display: grid;
+  gap: var(--space-3);
+}
+
+#section-consult .consult-workflow,
+#section-consult .consult-toolbar,
+#section-consult .consult-grid,
+#section-consult .consult-step-actions {
+  max-width: 1240px;
+  margin-inline: auto;
+  width: 100%;
+}
+
+#section-consult .consult-workflow {
+  border: var(--border-subtle);
+  box-shadow: var(--shadow-light);
+  padding: var(--space-4);
+}
+
+#section-consult .consult-stepper-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+#section-consult .consult-step-btn {
+  min-width: 0;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border-radius: var(--radius-2);
+  border: var(--border-subtle);
+  background: linear-gradient(180deg, #ffffff, #f5f8fd);
+  color: #4a5f7a;
+  font-weight: 700;
+  padding: 0 var(--space-3);
+  transition: background var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast), transform var(--motion-fast);
+}
+
+#section-consult .consult-step-btn .consult-step-index {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  background: #e8eef8;
+  color: #3f5874;
+}
+
+#section-consult .consult-step-btn.active {
+  background: var(--gradient-sky);
+  border-color: #4c8ff8;
+  color: #fff;
+}
+
+#section-consult .consult-step-btn.active .consult-step-index {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+#section-consult .consult-step-hint {
+  margin-top: var(--space-2);
+}
+
+#section-consult .consult-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  align-items: start;
+}
+
+#section-consult .consult-section {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+#section-consult .consult-section-full {
+  grid-column: 1 / -1;
+}
+
+#section-consult .consult-pane-hidden {
+  display: none !important;
+}
+
+#section-consult .consult-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+#section-consult .consult-table th,
+#section-consult .consult-table td {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  vertical-align: top;
+}
+
+#section-consult .consult-export-preview {
+  margin-top: var(--space-3);
+  border: var(--border-subtle);
+  border-radius: var(--radius-2);
+  background: #f9fbff;
+  padding: var(--space-3);
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  line-height: 1.45;
+  font-family: "ui-monospace", SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
+#section-consult .consult-step-actions {
+  position: sticky;
+  bottom: calc(78px + env(safe-area-inset-bottom));
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: var(--border-subtle);
+  box-shadow: var(--shadow-medium);
+  background: linear-gradient(180deg, #ffffff, #f6f9ff);
+}
+
+#section-consult .consult-step-actions .subtle {
+  text-align: center;
+  min-width: 0;
+}
+
+@media (max-width: 1100px) {
+  #section-consult .consult-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #section-consult .consult-stepper-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  #section-consult .consult-workflow,
+  #section-consult .consult-toolbar,
+  #section-consult .consult-grid,
+  #section-consult .consult-step-actions {
+    max-width: none;
+  }
+
+  #section-consult .consult-workflow,
+  #section-consult .consult-toolbar,
+  #section-consult .consult-section {
+    padding: var(--space-3);
+  }
+
+  #section-consult .consult-stepper-row {
+    grid-template-columns: 1fr;
+  }
+
+  #section-consult .consult-step-btn {
+    justify-content: flex-start;
+  }
+
+  #section-consult .consult-toolbar .field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #section-consult .consult-table-only {
+    display: none !important;
+  }
+
+  #section-consult .consult-cards-only {
+    display: block !important;
+  }
+
+  #section-consult .consult-step-actions {
+    bottom: calc(94px + env(safe-area-inset-bottom));
+    flex-wrap: wrap;
+  }
+
+  #section-consult .consult-step-actions .btn {
+    flex: 1 1 140px;
+    min-height: 44px;
+  }
+}
+
+@media print {
+  #section-consult .consult-workflow,
+  #section-consult .consult-step-actions {
+    display: none !important;
+  }
+}
+
 /* Consult readability final pass: cleaner hierarchy, safer overflow, better mobile flow */
 body.consult-focus-mode .layout {
   grid-template-columns: minmax(0, 1fr);
