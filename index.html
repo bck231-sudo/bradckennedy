@@ -32,6 +32,7 @@
   <nav class="top-navbar navbar panel" aria-label="Primary navigation">
     <div id="topNavLinks" class="top-navbar-nav nav nav-pills">
       <button type="button" class="top-nav-link nav-link active" data-topnav-id="dashboard" aria-label="Open dashboard">Dashboard</button>
+      <button type="button" class="top-nav-link nav-link" data-topnav-id="consult" aria-label="Open consult">Consult</button>
       <button type="button" class="top-nav-link nav-link" data-topnav-id="history" aria-label="Open history">History</button>
       <button type="button" class="top-nav-link nav-link" data-topnav-id="settings" aria-label="Open settings">Settings</button>
       <button type="button" class="top-nav-link nav-link" data-topnav-id="share" aria-label="Open sharing">Share</button>
@@ -40,38 +41,32 @@
 
   <div class="layout">
     <aside class="sidebar panel">
-      <div class="sidebar-control">
-        <label for="viewerModeSegment">Viewer Context</label>
-        <div id="viewerModeSegment" class="segmented-control" role="tablist" aria-label="Viewer context"></div>
-        <select id="viewerModeSelect" class="hidden-native-control"></select>
-      </div>
-
-      <div class="sidebar-control">
-        <label for="viewModeSelect">Data View</label>
-        <select id="viewModeSelect"></select>
-      </div>
-
-      <div class="sidebar-control hidden" id="previewLinkControl">
-        <label for="previewLinkSelect">Preview Shared Link</label>
-        <select id="previewLinkSelect"></select>
-      </div>
-
       <nav id="sectionNav" class="section-nav"></nav>
 
       <div class="sidebar-footnote">
-        <p id="contextPill" class="pill">Owner View</p>
+        <p id="contextPill" class="pill">My View</p>
       </div>
     </aside>
 
     <main class="main panel">
       <header class="main-header">
-        <div>
+        <div class="main-header-meta">
           <h2 id="sectionTitle">Dashboard</h2>
           <p id="sectionSubtitle">Today at a glance.</p>
+          <div class="header-mode-control">
+            <label for="viewerModeSegment">Mode</label>
+            <div id="viewerModeSegment" class="segmented-control segmented-control-header" role="tablist" aria-label="Viewer context"></div>
+            <select id="viewerModeSelect" class="hidden-native-control"></select>
+            <select id="viewModeSelect" class="hidden-native-control"></select>
+          </div>
+          <div id="previewLinkControl" class="hidden" aria-hidden="true">
+            <select id="previewLinkSelect" class="hidden-native-control"></select>
+          </div>
         </div>
         <div class="header-actions">
           <span id="roleBadge" class="role-badge is-owner" aria-live="polite">Owner</span>
           <button id="installAppButton" class="btn btn-ghost" type="button" hidden>Install app</button>
+          <button id="addToConsultButton" class="btn btn-secondary" type="button">Add to Consult</button>
           <button id="quickCheckinButton" class="btn btn-primary btn-large" type="button">Quick check-in</button>
         </div>
       </header>
@@ -96,6 +91,7 @@
       <section id="section-changes" class="section hidden"></section>
       <section id="section-checkins" class="section hidden"></section>
       <section id="section-notes" class="section hidden"></section>
+      <section id="section-consult" class="section hidden"></section>
       <section id="section-timeline" class="section hidden"></section>
       <section id="section-entry" class="section hidden"></section>
       <section id="section-sharing" class="section hidden"></section>
@@ -112,7 +108,7 @@
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="medModalTitle">
       <div class="modal-header">
         <h3 id="medModalTitle">Medication Details</h3>
-        <button id="closeMedicationModal" type="button" class="icon-button" aria-label="Close">✕</button>
+        <button id="closeMedicationModal" type="button" class="icon-button" aria-label="Close" hidden>✕</button>
       </div>
       <div id="medicationModalBody" class="modal-body"></div>
     </div>
@@ -120,6 +116,6 @@
 
   <datalist id="commonMedicationNames"></datalist>
 
-  <script type="module" src="./app.js?v=20260224-1"></script>
+  <script type="module" src="./app.js?v=20260224-3"></script>
 </body>
 </html>

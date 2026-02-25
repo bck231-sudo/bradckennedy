@@ -18,6 +18,7 @@ import {
   normalizeWarningSigns
 } from "./risk-engine.js";
 import { createStorageService } from "./storage-service.js";
+import { buildDataQualityIndicators, computeBeforeAfterComparison } from "./consult-engine.js";
 
 const STORAGE_KEY = "medication_tracker_data_v1";
 const DRAFT_KEY = "medication_tracker_drafts_v2";
@@ -35,6 +36,24 @@ const UTILITY_PANEL_MIN_WIDTH = 1500;
 const PRODUCTION_SYNC_ENDPOINT = "https://medication-tracker-api.onrender.com";
 const LOCAL_ONLY_MODE = true;
 const SUMMARY_RANGE_OPTIONS = ["7", "14", "30"];
+const CONSULT_RANGE_OPTIONS = ["7", "14", "30"];
+const CONSULT_QUESTION_URGENCY_RANK = Object.freeze({
+  high: 0,
+  medium: 1,
+  low: 2
+});
+const CONSULT_QUESTION_STATUS_RANK = Object.freeze({
+  open: 0,
+  carry_forward: 1,
+  discussed: 2,
+  resolved: 3
+});
+const CONSULT_QUESTION_STATUS_LABELS = Object.freeze({
+  open: "open",
+  carry_forward: "carry forward",
+  discussed: "discussed",
+  resolved: "resolved"
+});
 const TIMELINE_LAZY_CHART_DEFAULTS = Object.freeze({
   adherence: true,
   symptoms: true,
@@ -87,16 +106,16 @@ const SCHEDULE_PRESETS = {
 const SCHEDULE_PRESET_ORDER = ["am", "pm", "bid", "tid", "prn", "custom"];
 
 const VIEWER_MODE_OPTIONS = {
-  my: { label: "Owner", shortLabel: "Owner" },
-  clinician: { label: "Clinician", shortLabel: "Clinician" },
+  my: { label: "My View", shortLabel: "My View" },
+  clinician: { label: "Psychiatrist View", shortLabel: "Psychiatrist" },
   family: { label: "Family", shortLabel: "Family" },
   preview_link: { label: "Shared Preview", shortLabel: "Shared Preview" }
 };
 const VIEWER_MODE_ORDER = ["my", "family", "clinician", "preview_link"];
 
 const VIEWER_BADGES = {
-  owner: "Owner View (Editable)",
-  clinician: "Clinician View (Read-only)",
+  owner: "My View (Editable)",
+  clinician: "Psychiatrist View (Read-only)",
   family: "Family View (Simplified)",
   preview_link: "Shared Preview (Read-only)",
   share: "Shared Link View (Read-only)"
@@ -153,6 +172,14 @@ const TOP_NAV_ITEMS = [
     primarySection: "dashboard",
     fallbackSections: [],
     preferredModes: ["daily", "clinical", "personal"]
+  },
+  {
+    id: "consult",
+    label: "Consult",
+    icon: "stethoscope",
+    primarySection: "consult",
+    fallbackSections: ["timeline"],
+    preferredModes: ["clinical", "personal"]
   },
   {
     id: "history",
@@ -307,6 +334,14 @@ const SECTION_META = [
     viewModes: ["clinical", "personal"]
   },
   {
+    id: "consult",
+    label: "Consult",
+    icon: "stethoscope",
+    title: "Consult",
+    subtitle: "Psychiatrist-focused review summary for appointments and continuity.",
+    viewModes: ["clinical", "personal"]
+  },
+  {
     id: "timeline",
     label: "Charts & Timeline",
     icon: "chart",
@@ -353,8 +388,11 @@ const ICON_SVG_PATHS = Object.freeze({
   share: `<path d="M15 8a3 3 0 1 0-2.8-4h-.4A3 3 0 0 0 9 8c0 .3 0 .6.1.9l-4 2.3a3 3 0 1 0 1.4 2.6c0-.3 0-.6-.1-.9l4-2.3A3 3 0 0 0 12 11c1.2 0 2.2-.6 2.8-1.5l4.2 2.4a3 3 0 1 0 .9-1.5L15.5 8z"/>`,
   download: `<path d="M12 3v11"/><path d="m8 10 4 4 4-4"/><path d="M4 20h16"/>`,
   bell: `<path d="M15 17h5l-1.5-1.5a2 2 0 0 1-.5-1.3V11a6 6 0 1 0-12 0v3.2c0 .5-.2 1-.5 1.3L4 17h5"/><path d="M9.5 17a2.5 2.5 0 0 0 5 0"/>`,
+  check: `<path d="m5 12 4 4 10-10"/>`,
+  calendar: `<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M7 3.5v3"/><path d="M17 3.5v3"/><path d="M3.5 9.5h17"/>`,
   pulse: `<path d="M3 12h4l2.3-4 4.2 8 2.2-4H21"/>`,
-  clock: `<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>`
+  clock: `<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>`,
+  stethoscope: `<path d="M7 4v4a4 4 0 1 0 8 0V4"/><path d="M9 4v4a2 2 0 1 0 4 0V4"/><path d="M15 12v2a4 4 0 1 0 8 0v-1"/><circle cx="22" cy="12" r="2"/>`
 });
 
 const dom = {
@@ -370,6 +408,7 @@ const dom = {
   sectionSubtitle: document.getElementById("sectionSubtitle"),
   roleBadge: document.getElementById("roleBadge"),
   installAppButton: document.getElementById("installAppButton"),
+  addToConsultButton: document.getElementById("addToConsultButton"),
   quickCheckinButton: document.getElementById("quickCheckinButton"),
   readOnlyBanner: document.getElementById("readOnlyBanner"),
   offlineBanner: document.getElementById("offlineBanner"),
@@ -388,6 +427,7 @@ const dom = {
     changes: document.getElementById("section-changes"),
     checkins: document.getElementById("section-checkins"),
     notes: document.getElementById("section-notes"),
+    consult: document.getElementById("section-consult"),
     timeline: document.getElementById("section-timeline"),
     entry: document.getElementById("section-entry"),
     sharing: document.getElementById("section-sharing"),
@@ -432,7 +472,18 @@ const app = {
       rangeDays: "14",
       fromDate: "",
       toDate: ""
-    }
+    },
+    consultFilters: {
+      range: "since_last_appointment",
+      medicationId: "all",
+      customRangeDays: "14",
+      openQuestionsOnly: true,
+      sideEffectsWindow: "all"
+    },
+    consultEditingExperimentId: "",
+    consultEditingQuestionId: "",
+    consultEditingDecisionId: "",
+    consultEditingAppointmentId: ""
   },
   statusTimeout: null,
   doseUndoTimeout: null,
@@ -556,6 +607,12 @@ function buildSeedState() {
     shareLinks: [],
     profile: defaultOwnerProfile(),
     dashboardConfig: defaultDashboardConfig(),
+    consultConfig: defaultConsultConfig(),
+    medicationChangeExperiments: [],
+    consultQuestions: [],
+    decisionLog: [],
+    sideEffectEvents: [],
+    appointmentEvents: [],
     warningSigns: defaultWarningSigns(),
     riskConfig: defaultRiskConfig(),
     actionPlans: defaultActionPlans()
@@ -733,6 +790,13 @@ function createSeedCheckin(date, values) {
     sideEffectsChecklist: [],
     sideEffectsText: "",
     trainingNotes: "",
+    gotOutOfBedOnTime: false,
+    selfCareCompleted: false,
+    keyTaskCompleted: false,
+    exerciseOrWalkDone: false,
+    avoidedImpulsiveBehaviour: false,
+    socialContactLevel: "limited",
+    functionScore: null,
     vitals: {
       weight: "",
       bpSystolic: "",
@@ -766,6 +830,12 @@ function migrateToV2(input) {
     shareLinks: [],
     profile: normalizeOwnerProfile(input.profile),
     dashboardConfig: normalizeDashboardConfig(input.dashboardConfig),
+    consultConfig: normalizeConsultConfig(input.consultConfig),
+    medicationChangeExperiments: [],
+    consultQuestions: [],
+    decisionLog: [],
+    sideEffectEvents: [],
+    appointmentEvents: [],
     warningSigns: normalizeWarningSigns(input.warningSigns),
     riskConfig: normalizeRiskConfig(input.riskConfig),
     actionPlans: normalizeActionPlans(input.actionPlans)
@@ -803,7 +873,7 @@ function migrateToV2(input) {
   }
 
   for (const change of Array.isArray(input.changes) ? input.changes : []) {
-    migrated.changes.push({
+    const normalizedChange = {
       id: change.id || uid(),
       medicationId: change.medicationId || "",
       medicationName: change.medicationName || change.medication || "",
@@ -828,7 +898,13 @@ function migrateToV2(input) {
           })
       ),
       createdAt: change.createdAt || now
-    });
+    };
+    migrated.changes.push(normalizedChange);
+    migrated.medicationChangeExperiments.push(normalizeMedicationChangeExperiment(normalizedChange));
+  }
+
+  for (const experiment of Array.isArray(input.medicationChangeExperiments) ? input.medicationChangeExperiments : []) {
+    migrated.medicationChangeExperiments.push(normalizeMedicationChangeExperiment(experiment));
   }
 
   for (const note of Array.isArray(input.notes) ? input.notes : []) {
@@ -852,6 +928,22 @@ function migrateToV2(input) {
     migrated.checkins.push(normalizeCheckin(checkin));
   }
 
+  for (const question of Array.isArray(input.consultQuestions) ? input.consultQuestions : []) {
+    migrated.consultQuestions.push(normalizeConsultQuestion(question));
+  }
+
+  for (const decision of Array.isArray(input.decisionLog) ? input.decisionLog : []) {
+    migrated.decisionLog.push(normalizeDecisionLogEntry(decision));
+  }
+
+  for (const event of Array.isArray(input.sideEffectEvents) ? input.sideEffectEvents : []) {
+    migrated.sideEffectEvents.push(normalizeSideEffectEvent(event));
+  }
+
+  for (const appointment of Array.isArray(input.appointmentEvents) ? input.appointmentEvents : []) {
+    migrated.appointmentEvents.push(normalizeAppointmentEvent(appointment));
+  }
+
   for (const adherence of Array.isArray(input.adherence) ? input.adherence : []) {
     migrated.adherence.push(normalizeAdherence(adherence));
   }
@@ -873,6 +965,9 @@ function migrateToV2(input) {
       permissions: normalizePermissions(link.permissions || PRESETS.full.permissions),
       allowedModes: normalizeAllowedModes(link.allowedModes || PRESETS.full.defaultModes),
       expiresAt: link.expiresAt || "",
+      startSection: ["dashboard", "consult"].includes(String(link.startSection || "").toLowerCase())
+        ? String(link.startSection).toLowerCase()
+        : "dashboard",
       revoked: Boolean(link.revoked),
       createdAt: link.createdAt || now,
       token,
@@ -899,6 +994,12 @@ function ensureStateShape(input) {
     shareLinks: [],
     profile: normalizeOwnerProfile(input.profile),
     dashboardConfig: normalizeDashboardConfig(input.dashboardConfig),
+    consultConfig: normalizeConsultConfig(input.consultConfig),
+    medicationChangeExperiments: [],
+    consultQuestions: [],
+    decisionLog: [],
+    sideEffectEvents: [],
+    appointmentEvents: [],
     warningSigns: normalizeWarningSigns(input.warningSigns),
     riskConfig: normalizeRiskConfig(input.riskConfig),
     actionPlans: normalizeActionPlans(input.actionPlans)
@@ -957,6 +1058,13 @@ function ensureStateShape(input) {
     });
   }
 
+  const rawExperiments = Array.isArray(input.medicationChangeExperiments)
+    ? input.medicationChangeExperiments
+    : state.changes.map((change) => convertChangeToExperiment(change));
+  for (const experiment of rawExperiments) {
+    state.medicationChangeExperiments.push(normalizeMedicationChangeExperiment(experiment));
+  }
+
   for (const note of Array.isArray(input.notes) ? input.notes : []) {
     state.notes.push({
       id: note.id || uid(),
@@ -976,6 +1084,22 @@ function ensureStateShape(input) {
 
   for (const checkin of Array.isArray(input.checkins) ? input.checkins : []) {
     state.checkins.push(normalizeCheckin(checkin));
+  }
+
+  for (const question of Array.isArray(input.consultQuestions) ? input.consultQuestions : []) {
+    state.consultQuestions.push(normalizeConsultQuestion(question));
+  }
+
+  for (const decision of Array.isArray(input.decisionLog) ? input.decisionLog : []) {
+    state.decisionLog.push(normalizeDecisionLogEntry(decision));
+  }
+
+  for (const event of Array.isArray(input.sideEffectEvents) ? input.sideEffectEvents : []) {
+    state.sideEffectEvents.push(normalizeSideEffectEvent(event));
+  }
+
+  for (const appointment of Array.isArray(input.appointmentEvents) ? input.appointmentEvents : []) {
+    state.appointmentEvents.push(normalizeAppointmentEvent(appointment));
   }
 
   for (const adherence of Array.isArray(input.adherence) ? input.adherence : []) {
@@ -998,6 +1122,9 @@ function ensureStateShape(input) {
       permissions: normalizePermissions(link.permissions || PRESETS.full.permissions),
       allowedModes: normalizeAllowedModes(link.allowedModes || PRESETS.full.defaultModes),
       expiresAt: link.expiresAt || "",
+      startSection: ["dashboard", "consult"].includes(String(link.startSection || "").toLowerCase())
+        ? String(link.startSection).toLowerCase()
+        : "dashboard",
       revoked: Boolean(link.revoked),
       createdAt: link.createdAt || isoDateTime(new Date()),
       token: link.token || uid(),
@@ -1013,6 +1140,8 @@ function ensureStateShape(input) {
 function normalizeCheckin(input) {
   const vitals = input?.vitals || {};
   const createdAt = input?.createdAt || isoDateTime(new Date());
+  const socialContact = String(input?.socialContactLevel || "limited").toLowerCase();
+  const normalizedSocialContact = ["none", "limited", "normal"].includes(socialContact) ? socialContact : "limited";
   return {
     id: input?.id || uid(),
     date: input?.date || isoDate(new Date()),
@@ -1028,6 +1157,15 @@ function normalizeCheckin(input) {
     sideEffectsChecklist: Array.isArray(input?.sideEffectsChecklist) ? input.sideEffectsChecklist : [],
     sideEffectsText: input?.sideEffectsText || "",
     trainingNotes: input?.trainingNotes || "",
+    gotOutOfBedOnTime: Boolean(input?.gotOutOfBedOnTime),
+    selfCareCompleted: Boolean(input?.selfCareCompleted),
+    keyTaskCompleted: Boolean(input?.keyTaskCompleted),
+    exerciseOrWalkDone: Boolean(input?.exerciseOrWalkDone),
+    avoidedImpulsiveBehaviour: Boolean(input?.avoidedImpulsiveBehaviour),
+    socialContactLevel: normalizedSocialContact,
+    functionScore: Number.isFinite(Number(input?.functionScore))
+      ? Math.max(0, Math.min(5, Math.round(Number(input.functionScore))))
+      : null,
     vitals: {
       weight: vitals.weight || "",
       bpSystolic: vitals.bpSystolic || "",
@@ -1155,6 +1293,9 @@ function parseSharePayload() {
         preset: payload.preset || "full",
         permissions: normalizePermissions(payload.permissions || PRESETS.full.permissions),
         allowedModes: normalizeAllowedModes(payload.allowedModes || PRESETS.full.defaultModes),
+        startSection: ["dashboard", "consult"].includes(String(payload.startSection || "").toLowerCase())
+          ? String(payload.startSection).toLowerCase()
+          : "dashboard",
         expiresAt: payload.expiresAt || "",
         createdAt: payload.createdAt || isoDateTime(new Date()),
         snapshot: ensureStateShape(migrateToV2(payload.snapshot))
@@ -1172,6 +1313,7 @@ function parseSharePayload() {
         preset: "full",
         permissions: normalizePermissions(PRESETS.full.permissions),
         allowedModes: ["daily", "clinical", "personal"],
+        startSection: "dashboard",
         expiresAt: "",
         createdAt: payload.createdAt || isoDateTime(new Date()),
         snapshot: ensureStateShape(migratedData)
@@ -1216,7 +1358,7 @@ function handleShareSessionInit() {
 
   app.ui.viewerMode = "my";
   app.ui.activeViewMode = app.shareSession.allowedModes[0] || "daily";
-  app.ui.activeSection = "dashboard";
+  app.ui.activeSection = app.shareSession.startSection === "consult" ? "consult" : "dashboard";
 }
 
 function loadDrafts() {
@@ -1283,6 +1425,185 @@ function normalizeDashboardConfig(input) {
   return {
     summaryNote: String(input?.summaryNote || "").trim(),
     monitoringReminders: reminders
+  };
+}
+
+function defaultConsultConfig() {
+  return {
+    discussToday: "",
+    activeFilters: {
+      range: "since_last_appointment",
+      medicationId: "all",
+      customRangeDays: "14",
+      openQuestionsOnly: true,
+      sideEffectsWindow: "all"
+    }
+  };
+}
+
+function normalizeConsultConfig(input) {
+  const defaults = defaultConsultConfig();
+  const source = input && typeof input === "object" ? input : {};
+  const range = String(source?.activeFilters?.range || defaults.activeFilters.range);
+  const customRangeDays = String(source?.activeFilters?.customRangeDays || defaults.activeFilters.customRangeDays);
+  return {
+    discussToday: String(source.discussToday || "").trim().slice(0, 500),
+    activeFilters: {
+      range: ["since_last_appointment", "since_last_change", "last_days"].includes(range)
+        ? range
+        : defaults.activeFilters.range,
+      medicationId: String(source?.activeFilters?.medicationId || defaults.activeFilters.medicationId),
+      customRangeDays: CONSULT_RANGE_OPTIONS.includes(customRangeDays)
+        ? customRangeDays
+        : defaults.activeFilters.customRangeDays,
+      openQuestionsOnly: source?.activeFilters?.openQuestionsOnly !== false,
+      sideEffectsWindow: String(source?.activeFilters?.sideEffectsWindow || defaults.activeFilters.sideEffectsWindow)
+    }
+  };
+}
+
+function normalizeMedicationChangeExperiment(input) {
+  const now = isoDateTime(new Date());
+  const dateEffective = String(input?.dateEffective || input?.date || isoDate(new Date()));
+  const outcomeStatus = String(input?.outcomeStatus || "pending").toLowerCase();
+  const confidence = String(input?.confidenceInOutcome || "medium").toLowerCase();
+  return {
+    id: String(input?.id || uid()),
+    medicationId: String(input?.medicationId || ""),
+    medicationName: String(input?.medicationName || ""),
+    dateEffective,
+    oldDose: String(input?.oldDose || ""),
+    newDose: String(input?.newDose || ""),
+    route: String(input?.route || ""),
+    scheduleChange: String(input?.scheduleChange || ""),
+    changedBy: String(input?.changedBy || "self"),
+    reasonForChange: String(input?.reasonForChange || input?.reason || ""),
+    expectedBenefit: String(input?.expectedBenefit || input?.expectedEffects || ""),
+    expectedSideEffects: String(input?.expectedSideEffects || ""),
+    whatToMonitor: String(input?.whatToMonitor || input?.monitorFor || ""),
+    reviewDate: String(input?.reviewDate || ""),
+    outcomeStatus: ["better", "worse", "mixed", "unclear", "pending"].includes(outcomeStatus)
+      ? outcomeStatus
+      : "pending",
+    outcomeNotes: String(input?.outcomeNotes || input?.notes || ""),
+    confidenceInOutcome: ["low", "medium", "high"].includes(confidence) ? confidence : "medium",
+    linkedChangeId: String(input?.linkedChangeId || input?.id || ""),
+    createdAt: String(input?.createdAt || now),
+    updatedAt: String(input?.updatedAt || input?.createdAt || now)
+  };
+}
+
+function convertChangeToExperiment(change) {
+  return normalizeMedicationChangeExperiment({
+    id: change?.id || uid(),
+    linkedChangeId: change?.id || "",
+    medicationId: change?.medicationId || "",
+    medicationName: change?.medicationName || "",
+    dateEffective: change?.dateEffective || change?.date || isoDate(new Date()),
+    oldDose: change?.oldDose || "",
+    newDose: change?.newDose || "",
+    route: change?.route || "",
+    changedBy: change?.changedBy || "self",
+    reasonForChange: change?.reasonForChange || change?.reason || "",
+    expectedBenefit: change?.expectedEffects || "",
+    whatToMonitor: change?.monitorFor || change?.interpretation?.monitor || "",
+    reviewDate: change?.reviewDate || "",
+    outcomeNotes: change?.notes || "",
+    confidenceInOutcome: "medium",
+    createdAt: change?.createdAt || isoDateTime(new Date()),
+    updatedAt: change?.createdAt || isoDateTime(new Date())
+  });
+}
+
+function normalizeConsultQuestion(input) {
+  const now = isoDateTime(new Date());
+  const urgency = String(input?.urgency || "medium").toLowerCase();
+  const status = String(input?.status || "open").toLowerCase();
+  return {
+    id: String(input?.id || uid()),
+    text: String(input?.text || "").trim(),
+    category: String(input?.category || "question").toLowerCase(),
+    linkedMedication: String(input?.linkedMedication || ""),
+    urgency: ["low", "medium", "high"].includes(urgency) ? urgency : "medium",
+    status: ["open", "discussed", "resolved", "carry_forward"].includes(status) ? status : "open",
+    createdAt: String(input?.createdAt || now),
+    discussedAt: String(input?.discussedAt || ""),
+    note: String(input?.note || "")
+  };
+}
+
+function normalizeDecisionLogEntry(input) {
+  const now = isoDateTime(new Date());
+  const decisions = Array.isArray(input?.decisions)
+    ? input.decisions
+        .map((item) => ({
+          id: String(item?.id || uid()),
+          decisionType: String(item?.decisionType || ""),
+          medication: String(item?.medication || ""),
+          oldValue: String(item?.oldValue || ""),
+          newValue: String(item?.newValue || ""),
+          effectiveDate: String(item?.effectiveDate || ""),
+          instructions: String(item?.instructions || "")
+        }))
+        .filter((item) => item.decisionType || item.medication || item.instructions)
+    : [];
+
+  return {
+    id: String(input?.id || uid()),
+    appointmentDate: String(input?.appointmentDate || isoDate(new Date())),
+    appointmentId: String(input?.appointmentId || ""),
+    clinicianName: String(input?.clinicianName || ""),
+    decisions,
+    rationale: String(input?.rationale || ""),
+    successCriteria: String(input?.successCriteria || ""),
+    failureCriteria: String(input?.failureCriteria || input?.concerns || ""),
+    planUntilNextReview: String(input?.planUntilNextReview || ""),
+    followUpDate: String(input?.followUpDate || ""),
+    contingencyPlan: String(input?.contingencyPlan || ""),
+    notes: String(input?.notes || ""),
+    linkedExperimentId: String(input?.linkedExperimentId || ""),
+    createdAt: String(input?.createdAt || now),
+    updatedAt: String(input?.updatedAt || input?.createdAt || now)
+  };
+}
+
+function normalizeSideEffectEvent(input) {
+  const now = isoDateTime(new Date());
+  const severityRaw = Number(input?.severity);
+  return {
+    id: String(input?.id || uid()),
+    date: String(input?.date || input?.createdAt || isoDate(new Date())),
+    symptomName: String(input?.symptomName || ""),
+    severity: Number.isFinite(severityRaw) ? Math.max(0, Math.min(10, Math.round(severityRaw))) : 0,
+    linkedMedication: String(input?.linkedMedication || input?.medicationName || ""),
+    linkedDoseLogId: String(input?.linkedDoseLogId || ""),
+    onsetAfterDoseMinutes: Number.isFinite(Number(input?.onsetAfterDoseMinutes))
+      ? Math.max(0, Math.round(Number(input.onsetAfterDoseMinutes)))
+      : null,
+    timeOfDay: String(input?.timeOfDay || ""),
+    durationMinutes: Number.isFinite(Number(input?.durationMinutes))
+      ? Math.max(0, Math.round(Number(input.durationMinutes)))
+      : null,
+    confidenceRelatedToMed: ["low", "medium", "high"].includes(String(input?.confidenceRelatedToMed || "").toLowerCase())
+      ? String(input.confidenceRelatedToMed).toLowerCase()
+      : "medium",
+    impactOnFunction: ["low", "medium", "high"].includes(String(input?.impactOnFunction || "").toLowerCase())
+      ? String(input.impactOnFunction).toLowerCase()
+      : "medium",
+    note: String(input?.note || ""),
+    createdAt: String(input?.createdAt || now)
+  };
+}
+
+function normalizeAppointmentEvent(input) {
+  const now = isoDateTime(new Date());
+  const type = String(input?.appointmentType || "psychiatrist").toLowerCase();
+  return {
+    id: String(input?.id || uid()),
+    appointmentDate: String(input?.appointmentDate || isoDate(new Date())),
+    appointmentType: ["psychiatrist", "gp", "other"].includes(type) ? type : "other",
+    summaryNote: String(input?.summaryNote || ""),
+    createdAt: String(input?.createdAt || now)
   };
 }
 
@@ -1609,6 +1930,23 @@ function getVisibleData() {
       sideEffectsText: checkin.sideEffectsText ? "[Hidden by link settings]" : "",
       trainingNotes: checkin.trainingNotes ? "[Hidden by link settings]" : ""
     }));
+
+    source.sideEffectEvents = (source.sideEffectEvents || []).map((entry) => ({
+      ...entry,
+      note: entry.note ? "[Hidden by link settings]" : ""
+    }));
+
+    source.consultQuestions = (source.consultQuestions || []).map((entry) => ({
+      ...entry,
+      note: entry.note ? "[Hidden by link settings]" : ""
+    }));
+
+    source.decisionLog = (source.decisionLog || []).map((entry) => ({
+      ...entry,
+      notes: entry.notes ? "[Hidden by link settings]" : "",
+      rationale: entry.rationale ? "[Hidden by link settings]" : "",
+      contingencyPlan: entry.contingencyPlan ? "[Hidden by link settings]" : ""
+    }));
   }
 
   if (!context.permissions.showSensitiveNotes) {
@@ -1634,7 +1972,7 @@ function hydrateMedicationNameOptions() {
 }
 
 function bindGlobalHandlers() {
-  dom.viewerModeSelect.addEventListener("change", (event) => {
+  dom.viewerModeSelect?.addEventListener("change", (event) => {
     app.ui.viewerMode = event.target.value;
     if (app.ui.viewerMode !== "preview_link") {
       app.ui.previewLinkId = "";
@@ -1643,13 +1981,13 @@ function bindGlobalHandlers() {
     renderAll();
   });
 
-  dom.viewModeSelect.addEventListener("change", (event) => {
+  dom.viewModeSelect?.addEventListener("change", (event) => {
     app.ui.activeViewMode = event.target.value;
     ensureSectionForCurrentMode();
     renderAll();
   });
 
-  dom.previewLinkSelect.addEventListener("change", (event) => {
+  dom.previewLinkSelect?.addEventListener("change", (event) => {
     app.ui.viewerMode = "preview_link";
     app.ui.previewLinkId = event.target.value;
     ensureSectionForCurrentMode();
@@ -1663,12 +2001,33 @@ function bindGlobalHandlers() {
     renderAll();
   });
 
+  dom.addToConsultButton?.addEventListener("click", () => {
+    const context = getActiveContext();
+    if (context.readOnly) return;
+    const text = window.prompt("Add a question or concern for your next consult:");
+    const trimmed = String(text || "").trim();
+    if (!trimmed) return;
+    const now = isoDateTime(new Date());
+    app.ownerData.consultQuestions.push(normalizeConsultQuestion({
+      id: uid(),
+      text: trimmed,
+      category: "question",
+      urgency: "medium",
+      status: "open",
+      createdAt: now
+    }));
+    saveOwnerData(app.ownerData);
+    app.ui.activeSection = "consult";
+    setStatus("Added to consult question queue.");
+    renderAll();
+  });
+
   dom.installAppButton?.addEventListener("click", () => {
     void promptPwaInstall();
   });
 
-  dom.closeMedicationModal.addEventListener("click", closeMedicationModal);
-  dom.medicationModal.addEventListener("click", (event) => {
+  dom.closeMedicationModal?.addEventListener("click", closeMedicationModal);
+  dom.medicationModal?.addEventListener("click", (event) => {
     if (event.target === dom.medicationModal) {
       closeMedicationModal();
     }
@@ -1705,6 +2064,7 @@ function parseSectionRouteFromHash(hashValue) {
   const route = normalized.replace(/^#/, "");
   if (!route) return null;
   if (route === "dashboard") return { sectionId: "dashboard", preferredModes: ["daily", "clinical", "personal"], fallbackSections: [] };
+  if (route === "consult") return { sectionId: "consult", preferredModes: ["clinical", "personal"], fallbackSections: ["timeline"] };
   if (route === "history") return { sectionId: "timeline", preferredModes: ["clinical", "personal"], fallbackSections: ["changes"] };
   if (route === "settings") return { sectionId: "exports", preferredModes: ["personal", "clinical"], fallbackSections: ["sharing"] };
   if (route === "share") return { sectionId: "sharing", preferredModes: ["clinical", "personal"], fallbackSections: ["exports"] };
@@ -2326,6 +2686,9 @@ function renderAll() {
 }
 
 function renderViewModeSelector(context) {
+  if (!dom.viewerModeSelect || !dom.viewerModeSegment || !dom.viewModeSelect) {
+    return;
+  }
   if (!app.shareSession && context.type === "authenticated_viewer") {
     const role = String(app.syncConfig.authRole || "viewer").toLowerCase();
     const label = role === "clinician" ? "Clinician Account" : role === "family" ? "Family Account" : "Viewer Account";
@@ -2393,25 +2756,9 @@ function renderViewerCapabilitySummary(context) {
 
 function renderContextElements(context) {
   dom.contextPill.textContent = resolveContextBadge(context);
-
-  if (!app.shareSession && app.ui.viewerMode === "preview_link") {
-    const links = app.ownerData.shareLinks.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    dom.previewLinkControl.classList.remove("hidden");
-    dom.previewLinkSelect.innerHTML = links.length
-      ? links
-          .map((link) => {
-            const expired = link.expiresAt && new Date(link.expiresAt).getTime() < Date.now();
-            const status = link.revoked ? "revoked" : expired ? "expired" : "active";
-            return `<option value="${link.id}">${escapeHtml(link.name)} (${escapeHtml(status)})</option>`;
-          })
-          .join("")
-      : `<option value="">No links available</option>`;
-    dom.previewLinkSelect.value = app.ui.previewLinkId || links[0]?.id || "";
-    dom.previewLinkSelect.disabled = !links.length;
-  } else {
-    dom.previewLinkControl.classList.add("hidden");
-    dom.previewLinkSelect.innerHTML = "";
-  }
+  // Shared-link preview selection lives in the Share tab to keep top controls focused.
+  if (dom.previewLinkControl) dom.previewLinkControl.classList.add("hidden");
+  if (dom.previewLinkSelect) dom.previewLinkSelect.innerHTML = "";
 
   if (context.type === "share") {
     dom.readOnlyBanner.classList.remove("hidden");
@@ -2480,6 +2827,7 @@ function findModeForSection(context, sectionId, preferredModes = []) {
 
 function hashForSection(sectionId) {
   if (sectionId === "dashboard") return "#dashboard";
+  if (sectionId === "consult") return "#consult";
   if (sectionId === "timeline" || sectionId === "changes") return "#history";
   if (sectionId === "sharing") return "#share";
   if (sectionId === "exports") return "#settings";
@@ -2712,23 +3060,31 @@ function renderSectionMeta(context) {
   const meta = SECTION_META.find((section) => section.id === app.ui.activeSection) || SECTION_META[0];
   dom.sectionTitle.textContent = meta.title;
   dom.sectionSubtitle.textContent = meta.subtitle;
+  if (typeof document !== "undefined" && document.body) {
+    document.body.classList.toggle("viewer-mode", Boolean(context.readOnly));
+    document.body.classList.toggle("owner-mode", !context.readOnly);
+  }
   if (dom.quickCheckinButton) {
     dom.quickCheckinButton.disabled = Boolean(context.readOnly);
     dom.quickCheckinButton.title = context.readOnly ? "Quick check-in is disabled in read-only mode." : "Open quick check-in";
+  }
+  if (dom.addToConsultButton) {
+    dom.addToConsultButton.disabled = Boolean(context.readOnly);
+    dom.addToConsultButton.title = context.readOnly ? "Consult queue is read-only in this view." : "Quickly add a consult question";
   }
   updateInstallButtonVisibility();
   if (dom.roleBadge) {
     const roleLabel = context.readOnly
       ? context.type === "share"
-        ? "Viewer (Shared)"
+        ? "Psychiatrist View (Shared)"
         : context.type === "authenticated_viewer"
-          ? `Viewer (${(app.syncConfig.authRole || "viewer").replace(/^./, (ch) => ch.toUpperCase())})`
+          ? `Read-only (${(app.syncConfig.authRole || "viewer").replace(/^./, (ch) => ch.toUpperCase())})`
           : app.ui.viewerMode === "clinician"
-            ? "Viewer (Clinician)"
+            ? "Psychiatrist View"
             : app.ui.viewerMode === "family"
               ? "Viewer (Family)"
-              : "Viewer"
-      : "Owner";
+              : "Read-only"
+      : "My View";
     dom.roleBadge.textContent = roleLabel;
     dom.roleBadge.className = `role-badge ${context.readOnly ? "is-viewer" : "is-owner"}`;
   }
@@ -2768,6 +3124,11 @@ function renderSections(context, visibleData) {
     renderNotes(dom.sections.notes, visibleData);
   }
 
+  if (app.ui.activeSection === "consult") {
+    dom.sections.consult.classList.remove("hidden");
+    renderConsult(dom.sections.consult, visibleData, context);
+  }
+
   if (app.ui.activeSection === "timeline") {
     dom.sections.timeline.classList.remove("hidden");
     renderTimeline(dom.sections.timeline, visibleData, context);
@@ -2805,6 +3166,11 @@ function derivedStateMemoKey(data) {
   if (!data || typeof data !== "object") return "empty";
   const medications = Array.isArray(data.medications) ? data.medications : [];
   const changes = Array.isArray(data.changes) ? data.changes : [];
+  const experiments = Array.isArray(data.medicationChangeExperiments) ? data.medicationChangeExperiments : [];
+  const questions = Array.isArray(data.consultQuestions) ? data.consultQuestions : [];
+  const decisions = Array.isArray(data.decisionLog) ? data.decisionLog : [];
+  const sideEffectEvents = Array.isArray(data.sideEffectEvents) ? data.sideEffectEvents : [];
+  const appointments = Array.isArray(data.appointmentEvents) ? data.appointmentEvents : [];
   const checkins = Array.isArray(data.checkins) ? data.checkins : [];
   const adherence = Array.isArray(data.adherence) ? data.adherence : [];
   const notes = Array.isArray(data.notes) ? data.notes : [];
@@ -2812,11 +3178,21 @@ function derivedStateMemoKey(data) {
     String(data.stateUpdatedAt || ""),
     medications.length,
     changes.length,
+    experiments.length,
+    questions.length,
+    decisions.length,
+    sideEffectEvents.length,
+    appointments.length,
     checkins.length,
     adherence.length,
     notes.length,
     maxDateAcrossRows(medications, ["updatedAt", "createdAt", "startDate"]),
     maxDateAcrossRows(changes, ["createdAt", "date", "dateEffective"]),
+    maxDateAcrossRows(experiments, ["updatedAt", "createdAt", "dateEffective"]),
+    maxDateAcrossRows(questions, ["createdAt", "discussedAt"]),
+    maxDateAcrossRows(decisions, ["updatedAt", "createdAt", "appointmentDate"]),
+    maxDateAcrossRows(sideEffectEvents, ["createdAt", "date"]),
+    maxDateAcrossRows(appointments, ["createdAt", "appointmentDate"]),
     maxDateAcrossRows(checkins, ["updatedAt", "createdAt", "date"]),
     maxDateAcrossRows(adherence, ["updatedAt", "createdAt", "actionAt", "date"]),
     maxDateAcrossRows(notes, ["createdAt", "date"])
@@ -3359,6 +3735,11 @@ function renderDashboard(root, data, context) {
   const recentChanges = data.changes
     .filter((entry) => dateDiffDays(entry.date, today) <= 14)
     .sort((a, b) => b.date.localeCompare(a.date));
+  const recentExperiments = resolveExperimentRows(data)
+    .filter((entry) => dateDiffDays(String(entry.dateEffective || "").slice(0, 10), today) <= 14)
+    .sort((a, b) => parseSortableDate(b.dateEffective) - parseSortableDate(a.dateEffective));
+  const latestChangeDate = recentChanges[0]?.date || recentExperiments[0]?.dateEffective || "";
+  const daysSinceLastChange = latestChangeDate ? Math.max(0, dateDiffDays(latestChangeDate, today)) : null;
 
   const dueState = getDoseState(activeMeds, data.adherence, data.doseSnoozes);
   const riskAssessment = computeDashboardRisk(data, dueState);
@@ -3375,6 +3756,10 @@ function renderDashboard(root, data, context) {
     ])
   ).slice(0, 8);
   const topChanges = recentChanges.slice(0, 6);
+  const consultQuestions = sortConsultQuestions(data.consultQuestions || []);
+  const openConsultQuestions = consultQuestions.filter((entry) => String(entry.status || "").toLowerCase() === "open");
+  const consultFocusText = String(normalizeConsultConfig(data.consultConfig).discussToday || "").trim();
+  const topConsultQuestions = openConsultQuestions.slice(0, 3);
   const profile = normalizeOwnerProfile(app.ownerData.profile);
   const greetingLabel = dashboardGreetingLabel(context, profile);
   const consistencyMessage = dashboardConsistencyMessage(data, dueState, today, profile);
@@ -3410,17 +3795,17 @@ function renderDashboard(root, data, context) {
         </div>
         <div class="summary-strip-grid">
           <article class="summary-strip-item">
-            <div class="summary-strip-label">Adherence today</div>
+            <div class="summary-strip-label">${renderIcon("check", "mini-icon soft", "Adherence")}<span>Adherence today</span></div>
             <div class="summary-strip-value">${escapeHtml(`${adherencePct}%`)}</div>
             <div class="summary-strip-help">${escapeHtml(`${dueState.counts.taken} taken · ${dueState.counts.remaining} due · ${dueState.counts.missed} missed`)}</div>
           </article>
           <article class="summary-strip-item">
-            <div class="summary-strip-label">Next dose due</div>
+            <div class="summary-strip-label">${renderIcon("clock", "mini-icon soft", "Next dose")}<span>Next dose due</span></div>
             <div class="summary-strip-value">${escapeHtml(nextDose ? `${nextDose.medicationName} ${nextDose.time}` : "None remaining")}</div>
             <div class="summary-strip-help">${escapeHtml(`${overdueCount} overdue`)}</div>
           </article>
           <article class="summary-strip-item">
-            <div class="summary-strip-label">Risk status</div>
+            <div class="summary-strip-label">${renderIcon("pulse", "mini-icon soft", "Risk status")}<span>Current status</span></div>
             <div class="summary-strip-value">${escapeHtml(riskAssessment.label)}</div>
             <details>
               <summary class="summary-strip-help">Why this status?</summary>
@@ -3434,9 +3819,12 @@ function renderDashboard(root, data, context) {
             </details>
           </article>
           <article class="summary-strip-item">
-            <div class="summary-strip-label">Last check-in</div>
+            <div class="summary-strip-label">${renderIcon("calendar", "mini-icon soft", "Last check-in")}<span>Last check-in</span></div>
             <div class="summary-strip-value">${escapeHtml(latestCheckinLabel)}</div>
-            <div class="summary-strip-help">${latestCheckin ? `Mood ${escapeHtml(String(latestCheckin.mood))} · Anxiety ${escapeHtml(String(latestCheckin.anxiety))}` : "Complete quick check-in to update."}</div>
+            <div class="summary-strip-help">
+              ${latestCheckin ? `Mood ${escapeHtml(String(latestCheckin.mood))} · Anxiety ${escapeHtml(String(latestCheckin.anxiety))}` : "Complete quick check-in to update."}
+              ${daysSinceLastChange === null ? "" : ` · ${escapeHtml(`${daysSinceLastChange}d since last medication change`)}`}
+            </div>
           </article>
         </div>
       </article>
@@ -3661,6 +4049,25 @@ function renderDashboard(root, data, context) {
         ) : `<div class="empty">No active medications yet.${ownerEditable ? ` <button class="btn btn-secondary small" type="button" data-dashboard-add-med="1">Add medication</button>` : ""}</div>`}
       </article>
 
+      <article class="card card-accent card-accent-teal card-consult-prep">
+        <div class="card-head-row">
+          <div>
+            <h3>Consult prep / open questions</h3>
+            <div class="subtle">Keep appointment priorities concise and review-ready.</div>
+          </div>
+          <div class="inline-row">
+            <span class="kpi-badge">${openConsultQuestions.length} open</span>
+            <button class="btn btn-ghost small" type="button" data-dashboard-open-consult="1">Open consult</button>
+          </div>
+        </div>
+        ${topConsultQuestions.length ? `
+          <ul class="timeline-list">
+            ${topConsultQuestions.map((entry) => `<li><strong>${escapeHtml(entry.text)}</strong><div class="subtle">${escapeHtml(entry.urgency)} urgency${entry.linkedMedication ? ` · ${escapeHtml(entry.linkedMedication)}` : ""}</div></li>`).join("")}
+          </ul>
+        ` : `<div class="empty">No open consult questions.${ownerEditable ? ` <button class="btn btn-secondary small" type="button" data-dashboard-new-question="1">Add question</button>` : ""}</div>`}
+        <div class="subtle" style="margin-top:8px;">${consultFocusText ? `Focus: ${escapeHtml(consultFocusText)}` : "No consult focus text set yet."}</div>
+      </article>
+
       ${showActionPlanCard ? `
         <article class="card card-accent card-accent-teal action-plan-card">
           <div class="card-head-row">
@@ -3829,6 +4236,28 @@ function renderDashboard(root, data, context) {
     }
 
     app.ownerData.changes = app.ownerData.changes.map((entry) => updates.get(entry.id) || entry);
+    app.ownerData.medicationChangeExperiments = (app.ownerData.medicationChangeExperiments || []).map((experiment) => {
+      const linkedId = experiment.linkedChangeId || experiment.id;
+      const updated = updates.get(linkedId);
+      if (!updated) return experiment;
+      return normalizeMedicationChangeExperiment({
+        ...experiment,
+        medicationId: updated.medicationId || experiment.medicationId,
+        medicationName: updated.medicationName,
+        dateEffective: updated.date,
+        oldDose: updated.oldDose,
+        newDose: updated.newDose,
+        route: updated.route || "",
+        changedBy: updated.changedBy || "self",
+        reasonForChange: updated.reasonForChange || updated.reason || "",
+        expectedBenefit: updated.expectedEffects || "",
+        whatToMonitor: updated.monitorFor || "",
+        reviewDate: updated.reviewDate || "",
+        outcomeNotes: updated.notes || "",
+        linkedChangeId: updated.id,
+        updatedAt: isoDateTime(new Date())
+      });
+    });
     saveOwnerData(app.ownerData);
     app.ui.dashboardEdits = { ...app.ui.dashboardEdits, changes: false };
     setStatus("Recent medication changes updated.");
@@ -4011,6 +4440,27 @@ function renderDashboard(root, data, context) {
       app.ui.activeSection = "entry";
       app.ui.entryWorkflow = "change";
       renderAll();
+    });
+  });
+
+  root.querySelectorAll("[data-dashboard-open-consult]").forEach((button) => {
+    button.addEventListener("click", () => {
+      navigateToSection("consult", {
+        preferredModes: ["clinical", "personal"],
+        fallbackSections: ["timeline"]
+      });
+      renderAll();
+    });
+  });
+
+  root.querySelectorAll("[data-dashboard-new-question]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (context.readOnly) return;
+      app.ui.activeSection = "consult";
+      renderAll();
+      window.setTimeout(() => {
+        dom.sections.consult?.querySelector("#consultQuestionForm input[name='text']")?.focus();
+      }, 0);
     });
   });
 
@@ -4296,6 +4746,9 @@ function openMedicationModal(medicationId, context) {
 
   dom.medicationModal.classList.remove("hidden");
   dom.medicationModal.setAttribute("aria-hidden", "false");
+  if (dom.closeMedicationModal) {
+    dom.closeMedicationModal.hidden = false;
+  }
 
   const saveButton = document.getElementById("saveMedicationModal");
   if (saveButton) {
@@ -4339,9 +4792,13 @@ function openMedicationModal(medicationId, context) {
 }
 
 function closeMedicationModal() {
+  if (!dom.medicationModal) return;
   dom.medicationModal.classList.add("hidden");
   dom.medicationModal.setAttribute("aria-hidden", "true");
   dom.medicationModalBody.innerHTML = "";
+  if (dom.closeMedicationModal) {
+    dom.closeMedicationModal.hidden = true;
+  }
 }
 
 function renderChanges(root, data, context) {
@@ -4470,6 +4927,7 @@ function renderCheckins(root, data, context) {
           <span class="kpi-badge">Sleep ${todayCheckin.sleepHours}h</span>
           <span class="kpi-badge">Energy ${todayCheckin.energy}/10</span>
           <span class="kpi-badge">Irritability ${todayCheckin.irritability}/10</span>
+          <span class="kpi-badge">Function ${todayCheckin.functionScore ?? "-"}/5</span>
         </div>
       ` : `<div class="empty">No check-in yet for today. ${context.readOnly ? "" : `<button class="btn btn-secondary small" type="button" data-empty-action="checkin">Complete quick check-in (30 seconds)</button>`}</div>`}
     </div>
@@ -4487,6 +4945,8 @@ function renderCheckins(root, data, context) {
             <th>Energy</th>
             <th>Irritability</th>
             <th>Cravings / impulsivity</th>
+            <th>Function score</th>
+            <th>Social contact</th>
             <th>Side effects</th>
           </tr>
         </thead>
@@ -4502,6 +4962,8 @@ function renderCheckins(root, data, context) {
               <td>${escapeHtml(String(row.energy))}</td>
               <td>${escapeHtml(String(row.irritability))}</td>
               <td>${escapeHtml(String(row.cravingsImpulsivity))}</td>
+              <td>${escapeHtml(String(row.functionScore ?? "-"))}</td>
+              <td>${escapeHtml(String(row.socialContactLevel || "-"))}</td>
               <td>${escapeHtml((row.sideEffectsChecklist || []).join(", ") || row.sideEffectsText || "-")}</td>
             </tr>
           `).join("")}
@@ -4565,6 +5027,1149 @@ function renderNotes(root, data) {
       app.ui.entryWorkflow = "note";
       renderAll();
     });
+  });
+}
+
+function resolveExperimentRows(data) {
+  const experiments = Array.isArray(data.medicationChangeExperiments) ? data.medicationChangeExperiments : [];
+  if (experiments.length) {
+    return experiments
+      .map((entry) => normalizeMedicationChangeExperiment(entry))
+      .sort((a, b) => parseSortableDate(b.dateEffective) - parseSortableDate(a.dateEffective));
+  }
+  return (data.changes || [])
+    .map((change) => convertChangeToExperiment(change))
+    .sort((a, b) => parseSortableDate(b.dateEffective) - parseSortableDate(a.dateEffective));
+}
+
+function inDateRangeKey(value, startDate, endDate) {
+  const key = String(value || "").slice(0, 10);
+  if (!key) return false;
+  if (startDate && key < startDate) return false;
+  if (endDate && key > endDate) return false;
+  return true;
+}
+
+function resolveConsultWindow(data, filters) {
+  const today = getLocalDateKey(new Date());
+  const range = String(filters?.range || "since_last_appointment");
+  if (range === "since_last_change") {
+    const latestChange = resolveExperimentRows(data)[0];
+    const startDate = latestChange?.dateEffective?.slice(0, 10) || shiftDateKey(today, -14);
+    return {
+      startDate,
+      endDate: today,
+      label: `Since last medication change (${niceDate(startDate)})`
+    };
+  }
+
+  if (range === "last_days") {
+    const days = CONSULT_RANGE_OPTIONS.includes(String(filters?.customRangeDays || "14"))
+      ? Number(filters.customRangeDays)
+      : 14;
+    const startDate = shiftDateKey(today, -(days - 1));
+    return {
+      startDate,
+      endDate: today,
+      label: `Last ${days} days`
+    };
+  }
+
+  const latestAppointment = (data.appointmentEvents || [])
+    .slice()
+    .sort((a, b) => parseSortableDate(b.appointmentDate) - parseSortableDate(a.appointmentDate))[0];
+  const fallbackStart = shiftDateKey(today, -30);
+  const startDate = latestAppointment?.appointmentDate?.slice(0, 10) || fallbackStart;
+  return {
+    startDate,
+    endDate: today,
+    label: latestAppointment
+      ? `Since last appointment (${niceDate(startDate)})`
+      : `Since last appointment (none logged, using ${niceDate(startDate)})`
+  };
+}
+
+function summarizeConsultShift(checkins = []) {
+  if (!Array.isArray(checkins) || checkins.length < 4) {
+    return {
+      summary: "Not enough check-in data yet to identify before/after directional shifts.",
+      details: []
+    };
+  }
+  const sorted = checkins.slice().sort((a, b) => a.date.localeCompare(b.date));
+  const mid = Math.floor(sorted.length / 2);
+  const before = sorted.slice(0, mid);
+  const after = sorted.slice(mid);
+  const compareMetric = (label, key, direction = "higher") => {
+    const beforeAvg = average(before.map((row) => toNumber(row[key])));
+    const afterAvg = average(after.map((row) => toNumber(row[key])));
+    if (!Number.isFinite(beforeAvg) || !Number.isFinite(afterAvg)) return null;
+    const delta = roundNumber(afterAvg - beforeAvg, 2);
+    if (Math.abs(delta) < 0.2) return `${label} stable`;
+    if (direction === "higher") {
+      return delta > 0 ? `${label} improved` : `${label} worsened`;
+    }
+    return delta < 0 ? `${label} improved` : `${label} worsened`;
+  };
+  const details = [
+    compareMetric("Mood", "mood", "higher"),
+    compareMetric("Anxiety", "anxiety", "lower"),
+    compareMetric("Focus", "focus", "higher"),
+    compareMetric("Sleep", "sleepHours", "higher")
+  ].filter(Boolean);
+  return {
+    summary: details.length
+      ? `Observed shifts: ${details.join(", ")}.`
+      : "Observed shifts: no clear directional trend.",
+    details
+  };
+}
+
+function sideEffectTimingBucket(event) {
+  const onset = Number(event?.onsetAfterDoseMinutes);
+  if (Number.isFinite(onset) && onset >= 0) {
+    if (onset <= 90) return "~1h after dose";
+    if (onset <= 240) return "1-4h after dose";
+    return "4h+ after dose";
+  }
+  const timeOfDay = String(event?.timeOfDay || "").toLowerCase();
+  if (["morning", "afternoon", "evening", "night"].includes(timeOfDay)) {
+    return timeOfDay;
+  }
+  return "timing not specified";
+}
+
+function summarizeSideEffects(events = []) {
+  const grouped = new Map();
+  for (const event of events) {
+    const med = String(event.linkedMedication || "Unlinked").trim() || "Unlinked";
+    const bucket = sideEffectTimingBucket(event);
+    const key = `${med}||${bucket}`;
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        medication: med,
+        timing: bucket,
+        count: 0,
+        severityTotal: 0,
+        symptoms: new Map()
+      });
+    }
+    const row = grouped.get(key);
+    row.count += 1;
+    row.severityTotal += Number(event.severity || 0);
+    const symptom = String(event.symptomName || "unspecified").trim() || "unspecified";
+    row.symptoms.set(symptom, (row.symptoms.get(symptom) || 0) + 1);
+  }
+  return Array.from(grouped.values())
+    .map((row) => {
+      const topSymptom = Array.from(row.symptoms.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || "-";
+      return {
+        medication: row.medication,
+        timing: row.timing,
+        count: row.count,
+        avgSeverity: row.count ? roundNumber(row.severityTotal / row.count, 1) : 0,
+        topSymptom
+      };
+    })
+    .sort((a, b) => b.count - a.count);
+}
+
+function questionUrgencyRank(value) {
+  const key = String(value || "").toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(CONSULT_QUESTION_URGENCY_RANK, key)) {
+    return CONSULT_QUESTION_URGENCY_RANK[key];
+  }
+  return CONSULT_QUESTION_URGENCY_RANK.medium;
+}
+
+function questionStatusRank(value) {
+  const key = String(value || "").toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(CONSULT_QUESTION_STATUS_RANK, key)) {
+    return CONSULT_QUESTION_STATUS_RANK[key];
+  }
+  return CONSULT_QUESTION_STATUS_RANK.open;
+}
+
+function sortConsultQuestions(rows = []) {
+  return rows
+    .map((entry) => normalizeConsultQuestion(entry))
+    .sort((left, right) => {
+      const statusDiff = questionStatusRank(left.status) - questionStatusRank(right.status);
+      if (statusDiff !== 0) return statusDiff;
+      const urgencyDiff = questionUrgencyRank(left.urgency) - questionUrgencyRank(right.urgency);
+      if (urgencyDiff !== 0) return urgencyDiff;
+      return parseSortableDate(right.createdAt) - parseSortableDate(left.createdAt);
+    });
+}
+
+function experimentLabelForSummary(entry) {
+  if (!entry) return "";
+  const medication = String(entry.medicationName || "Medication").trim();
+  const doseShift = `${String(entry.oldDose || "-").trim()} -> ${String(entry.newDose || "-").trim()}`;
+  return `${medication} (${doseShift})`;
+}
+
+function resolveLinkedExperimentLabel(experimentMap, decisionEntry) {
+  const linkedId = String(decisionEntry?.linkedExperimentId || "");
+  if (!linkedId) return "";
+  const linked = experimentMap.get(linkedId);
+  if (!linked) return "Linked change not found";
+  return experimentLabelForSummary(linked);
+}
+
+function buildConsultClipboardSummary({
+  windowLabel,
+  meds = [],
+  experiments = [],
+  sideEffectSummary = [],
+  adherencePct = null,
+  takenCount = 0,
+  skippedCount = 0,
+  questions = [],
+  decisions = [],
+  focusText = ""
+}) {
+  const lines = [];
+  lines.push("Medication Tracker - Consult Summary");
+  lines.push(`Window: ${windowLabel}`);
+  lines.push("");
+  lines.push("Current medications");
+  if (meds.length) {
+    meds.forEach((med) => {
+      lines.push(`- ${med.name}: ${med.currentDose || "-"} (${formatSchedule(med)})`);
+    });
+  } else {
+    lines.push("- None recorded");
+  }
+  lines.push("");
+  lines.push("Changes in selected window");
+  if (experiments.length) {
+    experiments.slice(0, 10).forEach((entry) => {
+      lines.push(`- ${niceDate(entry.dateEffective)}: ${experimentLabelForSummary(entry)} · ${entry.reasonForChange || "-"}`);
+    });
+  } else {
+    lines.push("- None");
+  }
+  lines.push("");
+  lines.push("Adherence");
+  lines.push(`- Taken: ${takenCount}`);
+  lines.push(`- Skipped: ${skippedCount}`);
+  lines.push(`- Logged adherence: ${adherencePct === null ? "-" : `${adherencePct}%`}`);
+  lines.push("");
+  lines.push("Side effects (top patterns)");
+  if (sideEffectSummary.length) {
+    sideEffectSummary.slice(0, 6).forEach((row) => {
+      lines.push(`- ${row.medication} · ${row.timing}: ${row.count} events, avg severity ${row.avgSeverity}`);
+    });
+  } else {
+    lines.push("- None in selected window");
+  }
+  lines.push("");
+  lines.push("Open consult questions");
+  const openQuestions = questions.filter((entry) => String(entry.status || "").toLowerCase() === "open");
+  if (openQuestions.length) {
+    openQuestions.slice(0, 10).forEach((entry) => {
+      lines.push(`- [${entry.urgency}] ${entry.text}`);
+    });
+  } else {
+    lines.push("- None");
+  }
+  lines.push("");
+  lines.push("Latest decision");
+  if (decisions.length) {
+    const latest = decisions[0];
+    lines.push(`- ${niceDate(latest.appointmentDate)}${latest.clinicianName ? ` · ${latest.clinicianName}` : ""}`);
+    lines.push(`- ${latest.planUntilNextReview || latest.notes || "-"}`);
+  } else {
+    lines.push("- None");
+  }
+  lines.push("");
+  lines.push("What I want to discuss today");
+  lines.push(focusText || "-");
+  return lines.join("\n");
+}
+
+function renderConsult(root, data, context) {
+  const ownerEditable = context.type === "owner" && !context.readOnly;
+  const meds = resolveCurrentMedications(data).filter((med) => med.isCurrent);
+  const medicationOptions = meds.map((med) => ({ id: med.id, name: med.name }));
+  const allExperiments = resolveExperimentRows(data);
+  const allExperimentsById = new Map(allExperiments.map((entry) => [entry.id, entry]));
+  const consultConfig = normalizeConsultConfig(context.readOnly ? data.consultConfig : app.ownerData.consultConfig);
+  const filters = {
+    ...consultConfig.activeFilters,
+    ...(app.ui.consultFilters || {})
+  };
+  app.ui.consultFilters = filters;
+  const windowRange = resolveConsultWindow(data, filters);
+  const experiments = allExperiments.filter((entry) => {
+    if (!inDateRangeKey(entry.dateEffective, windowRange.startDate, windowRange.endDate)) return false;
+    if (filters.medicationId && filters.medicationId !== "all") {
+      if (entry.medicationId === filters.medicationId) return true;
+      const med = data.medications.find((item) => item.id === filters.medicationId);
+      return normalizeMedicationKey(entry.medicationName) === normalizeMedicationKey(med?.name || "");
+    }
+    return true;
+  });
+  const experimentComparisons = new Map(
+    experiments.map((entry) => [
+      entry.id,
+      computeBeforeAfterComparison(data, entry.dateEffective, { beforeDays: 7, afterDays: 7 })
+    ])
+  );
+
+  const checkins = (data.checkins || []).filter((row) => inDateRangeKey(row.date, windowRange.startDate, windowRange.endDate));
+  const notes = (data.notes || []).filter((row) => inDateRangeKey(row.date, windowRange.startDate, windowRange.endDate));
+  const sideEffectEvents = (data.sideEffectEvents || []).filter((row) => inDateRangeKey(row.date || row.createdAt, windowRange.startDate, windowRange.endDate));
+  const adherence = (data.adherence || []).filter((row) => inDateRangeKey(row.date, windowRange.startDate, windowRange.endDate));
+  const appointments = (data.appointmentEvents || [])
+    .map((entry) => normalizeAppointmentEvent(entry))
+    .slice()
+    .sort((a, b) => parseSortableDate(b.appointmentDate) - parseSortableDate(a.appointmentDate));
+  const decisions = (data.decisionLog || [])
+    .map((entry) => normalizeDecisionLogEntry(entry))
+    .slice()
+    .sort((a, b) => parseSortableDate(b.appointmentDate) - parseSortableDate(a.appointmentDate))
+    .filter((entry) => inDateRangeKey(entry.appointmentDate, windowRange.startDate, windowRange.endDate));
+  const questions = sortConsultQuestions(data.consultQuestions || [])
+    .filter((entry) => (filters.openQuestionsOnly ? String(entry.status || "").toLowerCase() === "open" : true));
+
+  const takenCount = adherence.filter((entry) => normalizeAdherenceStatus(entry.status) === ADHERENCE_STATUS.TAKEN).length;
+  const skippedCount = adherence.filter((entry) => normalizeAdherenceStatus(entry.status) === ADHERENCE_STATUS.SKIPPED).length;
+  const adherencePct = takenCount + skippedCount
+    ? roundNumber((takenCount / (takenCount + skippedCount)) * 100, 1)
+    : null;
+
+  const sideEffectSummary = summarizeSideEffects(sideEffectEvents);
+  const shiftSummary = summarizeConsultShift(checkins);
+  const checkinsSorted = checkins.slice().sort((left, right) => left.date.localeCompare(right.date));
+  const consultTrendChart = checkinsSorted.length >= 2
+    ? renderLineChart(
+        [
+          {
+            label: "Mood",
+            color: CHART_COLORS.mood,
+            points: checkinsSorted.map((entry) => ({ date: entry.date, value: toNumber(entry.mood) }))
+          },
+          {
+            label: "Anxiety",
+            color: CHART_COLORS.anxiety,
+            points: checkinsSorted.map((entry) => ({ date: entry.date, value: toNumber(entry.anxiety) }))
+          },
+          {
+            label: "Focus",
+            color: CHART_COLORS.focus,
+            points: checkinsSorted.map((entry) => ({ date: entry.date, value: toNumber(entry.focus) }))
+          },
+          {
+            label: "Sleep",
+            color: CHART_COLORS.sleep,
+            points: checkinsSorted.map((entry) => ({ date: entry.date, value: toNumber(entry.sleepHours) }))
+          }
+        ],
+        {
+          yMin: 0,
+          yMax: 10,
+          changeDates: experiments.map((entry) => String(entry.dateEffective || "").slice(0, 10))
+        }
+      )
+    : "";
+  const quality = buildDataQualityIndicators(
+    {
+      ...data,
+      medicationChangeExperiments: experiments,
+      sideEffectEvents
+    },
+    {
+      startDate: windowRange.startDate,
+      endDate: windowRange.endDate
+    }
+  );
+
+  const focusText = String(consultConfig.discussToday || "").trim();
+  const latestDecision = decisions[0] || null;
+  const editingExperiment = ownerEditable
+    ? (app.ownerData.medicationChangeExperiments || []).find((entry) => entry.id === app.ui.consultEditingExperimentId) || null
+    : null;
+  const editingQuestion = ownerEditable
+    ? (app.ownerData.consultQuestions || []).find((entry) => entry.id === app.ui.consultEditingQuestionId) || null
+    : null;
+  const editingDecision = ownerEditable
+    ? (app.ownerData.decisionLog || []).find((entry) => entry.id === app.ui.consultEditingDecisionId) || null
+    : null;
+  const editingAppointment = ownerEditable
+    ? (app.ownerData.appointmentEvents || []).find((entry) => entry.id === app.ui.consultEditingAppointmentId) || null
+    : null;
+  const clipboardSummary = buildConsultClipboardSummary({
+    windowLabel: windowRange.label,
+    meds,
+    experiments,
+    sideEffectSummary,
+    adherencePct,
+    takenCount,
+    skippedCount,
+    questions,
+    decisions,
+    focusText
+  });
+
+  root.innerHTML = `
+    <article class="card consult-toolbar">
+      <div class="card-head-row">
+        <div>
+          <h3>Consult review mode</h3>
+          <div class="subtle">${escapeHtml(windowRange.label)} · Built for psychiatrist appointment review and print/PDF handoff.</div>
+        </div>
+        <div class="inline-row">
+          <button class="btn btn-secondary small" type="button" data-consult-copy="1">Copy summary</button>
+          <button class="btn btn-secondary small" type="button" data-consult-print="1">Print / Save PDF</button>
+        </div>
+      </div>
+      <div class="field-grid consult-filter-grid">
+        <div>
+          <label for="consultRangeFilter">Range</label>
+          <select id="consultRangeFilter">
+            <option value="since_last_appointment" ${filters.range === "since_last_appointment" ? "selected" : ""}>Since last appointment</option>
+            <option value="since_last_change" ${filters.range === "since_last_change" ? "selected" : ""}>Since last medication change</option>
+            <option value="last_days" ${filters.range === "last_days" ? "selected" : ""}>Last N days</option>
+          </select>
+        </div>
+        <div>
+          <label for="consultRangeDays">N days</label>
+          <select id="consultRangeDays" ${filters.range === "last_days" ? "" : "disabled"}>
+            ${CONSULT_RANGE_OPTIONS.map((days) => `<option value="${days}" ${String(filters.customRangeDays) === days ? "selected" : ""}>${days} days</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label for="consultMedicationFilter">Medication</label>
+          <select id="consultMedicationFilter">
+            <option value="all">All medications</option>
+            ${medicationOptions.map((med) => `<option value="${med.id}" ${filters.medicationId === med.id ? "selected" : ""}>${escapeHtml(med.name)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="consult-open-only-toggle">
+          <label class="check-item">
+            <input id="consultOpenOnly" type="checkbox" ${filters.openQuestionsOnly ? "checked" : ""}>
+            <span>Open questions only</span>
+          </label>
+        </div>
+      </div>
+    </article>
+
+    <div class="consult-grid">
+      <article class="card consult-section">
+        <h3>A. Current medications</h3>
+        ${meds.length ? `
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Medication</th><th>Dose</th><th>Schedule</th><th>Status</th></tr></thead>
+              <tbody>
+                ${meds.map((med) => `<tr><td>${escapeHtml(med.name)}</td><td>${escapeHtml(med.currentDose || "-")}</td><td>${escapeHtml(formatSchedule(med))}</td><td>${escapeHtml(med.active ? "Active" : "Inactive")}</td></tr>`).join("")}
+              </tbody>
+            </table>
+          </div>
+        ` : `<div class="empty">No active medications recorded.</div>`}
+      </article>
+
+      <article class="card consult-section">
+        <h3>B. Changes in selected window</h3>
+        ${experiments.length ? `
+          <div class="table-wrap consult-table-only">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Medication</th>
+                  <th>Old -> New</th>
+                  <th>Reason</th>
+                  <th>Observed pattern</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${experiments.map((entry) => {
+                  const comparison = experimentComparisons.get(entry.id);
+                  return `
+                    <tr>
+                      <td>${escapeHtml(niceDate(entry.dateEffective))}</td>
+                      <td>${escapeHtml(entry.medicationName || "Medication")}</td>
+                      <td>${escapeHtml(entry.oldDose || "-")} -> ${escapeHtml(entry.newDose || "-")}</td>
+                      <td>${escapeHtml(entry.reasonForChange || "-")}</td>
+                      <td>${escapeHtml(comparison?.summary || "-")}</td>
+                      <td>
+                        ${ownerEditable ? `
+                          <div class="inline-row">
+                            <button class="btn btn-ghost small" type="button" data-edit-experiment="${entry.id}">Edit</button>
+                            <button class="btn btn-ghost small" type="button" data-delete-experiment="${entry.id}">Delete</button>
+                          </div>
+                        ` : `<span class="subtle">Read-only</span>`}
+                      </td>
+                    </tr>
+                  `;
+                }).join("")}
+              </tbody>
+            </table>
+          </div>
+          <div class="consult-cards-only">
+            <ul class="timeline-list consult-list">
+              ${experiments.map((entry) => {
+                const comparison = experimentComparisons.get(entry.id);
+                return `
+                  <li>
+                    <div><strong>${escapeHtml(niceDate(entry.dateEffective))}</strong> · ${escapeHtml(entry.medicationName || "Medication")} · ${escapeHtml(entry.oldDose || "-")} -> ${escapeHtml(entry.newDose || "-")}</div>
+                    <div class="subtle">${escapeHtml(entry.reasonForChange || "-")} · Changed by ${escapeHtml(entry.changedBy || "self")}${entry.reviewDate ? ` · review ${escapeHtml(niceDate(entry.reviewDate))}` : ""}</div>
+                    <div class="subtle">${escapeHtml(comparison?.summary || "Observed pattern not available.")}</div>
+                    ${comparison?.dataQuality?.note ? `<div class="subtle">Data quality: ${escapeHtml(comparison.dataQuality.note)}</div>` : ""}
+                    ${ownerEditable ? `
+                      <div class="inline-row" style="margin-top:6px;">
+                        <button class="btn btn-ghost small" type="button" data-edit-experiment="${entry.id}">Edit</button>
+                        <button class="btn btn-ghost small" type="button" data-delete-experiment="${entry.id}">Delete</button>
+                      </div>
+                    ` : ""}
+                  </li>
+                `;
+              }).join("")}
+            </ul>
+          </div>
+        ` : `<div class="empty">No medication changes in this window.</div>`}
+      </article>
+
+      <article class="card consult-section">
+        <h3>C. What improved / worsened</h3>
+        <div class="subtle">${escapeHtml(shiftSummary.summary)}</div>
+        <div class="inline-row" style="margin-top:10px;">
+          <span class="kpi-badge">Check-ins: ${checkins.length}</span>
+          <span class="kpi-badge">Notes: ${notes.length}</span>
+          <span class="kpi-badge">Side-effect events: ${sideEffectEvents.length}</span>
+        </div>
+        <div class="consult-trend-chart">
+          ${consultTrendChart || `<div class="empty">Not enough check-in data yet for trend graphing in this window.</div>`}
+        </div>
+      </article>
+
+      <article class="card consult-section">
+        <h3>D. Side effects summary</h3>
+        ${sideEffectSummary.length ? `
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Medication</th><th>Timing</th><th>Frequency</th><th>Avg severity</th><th>Top symptom</th></tr></thead>
+              <tbody>
+                ${sideEffectSummary.map((row) => `<tr><td>${escapeHtml(row.medication)}</td><td>${escapeHtml(row.timing)}</td><td>${row.count}</td><td>${escapeHtml(String(row.avgSeverity))}</td><td>${escapeHtml(row.topSymptom)}</td></tr>`).join("")}
+              </tbody>
+            </table>
+          </div>
+        ` : `<div class="empty">No side-effect timing events in this window.</div>`}
+      </article>
+
+      <article class="card consult-section">
+        <h3>E. Adherence summary</h3>
+        <div class="summary-strip-grid consult-summary-strip">
+          <div class="summary-strip-item"><div class="summary-strip-label">Taken</div><div class="summary-strip-value">${takenCount}</div></div>
+          <div class="summary-strip-item"><div class="summary-strip-label">Skipped</div><div class="summary-strip-value">${skippedCount}</div></div>
+          <div class="summary-strip-item"><div class="summary-strip-label">Logged adherence</div><div class="summary-strip-value">${adherencePct === null ? "-" : `${adherencePct}%`}</div></div>
+          <div class="summary-strip-item"><div class="summary-strip-label">Window</div><div class="summary-strip-value">${escapeHtml(`${niceDate(windowRange.startDate)} → ${niceDate(windowRange.endDate)}`)}</div></div>
+        </div>
+      </article>
+
+      <article class="card consult-section">
+        <div class="card-head-row">
+          <div>
+            <h3>F. Question Queue</h3>
+            <div class="subtle">Open topics for psychiatrist review during consult.</div>
+          </div>
+          ${ownerEditable ? `<button class="btn btn-secondary small" type="button" data-consult-focus-questions="1">Add question</button>` : ""}
+        </div>
+        ${questions.length ? `
+          <div class="table-wrap consult-table-only">
+            <table>
+              <thead>
+                <tr>
+                  <th>Question</th>
+                  <th>Category</th>
+                  <th>Urgency</th>
+                  <th>Status</th>
+                  <th>Linked medication</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${questions.map((entry) => {
+                  const urgency = String(entry.urgency || "medium").toLowerCase();
+                  const status = String(entry.status || "open").toLowerCase();
+                  return `
+                    <tr>
+                      <td>${escapeHtml(entry.text)}</td>
+                      <td>${escapeHtml(entry.category || "-")}</td>
+                      <td>${escapeHtml(urgency)}</td>
+                      <td>${escapeHtml(CONSULT_QUESTION_STATUS_LABELS[status] || status)}</td>
+                      <td>${escapeHtml(entry.linkedMedication || "-")}</td>
+                      <td>
+                        ${ownerEditable ? `
+                          <div class="inline-row">
+                            <button class="btn btn-ghost small" type="button" data-edit-question="${entry.id}">Edit</button>
+                            <button class="btn btn-ghost small" type="button" data-delete-question="${entry.id}">Delete</button>
+                          </div>
+                        ` : `<span class="subtle">Read-only</span>`}
+                      </td>
+                    </tr>
+                  `;
+                }).join("")}
+              </tbody>
+            </table>
+          </div>
+          <div class="consult-cards-only">
+          <ul class="timeline-list consult-list">
+            ${questions.map((entry) => {
+              const urgency = String(entry.urgency || "medium").toLowerCase();
+              const status = String(entry.status || "open").toLowerCase();
+              const urgencyLabel = urgency === "high" ? "high urgency" : urgency === "low" ? "low urgency" : "medium urgency";
+              const urgencyClass = urgency === "high" ? "urgency-high" : urgency === "low" ? "urgency-low" : "urgency-medium";
+              const statusLabel = CONSULT_QUESTION_STATUS_LABELS[status] || status;
+              const statusClass = status === "resolved"
+                ? "status-resolved"
+                : status === "discussed"
+                  ? "status-discussed"
+                  : status === "carry_forward"
+                    ? "status-carry-forward"
+                    : "status-open";
+              return `
+              <li class="consult-question-row">
+                <div><strong>${escapeHtml(entry.text)}</strong></div>
+                <div class="inline-row consult-question-meta">
+                  <span class="pill-badge ${urgencyClass}">${escapeHtml(urgencyLabel)}</span>
+                  <span class="pill-badge ${statusClass}">${escapeHtml(statusLabel)}</span>
+                  <span class="subtle">Created ${escapeHtml(niceDateTime(entry.createdAt))}</span>
+                </div>
+                <div class="subtle">${escapeHtml(entry.category)}${entry.linkedMedication ? ` · ${escapeHtml(entry.linkedMedication)}` : ""}</div>
+                ${entry.note ? `<div class="subtle">${escapeHtml(entry.note)}</div>` : ""}
+                ${ownerEditable ? `
+                  <div class="inline-row" style="margin-top:6px;">
+                    <button class="btn btn-ghost small" type="button" data-edit-question="${entry.id}">Edit</button>
+                    <button class="btn btn-ghost small" type="button" data-delete-question="${entry.id}">Delete</button>
+                    <button class="btn btn-ghost small" type="button" data-question-status="${entry.id}" data-next-status="discussed">Discussed</button>
+                    <button class="btn btn-ghost small" type="button" data-question-status="${entry.id}" data-next-status="resolved">Resolved</button>
+                    <button class="btn btn-ghost small" type="button" data-question-status="${entry.id}" data-next-status="carry_forward">Carry forward</button>
+                    <button class="btn btn-ghost small" type="button" data-question-status="${entry.id}" data-next-status="open">Re-open</button>
+                  </div>
+                ` : ""}
+              </li>
+            `;
+            }).join("")}
+          </ul>
+          </div>
+        ` : `<div class="empty">No open consult questions.${ownerEditable ? " Add one to prep for the next appointment." : ""}</div>`}
+        ${ownerEditable ? `
+          <form id="consultQuestionForm" class="edit-inline-form consult-form">
+            <input type="hidden" name="editingId" value="${escapeHtml(editingQuestion?.id || "")}">
+            <div class="field-grid">
+              <div style="grid-column: 1 / -1;"><label>Question / concern</label><input name="text" required placeholder="What do I want to ask?" value="${escapeHtml(editingQuestion?.text || "")}"></div>
+              <div><label>Category</label><select name="category">${["question", "concern", "request", "observation"].map((value) => `<option value="${value}" ${String(editingQuestion?.category || "question") === value ? "selected" : ""}>${value}</option>`).join("")}</select></div>
+              <div><label>Urgency</label><select name="urgency">${["low", "medium", "high"].map((value) => `<option value="${value}" ${String(editingQuestion?.urgency || "medium") === value ? "selected" : ""}>${value}</option>`).join("")}</select></div>
+              <div><label>Status</label><select name="status">${["open", "discussed", "resolved", "carry_forward"].map((value) => `<option value="${value}" ${String(editingQuestion?.status || "open") === value ? "selected" : ""}>${value.replace("_", " ")}</option>`).join("")}</select></div>
+              <div><label>Linked medication</label><input name="linkedMedication" list="commonMedicationNames" placeholder="optional" value="${escapeHtml(editingQuestion?.linkedMedication || "")}"></div>
+              <div style="grid-column: 1 / -1;"><label>Note (optional)</label><textarea name="note">${escapeHtml(editingQuestion?.note || "")}</textarea></div>
+            </div>
+            <div class="inline-row">
+              <button class="btn btn-primary small" type="submit">${editingQuestion ? "Update question" : "Save question"}</button>
+              <button class="btn btn-ghost small" type="button" data-cancel-question-edit="1">Cancel</button>
+            </div>
+          </form>
+        ` : ""}
+      </article>
+
+      <article class="card consult-section">
+        <h3>G. Past decisions and current plan</h3>
+        ${latestDecision ? `
+          <div class="consult-plan-highlight">
+            <div><strong>Last decision:</strong> ${escapeHtml(niceDate(latestDecision.appointmentDate))}${latestDecision.clinicianName ? ` · ${escapeHtml(latestDecision.clinicianName)}` : ""}</div>
+            <div class="subtle">${escapeHtml(latestDecision.planUntilNextReview || latestDecision.notes || "No plan text recorded.")}</div>
+          </div>
+        ` : `<div class="empty">No decision log entries yet.</div>`}
+        ${decisions.length ? `
+          <ul class="timeline-list consult-list">
+            ${decisions.map((entry) => {
+              const linkedExperimentLabel = resolveLinkedExperimentLabel(allExperimentsById, entry);
+              return `<li>
+                <strong>${escapeHtml(niceDate(entry.appointmentDate))}</strong>${entry.clinicianName ? ` · ${escapeHtml(entry.clinicianName)}` : ""}
+                <div class="subtle">${escapeHtml(entry.planUntilNextReview || entry.notes || "-")}</div>
+                ${entry.followUpDate ? `<div class="subtle">Follow-up: ${escapeHtml(niceDate(entry.followUpDate))}</div>` : ""}
+                ${linkedExperimentLabel ? `<div class="subtle">Linked change: ${escapeHtml(linkedExperimentLabel)}</div>` : ""}
+                ${ownerEditable ? `
+                  <div class="inline-row" style="margin-top:6px;">
+                    <button class="btn btn-ghost small" type="button" data-edit-decision="${entry.id}">Edit</button>
+                    <button class="btn btn-ghost small" type="button" data-delete-decision="${entry.id}">Delete</button>
+                  </div>
+                ` : ""}
+              </li>`;
+            }).join("")}
+          </ul>
+        ` : ""}
+        ${ownerEditable ? `
+          <form id="consultDecisionForm" class="edit-inline-form consult-form">
+            <input type="hidden" name="editingId" value="${escapeHtml(editingDecision?.id || "")}">
+            <div class="field-grid">
+              <div><label>Appointment date</label><input name="appointmentDate" type="date" value="${escapeHtml(editingDecision?.appointmentDate || isoDate(new Date()))}" required></div>
+              <div><label>Clinician name (optional)</label><input name="clinicianName" placeholder="e.g. Theo" value="${escapeHtml(editingDecision?.clinicianName || "")}"></div>
+              <div><label>Linked appointment marker</label><select name="appointmentId"><option value="">None</option>${appointments.map((entry) => `<option value="${entry.id}" ${String(editingDecision?.appointmentId || "") === entry.id ? "selected" : ""}>${escapeHtml(`${niceDate(entry.appointmentDate)} · ${entry.appointmentType}`)}</option>`).join("")}</select></div>
+              <div><label>Linked med change</label><select name="linkedExperimentId"><option value="">None</option>${allExperiments.map((entry) => `<option value="${entry.id}" ${String(editingDecision?.linkedExperimentId || "") === entry.id ? "selected" : ""}>${escapeHtml(`${niceDate(entry.dateEffective)} · ${experimentLabelForSummary(entry)}`)}</option>`).join("")}</select></div>
+              <div style="grid-column: 1 / -1;"><label>Decision summary</label><textarea name="notes" required placeholder="What was decided?">${escapeHtml(editingDecision?.notes || "")}</textarea></div>
+              <div style="grid-column: 1 / -1;"><label>Rationale</label><textarea name="rationale">${escapeHtml(editingDecision?.rationale || "")}</textarea></div>
+              <div style="grid-column: 1 / -1;"><label>Success criteria</label><textarea name="successCriteria">${escapeHtml(editingDecision?.successCriteria || "")}</textarea></div>
+              <div style="grid-column: 1 / -1;"><label>Failure criteria / concerns</label><textarea name="failureCriteria">${escapeHtml(editingDecision?.failureCriteria || "")}</textarea></div>
+              <div style="grid-column: 1 / -1;"><label>Plan until next review</label><textarea name="planUntilNextReview">${escapeHtml(editingDecision?.planUntilNextReview || "")}</textarea></div>
+              <div><label>Follow-up date</label><input name="followUpDate" type="date" value="${escapeHtml(editingDecision?.followUpDate || "")}"></div>
+              <div><label>Contingency plan</label><input name="contingencyPlan" placeholder="optional" value="${escapeHtml(editingDecision?.contingencyPlan || "")}"></div>
+            </div>
+            <div class="inline-row">
+              <button class="btn btn-primary small" type="submit">${editingDecision ? "Update decision" : "Save decision"}</button>
+              <button class="btn btn-ghost small" type="button" data-cancel-decision-edit="1">Cancel</button>
+            </div>
+          </form>
+        ` : ""}
+      </article>
+
+      <article class="card consult-section">
+        <div class="card-head-row">
+          <div>
+            <h3>H. What I want to discuss today</h3>
+            <div class="subtle">Owner editable consult agenda for appointment focus.</div>
+          </div>
+        </div>
+        ${ownerEditable ? `
+          <form id="consultFocusForm" class="edit-inline-form consult-form">
+            <label for="consultDiscussToday">Consult focus text</label>
+            <textarea id="consultDiscussToday" name="discussToday" maxlength="500" placeholder="Key goals, concerns, and decision points for this appointment.">${escapeHtml(focusText)}</textarea>
+            <div class="inline-row"><button class="btn btn-primary small" type="submit">Save</button><button class="btn btn-ghost small" type="reset">Cancel</button></div>
+          </form>
+        ` : `<div class="subtle">${focusText ? escapeHtml(focusText) : "No consult focus text provided."}</div>`}
+      </article>
+
+      <article class="card consult-section">
+        <h3>Data quality</h3>
+        <ul class="timeline-list consult-list">
+          <li>Days without check-in: <strong>${quality.daysWithoutCheckin}</strong></li>
+          <li>Missing dose logs (estimated): <strong>${quality.missingDoseLogs}</strong></li>
+          <li>Incomplete change experiments: <strong>${quality.incompleteExperiments}</strong></li>
+          <li>Low-confidence entries: <strong>${quality.lowConfidenceEntries}</strong></li>
+        </ul>
+        <div class="subtle">Use this context to avoid over-interpreting sparse data.</div>
+      </article>
+
+      <article class="card consult-section">
+        <h3>Appointment markers</h3>
+        ${appointments.length ? `
+          <ul class="timeline-list consult-list">
+            ${appointments.map((entry) => `<li><strong>${escapeHtml(niceDate(entry.appointmentDate))}</strong> · ${escapeHtml(entry.appointmentType)}${entry.summaryNote ? `<div class="subtle">${escapeHtml(entry.summaryNote)}</div>` : ""}${ownerEditable ? `<div class="inline-row" style="margin-top:6px;"><button class="btn btn-ghost small" type="button" data-edit-appointment="${entry.id}">Edit</button><button class="btn btn-ghost small" type="button" data-delete-appointment="${entry.id}">Delete</button></div>` : ""}</li>`).join("")}
+          </ul>
+        ` : `<div class="empty">No appointments logged yet.</div>`}
+        ${ownerEditable ? `
+          <form id="consultAppointmentForm" class="edit-inline-form consult-form">
+            <input type="hidden" name="editingId" value="${escapeHtml(editingAppointment?.id || "")}">
+            <div class="field-grid">
+              <div><label>Date</label><input name="appointmentDate" type="date" value="${escapeHtml(editingAppointment?.appointmentDate || isoDate(new Date()))}" required></div>
+              <div><label>Type</label><select name="appointmentType">${["psychiatrist", "gp", "other"].map((entry) => `<option value="${entry}" ${String(editingAppointment?.appointmentType || "psychiatrist") === entry ? "selected" : ""}>${entry}</option>`).join("")}</select></div>
+              <div style="grid-column: 1 / -1;"><label>Summary note (optional)</label><textarea name="summaryNote">${escapeHtml(editingAppointment?.summaryNote || "")}</textarea></div>
+            </div>
+            <div class="inline-row">
+              <button class="btn btn-primary small" type="submit">${editingAppointment ? "Update appointment marker" : "Save appointment marker"}</button>
+              <button class="btn btn-ghost small" type="button" data-cancel-appointment-edit="1">Cancel</button>
+            </div>
+          </form>
+        ` : ""}
+      </article>
+
+      <article class="card consult-section">
+        <h3>Medication change experiment log</h3>
+        ${ownerEditable ? `
+          <form id="consultExperimentForm" class="edit-inline-form consult-form">
+            <input type="hidden" name="editingId" value="${escapeHtml(editingExperiment?.id || "")}">
+            <div class="field-grid">
+              <div><label>Date effective</label><input name="dateEffective" type="date" value="${escapeHtml(editingExperiment?.dateEffective || isoDate(new Date()))}" required></div>
+              <div><label>Medication</label><input name="medicationName" list="commonMedicationNames" value="${escapeHtml(editingExperiment?.medicationName || "")}" required></div>
+              <div><label>Old dose</label><input name="oldDose" value="${escapeHtml(editingExperiment?.oldDose || "")}" required></div>
+              <div><label>New dose</label><input name="newDose" value="${escapeHtml(editingExperiment?.newDose || "")}" required></div>
+              <div><label>Changed by</label><select name="changedBy">${["self", "psychiatrist", "gp", "other"].map((role) => `<option value="${role}" ${String(editingExperiment?.changedBy || "self") === role ? "selected" : ""}>${role}</option>`).join("")}</select></div>
+              <div><label>Route (optional)</label><input name="route" value="${escapeHtml(editingExperiment?.route || "")}"></div>
+              <div><label>Schedule change (optional)</label><input name="scheduleChange" value="${escapeHtml(editingExperiment?.scheduleChange || "")}" placeholder="e.g. moved PM dose to 14:00"></div>
+              <div style="grid-column: 1 / -1;"><label>Reason for change</label><textarea name="reasonForChange" required>${escapeHtml(editingExperiment?.reasonForChange || "")}</textarea></div>
+              <div style="grid-column: 1 / -1;"><label>Expected benefit</label><textarea name="expectedBenefit">${escapeHtml(editingExperiment?.expectedBenefit || "")}</textarea></div>
+              <div style="grid-column: 1 / -1;"><label>Expected side effects</label><textarea name="expectedSideEffects">${escapeHtml(editingExperiment?.expectedSideEffects || "")}</textarea></div>
+              <div style="grid-column: 1 / -1;"><label>What to monitor</label><textarea name="whatToMonitor">${escapeHtml(editingExperiment?.whatToMonitor || "")}</textarea></div>
+              <div><label>Review date</label><input name="reviewDate" type="date" value="${escapeHtml(editingExperiment?.reviewDate || "")}"></div>
+              <div><label>Outcome status</label><select name="outcomeStatus">${["pending", "better", "worse", "mixed", "unclear"].map((state) => `<option value="${state}" ${String(editingExperiment?.outcomeStatus || "pending") === state ? "selected" : ""}>${state}</option>`).join("")}</select></div>
+              <div><label>Outcome confidence</label><select name="confidenceInOutcome">${["low", "medium", "high"].map((level) => `<option value="${level}" ${String(editingExperiment?.confidenceInOutcome || "medium") === level ? "selected" : ""}>${level}</option>`).join("")}</select></div>
+              <div style="grid-column: 1 / -1;"><label>Outcome notes</label><textarea name="outcomeNotes">${escapeHtml(editingExperiment?.outcomeNotes || "")}</textarea></div>
+            </div>
+            <div class="inline-row">
+              <button class="btn btn-primary small" type="submit">${editingExperiment ? "Update experiment" : "Save experiment"}</button>
+              <button class="btn btn-ghost small" type="button" data-cancel-experiment-edit="1">Cancel</button>
+            </div>
+          </form>
+        ` : `<div class="subtle">Experiment log is editable in owner mode only.</div>`}
+      </article>
+    </div>
+  `;
+
+  root.querySelector("#consultRangeFilter")?.addEventListener("change", (event) => {
+    app.ui.consultFilters = { ...app.ui.consultFilters, range: String(event.target.value || "since_last_appointment") };
+    if (ownerEditable) {
+      app.ownerData.consultConfig = normalizeConsultConfig({
+        ...(app.ownerData.consultConfig || {}),
+        activeFilters: app.ui.consultFilters
+      });
+      saveOwnerData(app.ownerData);
+    }
+    renderAll();
+  });
+  root.querySelector("#consultRangeDays")?.addEventListener("change", (event) => {
+    app.ui.consultFilters = { ...app.ui.consultFilters, customRangeDays: String(event.target.value || "14") };
+    if (ownerEditable) {
+      app.ownerData.consultConfig = normalizeConsultConfig({
+        ...(app.ownerData.consultConfig || {}),
+        activeFilters: app.ui.consultFilters
+      });
+      saveOwnerData(app.ownerData);
+    }
+    renderAll();
+  });
+  root.querySelector("#consultMedicationFilter")?.addEventListener("change", (event) => {
+    app.ui.consultFilters = { ...app.ui.consultFilters, medicationId: String(event.target.value || "all") };
+    if (ownerEditable) {
+      app.ownerData.consultConfig = normalizeConsultConfig({
+        ...(app.ownerData.consultConfig || {}),
+        activeFilters: app.ui.consultFilters
+      });
+      saveOwnerData(app.ownerData);
+    }
+    renderAll();
+  });
+  root.querySelector("#consultOpenOnly")?.addEventListener("change", (event) => {
+    app.ui.consultFilters = { ...app.ui.consultFilters, openQuestionsOnly: Boolean(event.target.checked) };
+    if (ownerEditable) {
+      app.ownerData.consultConfig = normalizeConsultConfig({
+        ...(app.ownerData.consultConfig || {}),
+        activeFilters: app.ui.consultFilters
+      });
+      saveOwnerData(app.ownerData);
+    }
+    renderAll();
+  });
+  root.querySelector("[data-consult-copy]")?.addEventListener("click", async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(clipboardSummary);
+      } else {
+        const temp = document.createElement("textarea");
+        temp.value = clipboardSummary;
+        temp.setAttribute("readonly", "true");
+        temp.style.position = "fixed";
+        temp.style.opacity = "0";
+        document.body.appendChild(temp);
+        temp.select();
+        document.execCommand("copy");
+        temp.remove();
+      }
+      setStatus("Consult summary copied to clipboard.");
+    } catch (error) {
+      console.error("Failed to copy consult summary", error);
+      setStatus("Could not copy consult summary. Try Print / Save PDF instead.", "error");
+    }
+  });
+  root.querySelector("[data-consult-print]")?.addEventListener("click", () => window.print());
+  root.querySelector("[data-consult-focus-questions]")?.addEventListener("click", () => {
+    root.querySelector("#consultQuestionForm input[name='text']")?.focus();
+  });
+
+  if (!ownerEditable) return;
+
+  root.querySelector("#consultFocusForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const discussToday = String(form.elements.discussToday?.value || "").trim();
+    app.ownerData.consultConfig = normalizeConsultConfig({
+      ...(app.ownerData.consultConfig || {}),
+      discussToday,
+      activeFilters: app.ui.consultFilters
+    });
+    saveOwnerData(app.ownerData);
+    setStatus("Consult focus updated.");
+    renderAll();
+  });
+
+  root.querySelector("#consultQuestionForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = formToObject(form);
+    if (!values.text) {
+      setStatus("Question text is required.", "error");
+      return;
+    }
+    const nowIso = isoDateTime(new Date());
+    const editingId = String(values.editingId || "");
+    if (editingId) {
+      app.ownerData.consultQuestions = (app.ownerData.consultQuestions || []).map((entry) => (
+        entry.id === editingId
+          ? normalizeConsultQuestion({
+              ...entry,
+              ...values,
+              id: editingId,
+              discussedAt: values.status === "open" ? "" : (entry.discussedAt || nowIso)
+            })
+          : entry
+      ));
+      app.ui.consultEditingQuestionId = "";
+      setStatus("Consult question updated.");
+    } else {
+      app.ownerData.consultQuestions.push(normalizeConsultQuestion({
+        ...values,
+        id: uid(),
+        status: values.status || "open",
+        createdAt: nowIso
+      }));
+      setStatus("Consult question added.");
+    }
+    saveOwnerData(app.ownerData);
+    form.reset();
+    renderAll();
+  });
+
+  root.querySelectorAll("[data-edit-question]").forEach((button) => {
+    button.addEventListener("click", () => {
+      app.ui.consultEditingQuestionId = String(button.dataset.editQuestion || "");
+      renderAll();
+    });
+  });
+
+  root.querySelectorAll("[data-delete-question]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = String(button.dataset.deleteQuestion || "");
+      if (!id) return;
+      app.ownerData.consultQuestions = (app.ownerData.consultQuestions || []).filter((entry) => entry.id !== id);
+      if (app.ui.consultEditingQuestionId === id) {
+        app.ui.consultEditingQuestionId = "";
+      }
+      saveOwnerData(app.ownerData);
+      setStatus("Consult question deleted.");
+      renderAll();
+    });
+  });
+
+  root.querySelectorAll("[data-edit-experiment]").forEach((button) => {
+    button.addEventListener("click", () => {
+      app.ui.consultEditingExperimentId = String(button.dataset.editExperiment || "");
+      renderAll();
+    });
+  });
+
+  root.querySelectorAll("[data-delete-experiment]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = String(button.dataset.deleteExperiment || "");
+      if (!id) return;
+      app.ownerData.medicationChangeExperiments = (app.ownerData.medicationChangeExperiments || []).filter((entry) => entry.id !== id);
+      app.ownerData.decisionLog = (app.ownerData.decisionLog || []).map((entry) => (
+        String(entry.linkedExperimentId || "") === id
+          ? normalizeDecisionLogEntry({ ...entry, linkedExperimentId: "" })
+          : entry
+      ));
+      if (app.ui.consultEditingExperimentId === id) {
+        app.ui.consultEditingExperimentId = "";
+      }
+      saveOwnerData(app.ownerData);
+      setStatus("Experiment entry deleted.");
+      renderAll();
+    });
+  });
+
+  root.querySelectorAll("[data-question-status]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = String(button.dataset.questionStatus || "");
+      const nextStatus = String(button.dataset.nextStatus || "open");
+      const target = app.ownerData.consultQuestions.find((entry) => entry.id === id);
+      if (!target) return;
+      target.status = nextStatus;
+      target.discussedAt = nextStatus === "open" ? "" : isoDateTime(new Date());
+      saveOwnerData(app.ownerData);
+      setStatus(`Question marked ${nextStatus.replace("_", " ")}.`);
+      renderAll();
+    });
+  });
+
+  root.querySelector("[data-cancel-question-edit]")?.addEventListener("click", () => {
+    app.ui.consultEditingQuestionId = "";
+    renderAll();
+  });
+
+  root.querySelectorAll("[data-edit-decision]").forEach((button) => {
+    button.addEventListener("click", () => {
+      app.ui.consultEditingDecisionId = String(button.dataset.editDecision || "");
+      renderAll();
+    });
+  });
+
+  root.querySelectorAll("[data-delete-decision]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = String(button.dataset.deleteDecision || "");
+      if (!id) return;
+      app.ownerData.decisionLog = (app.ownerData.decisionLog || []).filter((entry) => entry.id !== id);
+      if (app.ui.consultEditingDecisionId === id) {
+        app.ui.consultEditingDecisionId = "";
+      }
+      saveOwnerData(app.ownerData);
+      setStatus("Decision entry deleted.");
+      renderAll();
+    });
+  });
+
+  root.querySelector("#consultDecisionForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const values = formToObject(event.currentTarget);
+    if (!values.appointmentDate || !values.notes) {
+      setStatus("Decision log needs appointment date and summary.", "error");
+      return;
+    }
+    const nowIso = isoDateTime(new Date());
+    const editingId = String(values.editingId || "");
+    if (editingId) {
+      app.ownerData.decisionLog = (app.ownerData.decisionLog || []).map((entry) => (
+        entry.id === editingId
+          ? normalizeDecisionLogEntry({
+              ...entry,
+              ...values,
+              id: editingId,
+              updatedAt: nowIso
+            })
+          : entry
+      ));
+      app.ui.consultEditingDecisionId = "";
+      setStatus("Decision log entry updated.");
+    } else {
+      app.ownerData.decisionLog.push(normalizeDecisionLogEntry({
+        ...values,
+        id: uid(),
+        createdAt: nowIso,
+        updatedAt: nowIso
+      }));
+      setStatus("Decision log entry saved.");
+    }
+    saveOwnerData(app.ownerData);
+    event.currentTarget.reset();
+    renderAll();
+  });
+
+  root.querySelector("[data-cancel-decision-edit]")?.addEventListener("click", () => {
+    app.ui.consultEditingDecisionId = "";
+    renderAll();
+  });
+
+  root.querySelectorAll("[data-edit-appointment]").forEach((button) => {
+    button.addEventListener("click", () => {
+      app.ui.consultEditingAppointmentId = String(button.dataset.editAppointment || "");
+      renderAll();
+    });
+  });
+
+  root.querySelectorAll("[data-delete-appointment]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = String(button.dataset.deleteAppointment || "");
+      if (!id) return;
+      app.ownerData.appointmentEvents = (app.ownerData.appointmentEvents || []).filter((entry) => entry.id !== id);
+      app.ownerData.decisionLog = (app.ownerData.decisionLog || []).map((entry) => (
+        String(entry.appointmentId || "") === id
+          ? normalizeDecisionLogEntry({ ...entry, appointmentId: "" })
+          : entry
+      ));
+      if (app.ui.consultEditingAppointmentId === id) {
+        app.ui.consultEditingAppointmentId = "";
+      }
+      saveOwnerData(app.ownerData);
+      setStatus("Appointment marker deleted.");
+      renderAll();
+    });
+  });
+
+  root.querySelector("#consultAppointmentForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const values = formToObject(event.currentTarget);
+    if (!values.appointmentDate) {
+      setStatus("Appointment date is required.", "error");
+      return;
+    }
+    const nowIso = isoDateTime(new Date());
+    const editingId = String(values.editingId || "");
+    if (editingId) {
+      app.ownerData.appointmentEvents = (app.ownerData.appointmentEvents || []).map((entry) => (
+        entry.id === editingId
+          ? normalizeAppointmentEvent({
+              ...entry,
+              ...values,
+              id: editingId,
+              createdAt: entry.createdAt || nowIso
+            })
+          : entry
+      ));
+      app.ui.consultEditingAppointmentId = "";
+      setStatus("Appointment marker updated.");
+    } else {
+      app.ownerData.appointmentEvents.push(normalizeAppointmentEvent({
+        ...values,
+        id: uid(),
+        createdAt: nowIso
+      }));
+      setStatus("Appointment marker saved.");
+    }
+    saveOwnerData(app.ownerData);
+    event.currentTarget.reset();
+    renderAll();
+  });
+
+  root.querySelector("[data-cancel-appointment-edit]")?.addEventListener("click", () => {
+    app.ui.consultEditingAppointmentId = "";
+    renderAll();
+  });
+
+  root.querySelector("#consultExperimentForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const values = formToObject(event.currentTarget);
+    if (!values.dateEffective || !values.medicationName || !values.oldDose || !values.newDose || !values.reasonForChange) {
+      setStatus("Experiment log entry needs date, medication, dose change, and reason.", "error");
+      return;
+    }
+    if (!doseLooksValid(values.oldDose) || !doseLooksValid(values.newDose)) {
+      setStatus("Dose format is invalid. Use value + unit (e.g. 40 mg).", "error");
+      return;
+    }
+    const nowIso = isoDateTime(new Date());
+    const editingId = String(values.editingId || "");
+    if (editingId) {
+      app.ownerData.medicationChangeExperiments = (app.ownerData.medicationChangeExperiments || []).map((entry) => (
+        entry.id === editingId
+          ? normalizeMedicationChangeExperiment({
+              ...entry,
+              ...values,
+              id: editingId,
+              updatedAt: nowIso
+            })
+          : entry
+      ));
+      app.ui.consultEditingExperimentId = "";
+      setStatus("Medication change experiment updated.");
+    } else {
+      app.ownerData.medicationChangeExperiments.push(normalizeMedicationChangeExperiment({
+        ...values,
+        id: uid(),
+        createdAt: nowIso,
+        updatedAt: nowIso
+      }));
+      setStatus("Medication change experiment saved.");
+    }
+    saveOwnerData(app.ownerData);
+    event.currentTarget.reset();
+    renderAll();
+  });
+
+  root.querySelector("[data-cancel-experiment-edit]")?.addEventListener("click", () => {
+    app.ui.consultEditingExperimentId = "";
+    renderAll();
   });
 }
 
@@ -4834,12 +6439,28 @@ function applyTimelineFilters(data) {
 
   const checkins = (data.checkins || []).filter((checkin) => inDateWindow(checkin.date));
   const adherence = (data.adherence || []).filter((entry) => inDateWindow(entry.date));
+  const sideEffectEvents = (data.sideEffectEvents || []).filter((entry) => {
+    const date = String(entry.date || entry.createdAt || "").slice(0, 10);
+    if (!inDateWindow(date)) return false;
+    if (medicationId === "all") return true;
+    if (entry.linkedMedication && normalizeMedicationKey(entry.linkedMedication) === selectedKey) return true;
+    return false;
+  });
+  const medicationChangeExperiments = resolveExperimentRows(data).filter((entry) => {
+    if (!inDateWindow(String(entry.dateEffective || "").slice(0, 10))) return false;
+    if (medicationId === "all") return true;
+    if (entry.medicationId && entry.medicationId === medicationId) return true;
+    if (entry.medicationName && normalizeMedicationKey(entry.medicationName) === selectedKey) return true;
+    return false;
+  });
   const filtered = {
     ...data,
     changes,
     notes,
     checkins,
-    adherence
+    adherence,
+    sideEffectEvents,
+    medicationChangeExperiments
   };
   app.derivedMemo.timelineFilteredKey = memoKey;
   app.derivedMemo.timelineFilteredValue = filtered;
@@ -4873,6 +6494,22 @@ function renderCombinedTimeline(data) {
     });
   }
 
+  for (const decision of Array.isArray(data.decisionLog) ? data.decisionLog : []) {
+    events.push({
+      date: decision.appointmentDate,
+      type: "Decision log",
+      detail: `${decision.clinicianName ? `${decision.clinicianName} · ` : ""}${decision.planUntilNextReview || decision.notes || "Decision recorded"}`
+    });
+  }
+
+  for (const appointment of Array.isArray(data.appointmentEvents) ? data.appointmentEvents : []) {
+    events.push({
+      date: appointment.appointmentDate,
+      type: `Appointment (${appointment.appointmentType})`,
+      detail: appointment.summaryNote || "Appointment marker"
+    });
+  }
+
   const sorted = events.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 60);
   if (!sorted.length) {
     return `<div class="empty">No timeline events yet.${getActiveContext().readOnly ? "" : ` <button class="btn btn-secondary small" type="button" data-empty-action="checkin">Add check-in</button>`}</div>`;
@@ -4895,7 +6532,10 @@ function renderBeforeAfterComparison(data) {
   app.ui.comparisonChangeId = selectedId;
 
   const selectedChange = sortedChanges.find((item) => item.id === selectedId);
-  const result = computeBeforeAfterMetrics(data.checkins, selectedChange.date);
+  const comparison7 = computeBeforeAfterComparison(data, selectedChange.date, { beforeDays: 7, afterDays: 7 });
+  const comparison14 = computeBeforeAfterComparison(data, selectedChange.date, { beforeDays: 14, afterDays: 14 });
+  const rows = comparison7.metrics
+    .filter((metric) => ["adherencePct", "moodAvg", "anxietyAvg", "focusAvg", "sleepHoursAvg", "sideEffectCount"].includes(metric.key));
 
   return `
     <div class="field-grid">
@@ -4913,22 +6553,31 @@ function renderBeforeAfterComparison(data) {
           <tr>
             <th>Metric</th>
             <th>7 days before</th>
-            <th>14 days after</th>
+            <th>7 days after</th>
             <th>Delta</th>
+            <th>Direction</th>
           </tr>
         </thead>
         <tbody>
-          ${["mood", "anxiety", "focus", "sleepHours"].map((metric) => {
-            const before = result.before[metric];
-            const after = result.after[metric];
-            const delta = roundNumber(after - before, 2);
-            return `<tr><td>${escapeHtml(metric)}</td><td>${roundNumber(before, 2)}</td><td>${roundNumber(after, 2)}</td><td>${delta >= 0 ? "+" : ""}${delta}</td></tr>`;
+          ${rows.map((metric) => {
+            const before = metric.before;
+            const after = metric.after;
+            const delta = metric.delta;
+            const direction = metric.changeType === "insufficient"
+              ? "insufficient"
+              : metric.changeType === "stable"
+                ? "stable"
+                : metric.changeType === "improved"
+                  ? "improved"
+                  : "worsened";
+            return `<tr><td>${escapeHtml(metric.label)}</td><td>${before ?? "-"}</td><td>${after ?? "-"}</td><td>${delta === null || delta === undefined ? "-" : `${Number(delta) >= 0 ? "+" : ""}${escapeHtml(String(delta))}`}</td><td>${escapeHtml(direction)}</td></tr>`;
           }).join("")}
         </tbody>
       </table>
     </div>
 
-    <p class="subtle">Window uses 7 days before and 14 days after ${escapeHtml(niceDate(selectedChange.date))}. Interpret trends in clinical context.</p>
+    <p class="subtle">${escapeHtml(comparison7.summary)} ${escapeHtml(comparison7.dataQuality?.note || "")}</p>
+    <p class="subtle">14-day window check: ${escapeHtml(comparison14.dataQuality?.note || "Coverage assessed.")}</p>
   `;
 }
 
@@ -5001,6 +6650,17 @@ function buildCheckinDraftDefaults(data, draftInput = {}) {
         sideEffectsChecklist: latest.sideEffectsChecklist || [],
         sideEffectsText: latest.sideEffectsText || "",
         trainingNotes: latest.trainingNotes || "",
+        gotOutOfBedOnTime: latest.gotOutOfBedOnTime || false,
+        selfCareCompleted: latest.selfCareCompleted || false,
+        keyTaskCompleted: latest.keyTaskCompleted || false,
+        exerciseOrWalkDone: latest.exerciseOrWalkDone || false,
+        avoidedImpulsiveBehaviour: latest.avoidedImpulsiveBehaviour || false,
+        socialContactLevel: latest.socialContactLevel || "limited",
+        onsetAfterDoseMinutes: "",
+        sideEffectMedication: "",
+        timeOfDay: "",
+        confidenceRelatedToMed: "medium",
+        impactOnFunction: "medium",
         weight: latest.vitals?.weight || "",
         bpSystolic: latest.vitals?.bpSystolic || "",
         bpDiastolic: latest.vitals?.bpDiastolic || "",
@@ -5016,9 +6676,31 @@ function buildCheckinDraftDefaults(data, draftInput = {}) {
         energy: 6,
         irritability: 4,
         cravingsImpulsivity: 4,
+        socialContactLevel: "limited",
+        gotOutOfBedOnTime: false,
+        selfCareCompleted: false,
+        keyTaskCompleted: false,
+        exerciseOrWalkDone: false,
+        avoidedImpulsiveBehaviour: false,
+        onsetAfterDoseMinutes: "",
+        sideEffectMedication: "",
+        timeOfDay: "",
+        confidenceRelatedToMed: "medium",
+        impactOnFunction: "medium",
         sideEffectsChecklist: [],
         sideEffectsText: "",
         trainingNotes: "",
+        gotOutOfBedOnTime: false,
+        selfCareCompleted: false,
+        keyTaskCompleted: false,
+        exerciseOrWalkDone: false,
+        avoidedImpulsiveBehaviour: false,
+        socialContactLevel: "limited",
+        onsetAfterDoseMinutes: "",
+        sideEffectMedication: "",
+        timeOfDay: "",
+        confidenceRelatedToMed: "medium",
+        impactOnFunction: "medium",
         weight: "",
         bpSystolic: "",
         bpDiastolic: "",
@@ -5237,6 +6919,26 @@ function renderWorkflowForm(data) {
             <label>Note text</label>
             <textarea name="noteText" required>${escapeHtml(draft.noteText || "")}</textarea>
           </div>
+          <div><label>Onset after dose (minutes)</label><input name="onsetAfterDoseMinutes" type="number" min="0" value="${escapeHtml(draft.onsetAfterDoseMinutes || "")}"></div>
+          <div>
+            <label>Time of day</label>
+            <select name="timeOfDay">
+              ${["", "morning", "afternoon", "evening", "night"].map((value) => `<option value="${value}" ${String(draft.timeOfDay || "") === value ? "selected" : ""}>${escapeHtml(value || "unspecified")}</option>`).join("")}
+            </select>
+          </div>
+          <div><label>Duration (minutes, optional)</label><input name="durationMinutes" type="number" min="0" value="${escapeHtml(draft.durationMinutes || "")}"></div>
+          <div>
+            <label>Medication-link confidence</label>
+            <select name="confidenceRelatedToMed">
+              ${["low", "medium", "high"].map((level) => `<option value="${level}" ${String(draft.confidenceRelatedToMed || "medium") === level ? "selected" : ""}>${escapeHtml(level)}</option>`).join("")}
+            </select>
+          </div>
+          <div>
+            <label>Impact on function</label>
+            <select name="impactOnFunction">
+              ${["low", "medium", "high"].map((level) => `<option value="${level}" ${String(draft.impactOnFunction || "medium") === level ? "selected" : ""}>${escapeHtml(level)}</option>`).join("")}
+            </select>
+          </div>
           <div style="grid-column: 1 / -1;">
             <label>Training / exercise notes</label>
             <textarea name="trainingNotes">${escapeHtml(draft.trainingNotes || "")}</textarea>
@@ -5275,6 +6977,36 @@ function renderWorkflowForm(data) {
         <div><label>Energy (0-10)</label><input name="energy" type="number" min="0" max="10" value="${escapeHtml(valueOrDefault(draft.energy, 6))}" required></div>
         <div><label>Irritability (0-10)</label><input name="irritability" type="number" min="0" max="10" value="${escapeHtml(valueOrDefault(draft.irritability, 4))}" required></div>
         <div><label>Cravings / impulsivity (0-10)</label><input name="cravingsImpulsivity" type="number" min="0" max="10" value="${escapeHtml(valueOrDefault(draft.cravingsImpulsivity, 4))}" required></div>
+        <div>
+          <label>Social contact</label>
+          <select name="socialContactLevel">
+            ${["none", "limited", "normal"].map((level) => `<option value="${level}" ${String(draft.socialContactLevel || "limited") === level ? "selected" : ""}>${escapeHtml(level)}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+
+      <label style="margin-top:10px;">Daily function (quick taps)</label>
+      <div class="checklist">
+        <label class="check-item">
+          <input type="checkbox" name="gotOutOfBedOnTime" ${draft.gotOutOfBedOnTime ? "checked" : ""}>
+          <span>Got out of bed on time</span>
+        </label>
+        <label class="check-item">
+          <input type="checkbox" name="selfCareCompleted" ${draft.selfCareCompleted ? "checked" : ""}>
+          <span>Self-care completed</span>
+        </label>
+        <label class="check-item">
+          <input type="checkbox" name="keyTaskCompleted" ${draft.keyTaskCompleted ? "checked" : ""}>
+          <span>Key task completed</span>
+        </label>
+        <label class="check-item">
+          <input type="checkbox" name="exerciseOrWalkDone" ${draft.exerciseOrWalkDone ? "checked" : ""}>
+          <span>Exercise or walk completed</span>
+        </label>
+        <label class="check-item">
+          <input type="checkbox" name="avoidedImpulsiveBehaviour" ${draft.avoidedImpulsiveBehaviour ? "checked" : ""}>
+          <span>Avoided impulsive behaviour</span>
+        </label>
       </div>
 
       <label style="margin-top:10px;">Side effects checklist</label>
@@ -5290,6 +7022,26 @@ function renderWorkflowForm(data) {
 
       <div class="field-grid" style="margin-top:10px;">
         <div style="grid-column: 1 / -1;"><label>Side effects free text</label><textarea name="sideEffectsText">${escapeHtml(draft.sideEffectsText || "")}</textarea></div>
+        <div><label>Linked medication (optional)</label><input name="sideEffectMedication" list="commonMedicationNames" value="${escapeHtml(valueOrDefault(draft.sideEffectMedication, ""))}" placeholder="Optional medication link"></div>
+        <div><label>Side effect onset after dose (minutes)</label><input name="onsetAfterDoseMinutes" type="number" min="0" value="${escapeHtml(valueOrDefault(draft.onsetAfterDoseMinutes, ""))}"></div>
+        <div>
+          <label>Side effect time of day</label>
+          <select name="timeOfDay">
+            ${["", "morning", "afternoon", "evening", "night"].map((value) => `<option value="${value}" ${String(draft.timeOfDay || "") === value ? "selected" : ""}>${escapeHtml(value || "unspecified")}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label>Medication-link confidence</label>
+          <select name="confidenceRelatedToMed">
+            ${["low", "medium", "high"].map((value) => `<option value="${value}" ${String(draft.confidenceRelatedToMed || "medium") === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label>Functional impact</label>
+          <select name="impactOnFunction">
+            ${["low", "medium", "high"].map((value) => `<option value="${value}" ${String(draft.impactOnFunction || "medium") === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}
+          </select>
+        </div>
         <div style="grid-column: 1 / -1;"><label>Training / exercise notes</label><textarea name="trainingNotes">${escapeHtml(draft.trainingNotes || "")}</textarea></div>
         <div><label>Weight (optional)</label><input name="weight" value="${escapeHtml(draft.weight || "")}"></div>
         <div><label>BP systolic (optional)</label><input name="bpSystolic" value="${escapeHtml(draft.bpSystolic || "")}"></div>
@@ -5455,6 +7207,28 @@ function bindWorkflowFormHandlers(root, data) {
         createdAt: isoDateTime(new Date())
       });
 
+      app.ownerData.medicationChangeExperiments.push(normalizeMedicationChangeExperiment({
+        id: uid(),
+        medicationId: medication?.id || "",
+        medicationName: values.medicationName,
+        dateEffective: values.date,
+        oldDose: values.oldDose,
+        newDose: values.newDose,
+        route: values.route || "",
+        changedBy: values.changedBy || "self",
+        reasonForChange: values.reason,
+        expectedBenefit: values.expectedEffects || "",
+        expectedSideEffects: "",
+        whatToMonitor: values.monitorFor || values.monitor || "",
+        reviewDate: values.reviewDate || "",
+        outcomeStatus: "pending",
+        outcomeNotes: values.notes || "",
+        confidenceInOutcome: "medium",
+        linkedChangeId: app.ownerData.changes[app.ownerData.changes.length - 1]?.id || "",
+        createdAt: isoDateTime(new Date()),
+        updatedAt: isoDateTime(new Date())
+      }));
+
       if (medication) {
         medication.currentDose = values.newDose;
         medication.updatedAt = isoDateTime(new Date());
@@ -5505,6 +7279,28 @@ function bindWorkflowFormHandlers(root, data) {
         createdAt: isoDateTime(new Date())
       });
 
+      if (values.noteType === "side_effect") {
+        const onset = Number(values.onsetAfterDoseMinutes);
+        const duration = Number(values.durationMinutes);
+        const symptomNames = checklist.length ? checklist : ["general side effect note"];
+        symptomNames.forEach((symptom) => {
+          app.ownerData.sideEffectEvents.push(normalizeSideEffectEvent({
+            id: uid(),
+            date: values.date,
+            symptomName: symptom,
+            severity: values.severity === "high" ? 8 : values.severity === "moderate" ? 5 : 3,
+            linkedMedication: values.medicationName || "",
+            onsetAfterDoseMinutes: Number.isFinite(onset) ? onset : null,
+            timeOfDay: values.timeOfDay || "",
+            durationMinutes: Number.isFinite(duration) ? duration : null,
+            confidenceRelatedToMed: values.confidenceRelatedToMed || "medium",
+            impactOnFunction: values.impactOnFunction || "medium",
+            note: values.noteText || "",
+            createdAt: isoDateTime(new Date())
+          }));
+        });
+      }
+
       saveOwnerData(app.ownerData);
       app.drafts.note = {};
       saveDrafts();
@@ -5518,6 +7314,11 @@ function bindWorkflowFormHandlers(root, data) {
     const writeCheckinDraftFromForm = () => {
       app.drafts.checkin = formToObject(checkinForm);
       app.drafts.checkin.sideEffectsChecklist = checkedValues(checkinForm, "sideEffectsChecklist");
+      app.drafts.checkin.gotOutOfBedOnTime = Boolean(checkinForm.elements.gotOutOfBedOnTime?.checked);
+      app.drafts.checkin.selfCareCompleted = Boolean(checkinForm.elements.selfCareCompleted?.checked);
+      app.drafts.checkin.keyTaskCompleted = Boolean(checkinForm.elements.keyTaskCompleted?.checked);
+      app.drafts.checkin.exerciseOrWalkDone = Boolean(checkinForm.elements.exerciseOrWalkDone?.checked);
+      app.drafts.checkin.avoidedImpulsiveBehaviour = Boolean(checkinForm.elements.avoidedImpulsiveBehaviour?.checked);
       saveDrafts();
     };
 
@@ -5526,7 +7327,12 @@ function bindWorkflowFormHandlers(root, data) {
       for (const [key, value] of entries) {
         if (key === "sideEffectsChecklist") continue;
         if (!checkinForm.elements[key]) continue;
-        checkinForm.elements[key].value = value;
+        const control = checkinForm.elements[key];
+        if (control.type === "checkbox") {
+          control.checked = Boolean(value);
+        } else {
+          control.value = value;
+        }
       }
       if (Array.isArray(preset?.sideEffectsChecklist)) {
         const selected = new Set(preset.sideEffectsChecklist.map((item) => String(item)));
@@ -5587,6 +7393,14 @@ function bindWorkflowFormHandlers(root, data) {
       }
 
       const nowIso = isoDateTime(new Date());
+      const functionChecks = [
+        Boolean(checkinForm.elements.gotOutOfBedOnTime?.checked),
+        Boolean(checkinForm.elements.selfCareCompleted?.checked),
+        Boolean(checkinForm.elements.keyTaskCompleted?.checked),
+        Boolean(checkinForm.elements.exerciseOrWalkDone?.checked),
+        Boolean(checkinForm.elements.avoidedImpulsiveBehaviour?.checked)
+      ];
+      const derivedFunctionScore = functionChecks.reduce((sum, value) => sum + Number(value), 0);
       const payload = normalizeCheckin({
         id: duplicate?.id || uid(),
         date: values.date,
@@ -5602,6 +7416,13 @@ function bindWorkflowFormHandlers(root, data) {
         sideEffectsChecklist: checklist,
         sideEffectsText: values.sideEffectsText || "",
         trainingNotes: values.trainingNotes || "",
+        gotOutOfBedOnTime: Boolean(checkinForm.elements.gotOutOfBedOnTime?.checked),
+        selfCareCompleted: Boolean(checkinForm.elements.selfCareCompleted?.checked),
+        keyTaskCompleted: Boolean(checkinForm.elements.keyTaskCompleted?.checked),
+        exerciseOrWalkDone: Boolean(checkinForm.elements.exerciseOrWalkDone?.checked),
+        avoidedImpulsiveBehaviour: Boolean(checkinForm.elements.avoidedImpulsiveBehaviour?.checked),
+        socialContactLevel: values.socialContactLevel || "limited",
+        functionScore: derivedFunctionScore,
         vitals: {
           weight: values.weight || "",
           bpSystolic: values.bpSystolic || "",
@@ -5616,6 +7437,40 @@ function bindWorkflowFormHandlers(root, data) {
         app.ownerData.checkins = app.ownerData.checkins.map((entry) => (entry.id === duplicate.id ? payload : entry));
       } else {
         app.ownerData.checkins.push(payload);
+      }
+
+      const sideEffectText = String(values.sideEffectsText || "").trim();
+      if (checklist.length || sideEffectText) {
+        const medicationName = String(values.sideEffectMedication || "").trim();
+        const onset = Number(values.onsetAfterDoseMinutes);
+        const commonMeta = {
+          date: values.date,
+          linkedMedication: medicationName,
+          onsetAfterDoseMinutes: Number.isFinite(onset) ? onset : null,
+          timeOfDay: values.timeOfDay || "",
+          confidenceRelatedToMed: values.confidenceRelatedToMed || "medium",
+          impactOnFunction: values.impactOnFunction || "medium",
+          createdAt: nowIso
+        };
+        if (checklist.length) {
+          checklist.forEach((symptom) => {
+            app.ownerData.sideEffectEvents.push(normalizeSideEffectEvent({
+              id: uid(),
+              symptomName: symptom,
+              severity: 5,
+              note: sideEffectText,
+              ...commonMeta
+            }));
+          });
+        } else {
+          app.ownerData.sideEffectEvents.push(normalizeSideEffectEvent({
+            id: uid(),
+            symptomName: "general side effect note",
+            severity: 5,
+            note: sideEffectText,
+            ...commonMeta
+          }));
+        }
       }
 
       saveOwnerData(app.ownerData);
@@ -5660,6 +7515,7 @@ function renderSharing(root, _data, context) {
   const ownerProfile = normalizeOwnerProfile(app.ownerData.profile);
   const warningSigns = normalizeWarningSigns(app.ownerData.warningSigns);
   const riskConfig = normalizeRiskConfig(app.ownerData.riskConfig);
+  const shareLinksForPreview = app.ownerData.shareLinks.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const syncStatus = app.sync.status === "connected"
     ? `Connected${app.sync.lastSyncedAt ? ` · last sync ${niceDateTime(app.sync.lastSyncedAt)}` : ""}`
     : app.sync.status === "syncing"
@@ -5819,6 +7675,29 @@ function renderSharing(root, _data, context) {
         </div>
       ` : ""}
       </div>
+    </div>
+
+    <div class="card">
+      <h3>Preview shared link</h3>
+      <p class="subtle">Open a recipient-safe read-only preview from here.</p>
+      ${shareLinksForPreview.length ? `
+        <div class="field-grid">
+          <div>
+            <label for="sharePreviewSelect">Select recipient link</label>
+            <select id="sharePreviewSelect">
+              ${shareLinksForPreview.map((link) => {
+                const expired = link.expiresAt && new Date(link.expiresAt).getTime() < Date.now();
+                const status = link.revoked ? "revoked" : expired ? "expired" : "active";
+                return `<option value="${link.id}">${escapeHtml(link.name)} (${escapeHtml(status)})</option>`;
+              }).join("")}
+            </select>
+          </div>
+          <div>
+            <label>&nbsp;</label>
+            <button class="btn btn-secondary" type="button" id="openSharePreviewButton">Preview as recipient</button>
+          </div>
+        </div>
+      ` : `<div class="empty">No share links yet. Create one below, then preview it here.</div>`}
     </div>
 
     <div class="card">
@@ -6026,6 +7905,13 @@ function renderSharing(root, _data, context) {
               ${Object.entries(PRESETS).map(([key, preset]) => `<option value="${key}" ${draftShare.preset === key ? "selected" : ""}>${escapeHtml(preset.label)}</option>`).join("")}
             </select>
           </div>
+          <div>
+            <label>Landing section</label>
+            <select name="startSection">
+              <option value="dashboard" ${String(draftShare.startSection || "dashboard") === "dashboard" ? "selected" : ""}>Dashboard</option>
+              <option value="consult" ${String(draftShare.startSection || "") === "consult" ? "selected" : ""}>Consult</option>
+            </select>
+          </div>
           <div><label>Link expiry</label><input name="expiresAt" type="date" value="${escapeHtml(defaultExpiry)}"><p class="helper-text">Secure default is 30 days from today.</p></div>
         </div>
 
@@ -6070,6 +7956,8 @@ function renderSharing(root, _data, context) {
   const cloudCreateInviteForm = root.querySelector("#cloudCreateInviteForm");
   const cloudLogoutButton = root.querySelector("#cloudLogoutButton");
   const refreshCloudMetaButton = root.querySelector("#refreshCloudMetaButton");
+  const sharePreviewSelect = root.querySelector("#sharePreviewSelect");
+  const openSharePreviewButton = root.querySelector("#openSharePreviewButton");
   const presetSelect = root.querySelector("#sharePresetSelect");
   const syncEnabled = root.querySelector("#syncEnabled");
   const syncEndpoint = root.querySelector("#syncEndpoint");
@@ -6087,6 +7975,21 @@ function renderSharing(root, _data, context) {
     setStatus("Set your API endpoint first: Share -> Settings, then save sync settings.", "error");
     return false;
   };
+
+  openSharePreviewButton?.addEventListener("click", () => {
+    const id = String(sharePreviewSelect?.value || "");
+    const link = app.ownerData.shareLinks.find((entry) => entry.id === id);
+    if (!link) {
+      setStatus("Select a valid shared link to preview.", "error");
+      return;
+    }
+    app.ui.viewerMode = "preview_link";
+    app.ui.previewLinkId = link.id;
+    app.ui.activeSection = link.startSection === "consult" ? "consult" : "dashboard";
+    ensureSectionForCurrentMode();
+    setStatus(`Previewing as ${link.name}.`);
+    renderAll();
+  });
 
   refreshCloudMetaButton?.addEventListener("click", () => {
     if (LOCAL_ONLY_MODE) {
@@ -6405,10 +8308,12 @@ function renderSharing(root, _data, context) {
 
   presetSelect.addEventListener("change", () => {
     const preset = PRESETS[presetSelect.value] || PRESETS.family;
+    const preferredSection = presetSelect.value === "clinician" ? "consult" : "dashboard";
     app.drafts.sharePermissions = normalizePermissions(preset.permissions);
     app.drafts.share = {
       ...formToObject(shareForm),
-      allowedModes: preset.defaultModes
+      allowedModes: preset.defaultModes,
+      startSection: preferredSection
     };
     saveDrafts();
     renderAll();
@@ -6470,6 +8375,7 @@ function renderSharing(root, _data, context) {
       preset: values.preset || "family",
       permissions,
       allowedModes,
+      startSection: String(values.startSection || "dashboard") === "consult" ? "consult" : "dashboard",
       expiresAt,
       createdAt,
       snapshot
@@ -6485,6 +8391,7 @@ function renderSharing(root, _data, context) {
       preset: values.preset || "family",
       permissions,
       allowedModes,
+      startSection: String(values.startSection || "dashboard") === "consult" ? "consult" : "dashboard",
       expiresAt,
       revoked: false,
       createdAt,
@@ -6531,7 +8438,7 @@ function renderSharing(root, _data, context) {
       if (!link) return;
       app.ui.viewerMode = "preview_link";
       app.ui.previewLinkId = link.id;
-      app.ui.activeSection = "dashboard";
+      app.ui.activeSection = link.startSection === "consult" ? "consult" : "dashboard";
       ensureSectionForCurrentMode();
       setStatus(`Previewing as ${link.name}.`);
       renderAll();
@@ -6566,6 +8473,7 @@ function renderShareList() {
           <strong>${escapeHtml(link.name)}</strong>
           <div class="subtle">${escapeHtml(link.email || "No email")}</div>
           <div class="subtle">Preset: ${escapeHtml(PRESETS[link.preset]?.label || "Custom")}</div>
+          <div class="subtle">Landing: ${escapeHtml(link.startSection === "consult" ? "Consult summary" : "Dashboard")}</div>
           <div class="subtle">Status: ${status}${link.expiresAt ? ` · Expires ${escapeHtml(niceDate(link.expiresAt))}` : ""}</div>
           <div class="subtle">Access log: opens ${access.totalOpens || 0}${access.lastOpenedAt ? ` · last opened ${escapeHtml(niceDateTime(access.lastOpenedAt))}` : ""}</div>
           <textarea class="share-url" readonly>${escapeHtml(link.url)}</textarea>
@@ -6602,9 +8510,13 @@ function buildRangeSnapshot(data, rangeDays = 14) {
     endDate,
     medications: resolveCurrentMedications(data).filter((entry) => entry.isCurrent),
     changes: (data.changes || []).filter((entry) => inRange(entry.date)).sort((a, b) => b.date.localeCompare(a.date)),
+    experiments: resolveExperimentRows(data).filter((entry) => inRange(entry.dateEffective || entry.date)).sort((a, b) => b.dateEffective.localeCompare(a.dateEffective)),
     checkins: (data.checkins || []).filter((entry) => inRange(entry.date)).sort((a, b) => b.date.localeCompare(a.date)),
     notes: (data.notes || []).filter((entry) => inRange(entry.date)).sort((a, b) => b.date.localeCompare(a.date)),
-    adherence: (data.adherence || []).filter((entry) => inRange(entry.date))
+    adherence: (data.adherence || []).filter((entry) => inRange(entry.date)),
+    sideEffectEvents: (data.sideEffectEvents || []).filter((entry) => inRange(String(entry.date || entry.createdAt || "").slice(0, 10))),
+    consultQuestions: (data.consultQuestions || []).filter((entry) => inRange(String(entry.createdAt || "").slice(0, 10))),
+    decisionLog: (data.decisionLog || []).filter((entry) => inRange(entry.appointmentDate)).sort((a, b) => b.appointmentDate.localeCompare(a.appointmentDate))
   };
 }
 
@@ -6655,8 +8567,23 @@ function renderExportSummaryPreview(data, rangeDays) {
   `;
 }
 
-function renderExports(root, data) {
+function renderExports(root, data, context) {
+  const allowedModes = (context?.allowedModes || ["daily", "clinical", "personal"])
+    .filter((mode) => VIEW_MODE_META[mode]);
   root.innerHTML = `
+    <div class="card">
+      <h3>Display preferences</h3>
+      <div class="field-grid">
+        <div>
+          <label for="settingsDataViewSelect">Data View</label>
+          <select id="settingsDataViewSelect">
+            ${allowedModes.map((mode) => `<option value="${mode}" ${app.ui.activeViewMode === mode ? "selected" : ""}>${escapeHtml(VIEW_MODE_META[mode].label)}</option>`).join("")}
+          </select>
+          <p class="helper-text">Move between Daily, Clinical, and Personal detail depth from Settings.</p>
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <h3>Export options</h3>
       <div class="summary-range-row" style="margin-bottom:10px;">
@@ -6676,6 +8603,15 @@ function renderExports(root, data) {
     </div>
     ${renderExportSummaryPreview(data, app.ui.exportSummaryRangeDays || "14")}
   `;
+
+  root.querySelector("#settingsDataViewSelect")?.addEventListener("change", (event) => {
+    const next = String(event.target.value || "daily");
+    if (!allowedModes.includes(next)) return;
+    app.ui.activeViewMode = next;
+    ensureSectionForCurrentMode();
+    setStatus(`Data view set to ${VIEW_MODE_META[next].label}.`);
+    renderAll();
+  });
 
   root.querySelector("#exportSummaryRange")?.addEventListener("change", (event) => {
     const next = String(event.target.value || "14");
@@ -6738,6 +8674,13 @@ function renderExports(root, data) {
       energy: entry.energy,
       irritability: entry.irritability,
       cravings_impulsivity: entry.cravingsImpulsivity,
+      function_score: entry.functionScore ?? "",
+      social_contact_level: entry.socialContactLevel || "",
+      got_out_of_bed_on_time: entry.gotOutOfBedOnTime ? "yes" : "no",
+      self_care_completed: entry.selfCareCompleted ? "yes" : "no",
+      key_task_completed: entry.keyTaskCompleted ? "yes" : "no",
+      exercise_or_walk_done: entry.exerciseOrWalkDone ? "yes" : "no",
+      avoided_impulsive_behaviour: entry.avoidedImpulsiveBehaviour ? "yes" : "no",
       side_effects: (entry.sideEffectsChecklist || []).join(" | "),
       side_effects_text: entry.sideEffectsText,
       training_notes: entry.trainingNotes,
@@ -6766,8 +8709,15 @@ function buildClinicianSummaryHtml(data, rangeDays = "14") {
   const snapshot = buildRangeSnapshot(data, rangeDays);
   const meds = snapshot.medications;
   const recentChanges = snapshot.changes.slice(0, 24);
+  const experimentRows = snapshot.experiments.slice(0, 24);
   const recentCheckins = snapshot.checkins.slice(0, 30);
   const notes = snapshot.notes.slice(0, 20);
+  const sideEffectRows = summarizeSideEffects(snapshot.sideEffectEvents || []).slice(0, 20);
+  const openQuestions = (snapshot.consultQuestions || [])
+    .filter((entry) => String(entry.status || "").toLowerCase() === "open")
+    .slice(0, 24);
+  const decisionRows = (snapshot.decisionLog || []).slice(0, 20);
+  const consultConfig = normalizeConsultConfig(data.consultConfig);
   const riskAssessment = computeRiskAssessment({
     now: new Date(),
     checkins: snapshot.checkins,
@@ -6846,6 +8796,22 @@ function buildClinicianSummaryHtml(data, rangeDays = "14") {
           </tbody>
         </table>
 
+        <h2>Medication Change Experiments</h2>
+        <table>
+          <thead><tr><th>Date</th><th>Medication</th><th>Change</th><th>Expected benefit</th><th>Expected side effects</th><th>Outcome</th><th>Confidence</th></tr></thead>
+          <tbody>
+            ${(experimentRows.length ? experimentRows : []).map((row) => `<tr><td>${escapeHtml(niceDate(row.dateEffective))}</td><td>${escapeHtml(row.medicationName || "-")}</td><td>${escapeHtml(row.oldDose || "-")} → ${escapeHtml(row.newDose || "-")}</td><td>${escapeHtml(row.expectedBenefit || "-")}</td><td>${escapeHtml(row.expectedSideEffects || "-")}</td><td>${escapeHtml(row.outcomeStatus || "pending")}</td><td>${escapeHtml(row.confidenceInOutcome || "-")}</td></tr>`).join("") || `<tr><td colspan="7">No experiment entries in this range.</td></tr>`}
+          </tbody>
+        </table>
+
+        <h2>Side Effect Timing Summary</h2>
+        <table>
+          <thead><tr><th>Medication</th><th>Timing</th><th>Frequency</th><th>Avg severity</th><th>Top symptom</th></tr></thead>
+          <tbody>
+            ${(sideEffectRows.length ? sideEffectRows : []).map((row) => `<tr><td>${escapeHtml(row.medication)}</td><td>${escapeHtml(row.timing)}</td><td>${row.count}</td><td>${escapeHtml(String(row.avgSeverity))}</td><td>${escapeHtml(row.topSymptom)}</td></tr>`).join("") || `<tr><td colspan="5">No side-effect timing events in this range.</td></tr>`}
+          </tbody>
+        </table>
+
         <h2>Recent Wellbeing Trends</h2>
         <table>
           <thead><tr><th>Date</th><th>Mood</th><th>Anxiety</th><th>Focus</th><th>Sleep (h)</th><th>Sleep quality</th><th>Energy</th><th>Irritability</th></tr></thead>
@@ -6861,6 +8827,25 @@ function buildClinicianSummaryHtml(data, rangeDays = "14") {
             ${notes.map((note) => `<tr><td>${escapeHtml(niceDate(note.date))}</td><td>${escapeHtml(note.noteType)}</td><td>${escapeHtml(note.medicationName || "-")}</td><td>${escapeHtml(note.noteText || "-")}${(note.tags || []).length ? ` [tags: ${escapeHtml(note.tags.join(", "))}]` : ""}</td></tr>`).join("")}
           </tbody>
         </table>
+
+        <h2>Question Queue (Open)</h2>
+        <table>
+          <thead><tr><th>Created</th><th>Question</th><th>Category</th><th>Urgency</th><th>Medication</th><th>Note</th></tr></thead>
+          <tbody>
+            ${(openQuestions.length ? openQuestions : []).map((row) => `<tr><td>${escapeHtml(niceDateTime(row.createdAt || ""))}</td><td>${escapeHtml(row.text || "-")}</td><td>${escapeHtml(row.category || "-")}</td><td>${escapeHtml(row.urgency || "-")}</td><td>${escapeHtml(row.linkedMedication || "-")}</td><td>${escapeHtml(row.note || "-")}</td></tr>`).join("") || `<tr><td colspan="6">No open questions.</td></tr>`}
+          </tbody>
+        </table>
+
+        <h2>Decision Log</h2>
+        <table>
+          <thead><tr><th>Appointment</th><th>Clinician</th><th>Decision summary</th><th>Plan</th><th>Follow-up</th></tr></thead>
+          <tbody>
+            ${(decisionRows.length ? decisionRows : []).map((row) => `<tr><td>${escapeHtml(niceDate(row.appointmentDate))}</td><td>${escapeHtml(row.clinicianName || "-")}</td><td>${escapeHtml(row.notes || "-")}</td><td>${escapeHtml(row.planUntilNextReview || "-")}</td><td>${escapeHtml(row.followUpDate ? niceDate(row.followUpDate) : "-")}</td></tr>`).join("") || `<tr><td colspan="5">No decision entries in this range.</td></tr>`}
+          </tbody>
+        </table>
+
+        <h2>What I want to discuss today</h2>
+        <p>${escapeHtml(consultConfig.discussToday || "No consult focus text set.")}</p>
 
         <p class="note">Clinical interpretation sections are informational and may vary by person. Discuss with prescriber.</p>
       </body>
@@ -6898,6 +8883,20 @@ function filterDataForShare(source, permissions) {
   if (!permissions.showFreeText) {
     clone.notes = clone.notes.map((note) => ({ ...note, noteText: note.noteText ? "[Hidden by link settings]" : "", trainingNotes: note.trainingNotes ? "[Hidden by link settings]" : "" }));
     clone.checkins = clone.checkins.map((entry) => ({ ...entry, sideEffectsText: entry.sideEffectsText ? "[Hidden by link settings]" : "", trainingNotes: entry.trainingNotes ? "[Hidden by link settings]" : "" }));
+    clone.sideEffectEvents = (clone.sideEffectEvents || []).map((entry) => ({
+      ...entry,
+      note: entry.note ? "[Hidden by link settings]" : ""
+    }));
+    clone.consultQuestions = (clone.consultQuestions || []).map((entry) => ({
+      ...entry,
+      note: entry.note ? "[Hidden by link settings]" : ""
+    }));
+    clone.decisionLog = (clone.decisionLog || []).map((entry) => ({
+      ...entry,
+      notes: entry.notes ? "[Hidden by link settings]" : "",
+      rationale: entry.rationale ? "[Hidden by link settings]" : "",
+      contingencyPlan: entry.contingencyPlan ? "[Hidden by link settings]" : ""
+    }));
   }
 
   return ensureStateShape(clone);
@@ -7199,6 +9198,12 @@ function buildSideEffectCounts(data) {
     }
   }
 
+  for (const event of Array.isArray(data.sideEffectEvents) ? data.sideEffectEvents : []) {
+    const dateKey = String(event?.date || event?.createdAt || "").slice(0, 10);
+    if (!dateKey) continue;
+    map.set(dateKey, (map.get(dateKey) || 0) + 1);
+  }
+
   return Array.from(map.entries())
     .map(([date, value]) => ({ date, value }))
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -7235,37 +9240,6 @@ function buildDoseChangeTrend(changes) {
   return Array.from(byDate.entries())
     .map(([date, value]) => ({ date, value }))
     .sort((a, b) => a.date.localeCompare(b.date));
-}
-
-function computeBeforeAfterMetrics(checkins, changeDate) {
-  const parsedChange = new Date(`${changeDate}T12:00:00`);
-
-  const beforeStart = new Date(parsedChange);
-  beforeStart.setDate(beforeStart.getDate() - 7);
-
-  const afterEnd = new Date(parsedChange);
-  afterEnd.setDate(afterEnd.getDate() + 14);
-
-  const beforeRows = checkins.filter((entry) => {
-    const date = new Date(`${entry.date}T12:00:00`);
-    return date >= beforeStart && date < parsedChange;
-  });
-
-  const afterRows = checkins.filter((entry) => {
-    const date = new Date(`${entry.date}T12:00:00`);
-    return date >= parsedChange && date <= afterEnd;
-  });
-
-  const metrics = ["mood", "anxiety", "focus", "sleepHours"];
-  const before = {};
-  const after = {};
-
-  metrics.forEach((metric) => {
-    before[metric] = average(beforeRows.map((entry) => toNumber(entry[metric])));
-    after[metric] = average(afterRows.map((entry) => toNumber(entry[metric])));
-  });
-
-  return { before, after };
 }
 
 function renderLineChart(seriesList, options = {}) {

@@ -52,6 +52,69 @@ Deploy the contents of this folder as a static site (`index.html`, `app.js`, `st
 - Cloud UX clarification:
   - when local-only mode is enabled, the Share tab now clearly explains cloud accounts/invites are disabled (instead of showing inactive controls).
 
+## Consult-Focused Upgrade (Psychiatrist Review Mode)
+
+- Added a dedicated `Consult` top tab and route (`#consult`) for appointment review.
+- Added consult data entities (local persistence + migration-safe shape):
+  - `medicationChangeExperiments`
+  - `consultQuestions`
+  - `decisionLog`
+  - `sideEffectEvents`
+  - `appointmentEvents`
+  - `consultConfig` (includes “What I want to discuss today” + filter defaults)
+- Added consult filters:
+  - since last appointment
+  - since last medication change
+  - last 7/14/30 days
+  - by medication
+  - open questions only
+- Added consult screen sections:
+  - current medications
+  - changes in selected window
+  - improvements/worsened summary
+  - side-effect timing summary
+  - adherence summary
+  - question queue
+  - decision log
+  - discussion focus text
+  - data quality indicators
+  - appointment markers
+- Added owner-only inline editing/entry forms inside Consult for:
+  - question queue
+  - decision log
+  - appointment markers
+  - medication change experiments
+  - consult focus text
+- Added global `Add to Consult` quick action in the main header.
+- Added side-effect timing capture in Note + Check-in flows.
+- Extended check-ins with daily function fields:
+  - got out of bed on time
+  - self-care completed
+  - key task completed
+  - exercise/walk
+  - avoided impulsive behaviour
+  - social contact level
+  - derived function score
+- Share links now support landing section:
+  - `Dashboard` or `Consult` (clinician preset defaults to consult landing)
+- Consult/summary print improvements:
+  - consult layout is print/PDF friendly
+  - clinician summary export now includes experiments, side-effect timing, question queue, decision log, and consult focus text.
+
+### Consult Recommendation Pass (Latest)
+
+- Question Queue now sorts by status + urgency, with clearer urgency/status badges.
+- Owner mode now supports full edit/update/delete for:
+  - consult questions
+  - decision log entries
+  - appointment markers
+- Decision log entries can link to a specific medication-change experiment.
+- Appointment markers can be linked from decision entries.
+- Added one-click **Copy summary** in Consult for fast psychiatrist handoff notes.
+- Added safe unlinking behavior:
+  - deleting an experiment clears linked decision references
+  - deleting an appointment marker clears linked decision appointment references
+
 ## What Changed (Phase 1)
 
 - Added API server scaffold at `/Users/brad/Documents/New project/bradckennedy/server/server.js` (kept for future optional use).
