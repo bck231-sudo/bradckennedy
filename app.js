@@ -95,6 +95,7 @@ const TIMELINE_LAZY_CHART_DEFAULTS = Object.freeze({
 const DATA_CONFIDENCE_MIN_CHECKINS = 4;
 const DEFAULT_MEDICATION_EDUCATION_OWNER_NOTES = "Theo switched me off Vyvanse and stopped Luvox. Started Concerta; increased to 36 mg.";
 const REGIMEN_HISTORY_CHANGE_TEXT = "Stopped Vyvanse and Luvox; started Concerta; now 36 mg AM.";
+const REGIMEN_HISTORY_CHANGED_BY = "psychiatrist";
 const storage = createStorageService(typeof window !== "undefined" ? window.localStorage : null);
 
 const SIDE_EFFECT_OPTIONS = [
@@ -767,6 +768,7 @@ function applyMedicationProfilePatch(inputState) {
   ensureRegimenHistoryEntry(state, nowIso, today);
 
   storage.writeText(PROFILE_PATCH_KEY, nowIso);
+  normalizeRegimenHistoryAttribution(state);
   return state;
 }
 
@@ -830,11 +832,17 @@ function upsertMedicationFromProfile(state, values, nowIso, today) {
 }
 
 function ensureRegimenHistoryEntry(state, nowIso, today) {
-  const exists = (state.changes || []).some((entry) => {
+  const existing = (state.changes || []).find((entry) => {
     const reason = String(entry.reasonForChange || entry.reason || "").trim();
     return normalizeMedicationKey(reason) === normalizeMedicationKey(REGIMEN_HISTORY_CHANGE_TEXT);
   });
-  if (exists) return;
+  if (existing) {
+    if (String(existing.changedBy || "").trim().toLowerCase() === "self") {
+      existing.changedBy = REGIMEN_HISTORY_CHANGED_BY;
+      existing.updatedAt = nowIso;
+    }
+    return;
+  }
 
   const newDoseText = CURRENT_MEDICATION_REGIMEN
     .map((medication) => `${medication.name}: ${formatRegimenDose(medication)}`)
@@ -851,7 +859,7 @@ function ensureRegimenHistoryEntry(state, nowIso, today) {
     reason: REGIMEN_HISTORY_CHANGE_TEXT,
     reasonForChange: REGIMEN_HISTORY_CHANGE_TEXT,
     route: "",
-    changedBy: "self",
+    changedBy: REGIMEN_HISTORY_CHANGED_BY,
     expectedEffects: "",
     monitorFor: "",
     reviewDate: "",
@@ -874,6 +882,19 @@ function ensureRegimenHistoryEntry(state, nowIso, today) {
       updatedAt: nowIso
     })
   );
+}
+
+function normalizeRegimenHistoryAttribution(state) {
+  for (const entry of Array.isArray(state?.changes) ? state.changes : []) {
+    const reason = String(entry?.reasonForChange || entry?.reason || "").trim();
+    if (normalizeMedicationKey(reason) !== normalizeMedicationKey(REGIMEN_HISTORY_CHANGE_TEXT)) {
+      continue;
+    }
+    if (String(entry.changedBy || "").trim().toLowerCase() === "self") {
+      entry.changedBy = REGIMEN_HISTORY_CHANGED_BY;
+      entry.updatedAt = isoDateTime(new Date());
+    }
+  }
 }
 
 function upsertNoteFromProfile(state, values, nowIso) {
@@ -1271,6 +1292,7 @@ function ensureStateShape(input) {
     });
   }
 
+  normalizeRegimenHistoryAttribution(state);
   return state;
 }
 
