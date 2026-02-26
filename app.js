@@ -96,6 +96,92 @@ const DATA_CONFIDENCE_MIN_CHECKINS = 4;
 const DEFAULT_MEDICATION_EDUCATION_OWNER_NOTES = "Theo switched me off Vyvanse and stopped Luvox. Started Concerta; increased to 36 mg.";
 const REGIMEN_HISTORY_CHANGE_TEXT = "Stopped Vyvanse and Luvox; started Concerta; now 36 mg AM.";
 const REGIMEN_HISTORY_CHANGED_BY = "psychiatrist";
+const MEDICATION_EDU_CONCERTA = Object.freeze({
+  descriptor:
+    "Extended-release stimulant that may improve focus and daytime task follow-through by increasing dopamine and noradrenaline signaling.",
+  monitoring:
+    "May affect appetite, sleep, heart rate, or anxiety. Track timing of benefits and any late-day wear-off.",
+  references: [
+    {
+      label: "MedlinePlus",
+      url: "https://medlineplus.gov/druginfo/meds/a682188.html"
+    }
+  ]
+});
+const MEDICATION_EDU_BUPROPION = Object.freeze({
+  descriptor:
+    "NDRI antidepressant that may support energy, motivation, and concentration. Often used in mood and nicotine-dependence contexts.",
+  monitoring:
+    "Can increase activation, anxiety, or insomnia in some people. Log sleep quality and agitation changes.",
+  references: [
+    {
+      label: "MedlinePlus",
+      url: "https://medlineplus.gov/druginfo/meds/a695033.html"
+    }
+  ]
+});
+const MEDICATION_EDU_CLONAZEPAM = Object.freeze({
+  descriptor:
+    "Benzodiazepine that may reduce acute anxiety and physiological arousal. Usually best reviewed as part of a longer-term plan.",
+  monitoring:
+    "Can cause sedation, slower cognition, and dependence risk with ongoing use. Track daytime alertness and dose consistency.",
+  references: [
+    {
+      label: "MedlinePlus",
+      url: "https://medlineplus.gov/druginfo/meds/a682279.html"
+    }
+  ]
+});
+const MEDICATION_EDU_CLONIDINE = Object.freeze({
+  descriptor:
+    "Alpha-2 agonist that may lower hyperarousal and help evening settling or sleep in some treatment plans.",
+  monitoring:
+    "May lower blood pressure or cause dizziness/sedation. Monitor BP, energy, and morning grogginess.",
+  references: [
+    {
+      label: "MedlinePlus",
+      url: "https://medlineplus.gov/druginfo/meds/a682243.html"
+    }
+  ]
+});
+const MEDICATION_EDU_NICOTINE_PATCH = Object.freeze({
+  descriptor:
+    "Transdermal nicotine replacement that provides steadier nicotine levels to reduce withdrawal and craving spikes.",
+  monitoring:
+    "Skin irritation and sleep disturbance can occur. Track cravings, patch timing, and sleep quality.",
+  references: [
+    {
+      label: "MedlinePlus",
+      url: "https://medlineplus.gov/druginfo/meds/a606010.html"
+    }
+  ]
+});
+const MEDICATION_EDU_QUETIAPINE = Object.freeze({
+  descriptor:
+    "Atypical antipsychotic used across different dose ranges; PRN use is often reviewed against sedation and next-day effects.",
+  monitoring:
+    "May cause sedation, cognitive slowing, and metabolic effects over time. Track sleep benefit versus next-day function.",
+  references: [
+    {
+      label: "MedlinePlus",
+      url: "https://medlineplus.gov/druginfo/meds/a698019.html"
+    }
+  ]
+});
+const MEDICATION_EDUCATION_LIBRARY = Object.freeze({
+  "concerta (methylphenidate er / oros)": MEDICATION_EDU_CONCERTA,
+  concerta: MEDICATION_EDU_CONCERTA,
+  methylphenidate: MEDICATION_EDU_CONCERTA,
+  "bupropion sr": MEDICATION_EDU_BUPROPION,
+  bupropion: MEDICATION_EDU_BUPROPION,
+  clonazepam: MEDICATION_EDU_CLONAZEPAM,
+  clonidine: MEDICATION_EDU_CLONIDINE,
+  "nicotine patch": MEDICATION_EDU_NICOTINE_PATCH,
+  nicotine: MEDICATION_EDU_NICOTINE_PATCH,
+  "quetiapine (seroquel)": MEDICATION_EDU_QUETIAPINE,
+  quetiapine: MEDICATION_EDU_QUETIAPINE,
+  seroquel: MEDICATION_EDU_QUETIAPINE
+});
 const storage = createStorageService(typeof window !== "undefined" ? window.localStorage : null);
 
 const SIDE_EFFECT_OPTIONS = [
@@ -377,6 +463,14 @@ const SECTION_META = [
     viewModes: ["daily", "clinical", "personal"]
   },
   {
+    id: "education",
+    label: "Medication Education",
+    icon: "book",
+    title: "Medication Education",
+    subtitle: "Short descriptors and trusted references for each current medication.",
+    viewModes: ["daily", "clinical", "personal"]
+  },
+  {
     id: "changes",
     label: "Medication Changes",
     icon: "syringe",
@@ -447,6 +541,7 @@ const SECTION_META = [
 const ICON_SVG_PATHS = Object.freeze({
   home: `<path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10.5V20h13V10.5"/>`,
   capsule: `<path d="m10.5 20.5-7-7a5 5 0 0 1 7-7l7 7a5 5 0 0 1-7 7Z"/><path d="m8 8 8 8"/>`,
+  book: `<path d="M5 4.5h11a3 3 0 0 1 3 3V20H8a3 3 0 0 0-3 3z"/><path d="M8 4.5h11v18"/><path d="M8 12h10"/>`,
   syringe: `<path d="m18 3 3 3"/><path d="m16.5 7.5 3-3"/><path d="m11 13 6-6"/><path d="m4.5 19.5 6-6"/><path d="m3 22 2.5-2.5"/><path d="m13.5 10.5 4 4"/>`,
   heart: `<path d="m12 20-1.2-1.1C6 14.6 3 11.8 3 8.5A4.5 4.5 0 0 1 7.5 4 5 5 0 0 1 12 6.3 5 5 0 0 1 16.5 4 4.5 4.5 0 0 1 21 8.5c0 3.3-3 6.1-7.8 10.4Z"/>`,
   note: `<path d="M6 3h9l5 5v13H6z"/><path d="M15 3v5h5"/><path d="M9 13h8"/><path d="M9 17h6"/>`,
@@ -459,7 +554,8 @@ const ICON_SVG_PATHS = Object.freeze({
   calendar: `<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M7 3.5v3"/><path d="M17 3.5v3"/><path d="M3.5 9.5h17"/>`,
   pulse: `<path d="M3 12h4l2.3-4 4.2 8 2.2-4H21"/>`,
   clock: `<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>`,
-  stethoscope: `<path d="M7 4v4a4 4 0 1 0 8 0V4"/><path d="M9 4v4a2 2 0 1 0 4 0V4"/><path d="M15 12v2a4 4 0 1 0 8 0v-1"/><circle cx="22" cy="12" r="2"/>`
+  stethoscope: `<path d="M7 4v4a4 4 0 1 0 8 0V4"/><path d="M9 4v4a2 2 0 1 0 4 0V4"/><path d="M15 12v2a4 4 0 1 0 8 0v-1"/><circle cx="22" cy="12" r="2"/>`,
+  external: `<path d="M14 5h6v6"/><path d="M20 4 11 13"/><path d="M19 13v6H5V5h6"/>`
 });
 
 const dom = {
@@ -492,6 +588,7 @@ const dom = {
   sections: {
     dashboard: document.getElementById("section-dashboard"),
     medications: document.getElementById("section-medications"),
+    education: document.getElementById("section-education"),
     changes: document.getElementById("section-changes"),
     checkins: document.getElementById("section-checkins"),
     notes: document.getElementById("section-notes"),
@@ -2278,6 +2375,7 @@ function parseSectionRouteFromHash(hashValue) {
   if (!route) return null;
   if (route === "dashboard") return { sectionId: "dashboard", preferredModes: ["daily", "clinical", "personal"], fallbackSections: [] };
   if (route === "medications") return { sectionId: "medications", preferredModes: ["daily", "clinical", "personal"], fallbackSections: ["dashboard"] };
+  if (route === "education") return { sectionId: "education", preferredModes: ["daily", "clinical", "personal"], fallbackSections: ["medications"] };
   if (route === "trends") return { sectionId: "timeline", preferredModes: ["clinical", "personal"], fallbackSections: ["changes"] };
   if (route === "consult") return { sectionId: "consult", preferredModes: ["clinical", "personal"], fallbackSections: ["timeline"] };
   if (route === "history") return { sectionId: "changes", preferredModes: ["clinical", "personal"], fallbackSections: ["timeline"] };
@@ -3091,6 +3189,7 @@ function findModeForSection(context, sectionId, preferredModes = []) {
 function hashForSection(sectionId) {
   if (sectionId === "dashboard") return "#dashboard";
   if (sectionId === "medications") return "#medications";
+  if (sectionId === "education") return "#education";
   if (sectionId === "consult") return "#consult";
   if (sectionId === "timeline") return "#trends";
   if (sectionId === "changes") return "#history";
@@ -3357,7 +3456,7 @@ function renderSectionMeta(context) {
   }
   const activeSection = String(app.ui.activeSection || "dashboard");
   const showQuickCheckin = !context.readOnly && ["dashboard", "checkins", "entry"].includes(activeSection);
-  const showAddToConsult = !context.readOnly && ["dashboard", "medications", "changes", "checkins", "notes", "timeline"].includes(activeSection);
+  const showAddToConsult = !context.readOnly && ["dashboard", "medications", "education", "changes", "checkins", "notes", "timeline"].includes(activeSection);
   if (dom.quickCheckinButton) {
     dom.quickCheckinButton.hidden = !showQuickCheckin;
   }
@@ -3386,6 +3485,11 @@ function renderSections(context, visibleData) {
   if (app.ui.activeSection === "medications") {
     dom.sections.medications.classList.remove("hidden");
     renderMedications(dom.sections.medications, visibleData, context);
+  }
+
+  if (app.ui.activeSection === "education") {
+    dom.sections.education.classList.remove("hidden");
+    renderMedicationEducationSection(dom.sections.education, visibleData, context);
   }
 
   if (app.ui.activeSection === "changes") {
@@ -3652,46 +3756,74 @@ function renderCurrentMedicationScheduleGroups(medications, options = {}) {
   `;
 }
 
-function renderMedicationEducationContent(ownerNotes, ownerEditable, { includeEditor = false } = {}) {
+function resolveMedicationEducationEntry(medication) {
+  const keys = [
+    normalizeMedicationKey(medication?.name),
+    normalizeMedicationKey(medication?.genericName)
+  ].filter(Boolean);
+  for (const key of keys) {
+    if (MEDICATION_EDUCATION_LIBRARY[key]) {
+      return MEDICATION_EDUCATION_LIBRARY[key];
+    }
+  }
+  return null;
+}
+
+function renderMedicationEducationContent(
+  medications,
+  ownerNotes,
+  ownerEditable,
+  { includeEditor = false, notesFormId = "medicationEducationOwnerNotesForm" } = {}
+) {
+  const cards = (medications || []).map((medication) => {
+    const education = resolveMedicationEducationEntry(medication);
+    const descriptor = education?.descriptor
+      || "No short descriptor saved yet for this medication. Add details in medication notes if needed.";
+    const monitoring = education?.monitoring
+      || "Monitor day-to-day effects, side effects, and timing patterns, then review with your prescriber.";
+    const references = Array.isArray(education?.references) ? education.references : [];
+
+    return `
+      <article class="card medication-education-inner education-med-card">
+        <div class="card-head-row">
+          <h4>${escapeHtml(medication.name || "Medication")}</h4>
+          <span class="pill-badge status-open">Current</span>
+        </div>
+        <div class="subtle">${escapeHtml(formatMedicationDoseLabel(medication))} · ${escapeHtml(formatSchedule(medication))} · ${escapeHtml(medication.route || "route not set")}</div>
+        <p class="education-med-copy">${escapeHtml(descriptor)}</p>
+        <p class="subtle">${escapeHtml(monitoring)}</p>
+        ${references.length
+          ? `
+            <div class="education-source-row">
+              ${references.map((reference) => `
+                <a class="education-source-link" href="${escapeHtml(reference.url)}" target="_blank" rel="noopener noreferrer">
+                  ${renderIcon("external", "mini-icon soft", "External reference")}
+                  <span>${escapeHtml(reference.label || "Reference")}</span>
+                </a>
+              `).join("")}
+            </div>
+          `
+          : `<div class="subtle">Reference link pending.</div>`}
+      </article>
+    `;
+  }).join("");
+
   return `
     <article class="card card-accent card-accent-ocean medication-education-card">
       <div class="card-head-row">
         <div>
-          <h3>Medication education (stimulants)</h3>
-          <div class="subtle">Owner education content for consult clarity and share-safe context.</div>
+          <h3>Medication education</h3>
+          <div class="subtle">Short plain-language descriptors for your current regimen, with quick trusted references.</div>
         </div>
       </div>
-      <div class="grid cols-2 medication-education-grid">
-        <article class="card medication-education-inner">
-          <h4>Concerta (methylphenidate ER) - MOA + profile</h4>
-          <ul class="timeline-list">
-            <li><strong>MOA:</strong> primarily DAT/NET reuptake inhibition -> increased synaptic dopamine/noradrenaline signaling.</li>
-            <li><strong>Delivery:</strong> OROS extended-release, with initial IR fraction then controlled release; typical coverage about 8-12 hours (varies).</li>
-            <li><strong>Typical profile:</strong> often steadier with less pronounced peak than IR stimulants; wear-off/crash can still occur and is dose-dependent.</li>
-          </ul>
-        </article>
-        <article class="card medication-education-inner">
-          <h4>Dexamphetamine / Vyvanse - MOA + profile</h4>
-          <ul class="timeline-list">
-            <li><strong>Dex MOA:</strong> promotes dopamine/noradrenaline release via VMAT2 disruption and reverse transport at DAT/NET (plus some reuptake inhibition).</li>
-            <li><strong>Vyvanse:</strong> prodrug converted to dexamphetamine for a smoother rise than IR dex, but with amphetamine MOA once active.</li>
-            <li><strong>Typical profile:</strong> stronger drive/activation with more noticeable peaks and higher risk of anxiety, irritability, or insomnia if overshooting.</li>
-          </ul>
-        </article>
-      </div>
-      <article class="card medication-education-inner">
-        <h4>Differences that matter clinically</h4>
-        <ul class="timeline-list">
-          <li>Reuptake blockade (methylphenidate) versus release/reverse transport (amphetamine).</li>
-          <li>Delivery system differences: OROS versus prodrug versus IR.</li>
-          <li>Onset/peak/crash pattern differences and how they can shift anxiety, rumination, and sleep.</li>
-        </ul>
-      </article>
+      ${cards
+        ? `<div class="grid cols-2 medication-education-grid">${cards}</div>`
+        : `<div class="empty">No active medications available for education yet.</div>`}
       <article class="card medication-education-inner">
         <h4>Owner notes</h4>
         ${includeEditor && ownerEditable
           ? `
-            <form id="dashboardMedicationEducationForm" class="edit-inline-form">
+            <form id="${escapeHtml(notesFormId)}" class="edit-inline-form">
               <textarea name="medicationEducationOwnerNotes" maxlength="1200" placeholder="Owner notes for this section.">${escapeHtml(ownerNotes || DEFAULT_MEDICATION_EDUCATION_OWNER_NOTES)}</textarea>
               <div class="inline-row" style="margin-top:8px;">
                 <button class="btn btn-primary small" type="submit">Save notes</button>
@@ -3699,6 +3831,7 @@ function renderMedicationEducationContent(ownerNotes, ownerEditable, { includeEd
             </form>
           `
           : `<div class="subtle">${escapeHtml(ownerNotes || DEFAULT_MEDICATION_EDUCATION_OWNER_NOTES)}</div>`}
+        <p class="safety-footnote">Information is educational only and may vary by person. Discuss all treatment decisions with your prescriber.</p>
       </article>
     </article>
   `;
@@ -4186,9 +4319,6 @@ function renderDashboard(root, data, context) {
 
   const dashboardConfig = normalizeDashboardConfig(app.ownerData.dashboardConfig || data.dashboardConfig);
   const summaryNote = dashboardConfig.summaryNote;
-  const medicationEducationOwnerNotes = String(
-    dashboardConfig.medicationEducationOwnerNotes || DEFAULT_MEDICATION_EDUCATION_OWNER_NOTES
-  ).trim();
 
   const resolvedMeds = resolveCurrentMedications(data);
   const activeMeds = resolvedMeds.filter((med) => med.isCurrent);
@@ -4564,7 +4694,16 @@ function renderDashboard(root, data, context) {
         ) : `<div class="empty">No active medications yet.${ownerEditable ? ` <button class="btn btn-secondary small" type="button" data-dashboard-add-med="1">Add medication</button>` : ""}</div>`}
       </article>
 
-      ${ownerEditable ? renderMedicationEducationContent(medicationEducationOwnerNotes, ownerEditable, { includeEditor: true }) : ""}
+      <article class="card card-accent card-accent-ocean card-education-link">
+        <div class="card-head-row">
+          <div>
+            <h3>Medication education</h3>
+            <div class="subtle">Moved into a dedicated section to keep Dashboard focused on daily actions.</div>
+          </div>
+          <button class="btn btn-ghost small" type="button" data-dashboard-open-education="1">Open section</button>
+        </div>
+        <div class="subtle">Includes short descriptors for each current medication plus quick trusted references.</div>
+      </article>
 
       <article class="card card-accent card-accent-teal card-consult-prep">
         <div class="card-head-row">
@@ -4698,22 +4837,6 @@ function renderDashboard(root, data, context) {
     saveOwnerData(app.ownerData);
     app.ui.dashboardEdits = { ...app.ui.dashboardEdits, summary: false };
     setStatus("Summary note updated.");
-    renderAll();
-  });
-
-  root.querySelector("#dashboardMedicationEducationForm")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    if (!ownerEditable) return;
-    const form = event.currentTarget;
-    const ownerNotes = String(form.elements.medicationEducationOwnerNotes?.value || "")
-      .trim()
-      .slice(0, 1200);
-    app.ownerData.dashboardConfig = normalizeDashboardConfig({
-      ...(app.ownerData.dashboardConfig || {}),
-      medicationEducationOwnerNotes: ownerNotes || DEFAULT_MEDICATION_EDUCATION_OWNER_NOTES
-    });
-    saveOwnerData(app.ownerData);
-    setStatus("Medication education notes updated.");
     renderAll();
   });
 
@@ -5013,6 +5136,16 @@ function renderDashboard(root, data, context) {
     });
   });
 
+  root.querySelectorAll("[data-dashboard-open-education]").forEach((button) => {
+    button.addEventListener("click", () => {
+      navigateToSection("education", {
+        preferredModes: ["daily", "clinical", "personal"],
+        fallbackSections: ["medications"]
+      });
+      renderAll();
+    });
+  });
+
   root.querySelectorAll("[data-dashboard-new-question]").forEach((button) => {
     button.addEventListener("click", () => {
       if (context.readOnly) return;
@@ -5126,6 +5259,63 @@ function renderSharePanelPreview(context) {
       }).join("")}
     </ul>
   `;
+}
+
+function renderMedicationEducationSection(root, data, context) {
+  const ownerEditable = context.type === "owner" && !context.readOnly;
+  const dashboardConfig = normalizeDashboardConfig(
+    context.readOnly ? data.dashboardConfig : app.ownerData.dashboardConfig || data.dashboardConfig
+  );
+  const ownerNotes = String(
+    dashboardConfig.medicationEducationOwnerNotes || DEFAULT_MEDICATION_EDUCATION_OWNER_NOTES
+  ).trim();
+  const activeMeds = resolveCurrentMedications(data).filter((medication) => medication.isCurrent);
+  const currentMedsLastUpdated = resolveCurrentMedsLastUpdatedDate(data);
+
+  root.innerHTML = `
+    <article class="card card-accent card-accent-ocean">
+      <div class="card-head-row">
+        <div>
+          <h3>Medication education</h3>
+          <div class="subtle">Quick-reference descriptors for your current medications, written for appointment-ready review.</div>
+        </div>
+        <div class="inline-row">
+          <span class="kpi-badge">${activeMeds.length} current</span>
+          <button class="btn btn-ghost small" type="button" data-education-open-meds="1">Open medication details</button>
+        </div>
+      </div>
+      <div class="subtle">Last medication update: ${escapeHtml(niceDate(currentMedsLastUpdated))}</div>
+      <div class="subtle">References open in a new tab and are for education only.</div>
+    </article>
+    ${renderMedicationEducationContent(activeMeds, ownerNotes, ownerEditable, {
+      includeEditor: ownerEditable,
+      notesFormId: "medicationEducationOwnerNotesForm"
+    })}
+  `;
+
+  root.querySelector("[data-education-open-meds]")?.addEventListener("click", () => {
+    navigateToSection("medications", {
+      preferredModes: ["daily", "clinical", "personal"],
+      fallbackSections: ["dashboard"]
+    });
+    renderAll();
+  });
+
+  root.querySelector("#medicationEducationOwnerNotesForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!ownerEditable) return;
+    const form = event.currentTarget;
+    const ownerNoteValue = String(form.elements.medicationEducationOwnerNotes?.value || "")
+      .trim()
+      .slice(0, 1200);
+    app.ownerData.dashboardConfig = normalizeDashboardConfig({
+      ...(app.ownerData.dashboardConfig || {}),
+      medicationEducationOwnerNotes: ownerNoteValue || DEFAULT_MEDICATION_EDUCATION_OWNER_NOTES
+    });
+    saveOwnerData(app.ownerData);
+    setStatus("Medication education notes updated.");
+    renderAll();
+  });
 }
 
 function renderMedications(root, data, context) {
@@ -6762,7 +6952,7 @@ function renderConsult(root, data, context) {
 
       ${showMedicationEducationInConsult ? `
         <div class="consult-pane ${stepClass("review", "export")}" id="consult-medication-education" ${stepAttrs("review", "export")}>
-          ${renderMedicationEducationContent(medicationEducationOwnerNotes, ownerEditable, { includeEditor: false })}
+          ${renderMedicationEducationContent(meds, medicationEducationOwnerNotes, ownerEditable, { includeEditor: false })}
         </div>
       ` : ""}
 
