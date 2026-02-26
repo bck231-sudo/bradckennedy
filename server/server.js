@@ -58,9 +58,70 @@ const corsOrigins = String(process.env.CORS_ORIGIN || "*")
 const allowAnyCorsOrigin = !corsOrigins.length || corsOrigins.includes("*");
 
 const app = express();
+app.disable("x-powered-by");
+app.set("trust proxy", true);
 app.use(express.json({ limit: "8mb" }));
 
 let indexTemplateCache = "";
+
+const publicPages = Object.freeze([
+  { path: "/", changefreq: "weekly", priority: "1.0" },
+  { path: "/about", changefreq: "monthly", priority: "0.7" },
+  { path: "/contact", changefreq: "monthly", priority: "0.7" },
+  { path: "/privacy", changefreq: "monthly", priority: "0.6" },
+  { path: "/terms", changefreq: "monthly", priority: "0.6" }
+]);
+
+const publicNavItems = Object.freeze([
+  { href: "/", label: "Home" },
+  { href: "/about", label: "About" },
+  { href: "/contact", label: "Contact" },
+  { href: "/app", label: "Open App" }
+]);
+
+const htmlCacheControl = "public, max-age=0, must-revalidate";
+const staticAssetCacheControl = "public, max-age=604800, stale-while-revalidate=86400";
+const shortAssetCacheControl = "public, max-age=86400, stale-while-revalidate=3600";
+
+function appendVaryHeader(res, value) {
+  const existing = String(res.getHeader("Vary") || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!existing.includes(value)) {
+    existing.push(value);
+    res.setHeader("Vary", existing.join(", "));
+  }
+}
+
+app.use((req, res, next) => {
+  const csp = [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "form-action 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
+    "font-src 'self' data: https://fonts.gstatic.com",
+    "img-src 'self' data: https:",
+    "connect-src 'self' https:",
+    "manifest-src 'self'",
+    "worker-src 'self'",
+    "upgrade-insecure-requests"
+  ].join("; ");
+  res.setHeader("Content-Security-Policy", csp);
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  if (req.secure || String(req.header("x-forwarded-proto") || "").toLowerCase() === "https") {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
+  next();
+});
 
 app.use((req, res, next) => {
   const requestOrigin = String(req.header("origin") || "").trim();
@@ -68,7 +129,7 @@ app.use((req, res, next) => {
     ? "*"
     : (requestOrigin && corsOrigins.includes(requestOrigin) ? requestOrigin : corsOrigins[0]);
   res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
-  res.setHeader("Vary", "Origin");
+  appendVaryHeader(res, "Origin");
   res.setHeader("Access-Control-Allow-Headers", "content-type,authorization,x-account-id,x-owner-key");
   res.setHeader("Access-Control-Allow-Methods", "GET,PUT,POST,OPTIONS");
   if (req.method === "OPTIONS") {
@@ -90,17 +151,168 @@ function resolveSiteUrl(req) {
   return `${req.protocol}://${req.get("host")}`;
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function canonicalUrlFor(req, pathname = "/") {
+  const siteUrl = resolveSiteUrl(req).replace(/\/+$/, "");
+  const safePath = String(pathname || "/").startsWith("/") ? String(pathname || "/") : `/${String(pathname || "/")}`;
+  return `${siteUrl}${safePath === "/" ? "/" : safePath}`;
+}
+
+function renderPublicLayout(req, options) {
+  const canonicalUrl = canonicalUrlFor(req, options.path || "/");
+  const robotsContent = isPrivateSite ? "noindex, nofollow" : "index, follow";
+  const navLinks = publicNavItems
+    .map((item) => `<a href="${item.href}" ${options.path === item.href ? 'aria-current="page"' : ""}>${escapeHtml(item.label)}</a>`)
+    .join("");
+  const socialImage = canonicalUrlFor(req, "/icons/icon-512-v2.png");
+
+  const socialMeta = options.includeSocial
+    ? `
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="${escapeHtml(options.title)}">
+  <meta property="og:description" content="${escapeHtml(options.description)}">
+  <meta property="og:url" content="${canonicalUrl}">
+  <meta property="og:image" content="${socialImage}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${escapeHtml(options.title)}">
+  <meta name="twitter:description" content="${escapeHtml(options.description)}">
+  <meta name="twitter:image" content="${socialImage}">
+`
+    : "";
+
+  const jsonLd = options.includeJsonLd
+    ? (() => {
+        const data = {
+          "@context": "https://schema.org",
+          "@graph": [
+            {
+              "@type": "WebSite",
+              name: "Bradley Kennedy's Medication Tracker",
+              url: canonicalUrlFor(req, "/"),
+              description: "A personal tool for tracking medications, doses, and wellbeing trends."
+            },
+            {
+              "@type": "SoftwareApplication",
+              name: "Medication Tracker",
+              applicationCategory: "HealthApplication",
+              operatingSystem: "Web",
+              url: canonicalUrlFor(req, "/app"),
+              description: "Track medications, doses, and wellbeing trends."
+            }
+          ]
+        };
+        return `\n  <script type="application/ld+json">${JSON.stringify(data)}</script>`;
+      })()
+    : "";
+
+  const headScripts = options.includeLandingCompat ? `\n  <script src="/landing-compat.js" defer></script>` : "";
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(options.title)}</title>
+  <meta name="description" content="${escapeHtml(options.description)}">
+  <meta name="robots" content="${robotsContent}">
+  <link rel="canonical" href="${canonicalUrl}">
+  <link rel="icon" type="image/svg+xml" href="/site-icon.svg">
+  <link rel="stylesheet" href="/assets/site.css">
+${socialMeta}${jsonLd}${headScripts}
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <header class="site-header" role="banner">
+    <div class="container site-header-inner">
+      <a class="site-logo" href="/" aria-label="Medication Tracker home">Medication Tracker</a>
+      <nav class="site-nav" aria-label="Primary">
+        ${navLinks}
+      </nav>
+    </div>
+  </header>
+  <main id="main-content" class="site-main" tabindex="-1">
+    <section class="container content-shell">
+      ${options.contentHtml}
+    </section>
+  </main>
+  <footer class="site-footer" role="contentinfo">
+    <div class="container">
+      <p>This tool supports tracking and clinician discussion. It does not replace professional medical advice.</p>
+    </div>
+  </footer>
+</body>
+</html>`;
+}
+
+function renderLandingHtml(req) {
+  return renderPublicLayout(req, {
+    path: "/",
+    title: "Bradley Kennedy's Medication Tracker - Daily Health Management",
+    description: "A personal tool for tracking medications, doses, and wellbeing trends.",
+    includeSocial: true,
+    includeJsonLd: true,
+    includeLandingCompat: true,
+    contentHtml: `
+      <article class="hero-card" aria-labelledby="hero-title">
+        <h1 id="hero-title">Medication Tracker</h1>
+        <p class="lead">Shared-care medication tracking for personal consistency and psychiatrist review.</p>
+        <div class="cta-row">
+          <a class="button button-primary" href="/app" aria-label="Open the Medication Tracker app">Open Medication Tracker App</a>
+          <a class="button button-secondary" href="/app#consult" aria-label="Open consult summary">Go to Consult Summary</a>
+        </div>
+        <div class="feature-grid" aria-label="Feature highlights">
+          <article class="feature-card"><h2>Dose tracking</h2><p>Log taken, skipped, and snoozed doses with timestamps.</p></article>
+          <article class="feature-card"><h2>Quick check-ins</h2><p>Capture mood, anxiety, focus, sleep, and side effects fast.</p></article>
+          <article class="feature-card"><h2>Consult-ready summaries</h2><p>Review medication changes, trends, and open questions before appointments.</p></article>
+        </div>
+      </article>
+    `
+  });
+}
+
+function renderPublicInfoPage(req, options) {
+  const sections = options.sections
+    .map((section) => `<section><h2>${escapeHtml(section.title)}</h2><p>${escapeHtml(section.body)}</p></section>`)
+    .join("");
+  return renderPublicLayout(req, {
+    path: options.path,
+    title: options.title,
+    description: options.description,
+    contentHtml: `
+      <article class="info-card" aria-labelledby="page-title">
+        <h1 id="page-title">${escapeHtml(options.heading)}</h1>
+        <p class="lead">${escapeHtml(options.description)}</p>
+        ${sections}
+      </article>
+    `
+  });
+}
+
 async function getIndexTemplate() {
   if (indexTemplateCache) return indexTemplateCache;
-  indexTemplateCache = await readFile(path.join(projectRoot, "index.html"), "utf8");
+  try {
+    indexTemplateCache = await readFile(path.join(projectRoot, "app", "index.html"), "utf8");
+  } catch {
+    indexTemplateCache = await readFile(path.join(projectRoot, "index.html"), "utf8");
+  }
   return indexTemplateCache;
 }
 
-async function renderIndexHtml(req) {
+async function renderIndexHtml(req, options = {}) {
   const template = await getIndexTemplate();
-  const siteUrl = resolveSiteUrl(req).replace(/\/+$/, "");
-  const canonicalUrl = `${siteUrl}/`;
-  const robotsContent = isPrivateSite ? "noindex, nofollow" : "index, follow";
+  const canonicalUrl = canonicalUrlFor(req, options.canonicalPath || "/");
+  const robotsContent = String(
+    options.robotsContent
+      || (isPrivateSite ? "noindex, nofollow" : "index, follow")
+  );
   return template
     .replace(/<meta name="robots" content="[^"]*">/i, `<meta name="robots" content="${robotsContent}">`)
     .replace(/<meta property="og:url" content="[^"]*">/i, `<meta property="og:url" content="${canonicalUrl}">`)
@@ -921,6 +1133,107 @@ app.get("/api/audit", async (req, res) => {
   res.json({ ok: true, audit });
 });
 
+app.get("/", (req, res) => {
+  res.setHeader("Cache-Control", htmlCacheControl);
+  res.type("html").send(renderLandingHtml(req));
+});
+
+app.get("/about", (req, res) => {
+  res.setHeader("Cache-Control", htmlCacheControl);
+  res.type("html").send(renderPublicInfoPage(req, {
+    path: "/about",
+    title: "About - Bradley Kennedy's Medication Tracker",
+    heading: "About Medication Tracker",
+    description: "Built for treatment continuity, clinician review, and practical daily tracking.",
+    sections: [
+      {
+        title: "Purpose",
+        body: "Medication Tracker helps record doses, symptom check-ins, and medication changes in one place."
+      },
+      {
+        title: "Who it is for",
+        body: "This website is designed for personal use with optional read-only sharing for psychiatrist review."
+      },
+      {
+        title: "How it supports appointments",
+        body: "Consult summaries surface current medications, recent changes, trends, and open questions before each appointment."
+      }
+    ]
+  }));
+});
+
+app.get("/contact", (req, res) => {
+  res.setHeader("Cache-Control", htmlCacheControl);
+  res.type("html").send(renderPublicInfoPage(req, {
+    path: "/contact",
+    title: "Contact - Bradley Kennedy's Medication Tracker",
+    heading: "Contact",
+    description: "Questions or issues with the website can be raised through the maintainer contact route.",
+    sections: [
+      {
+        title: "General enquiries",
+        body: "For website updates or access issues, contact Bradley Kennedy directly."
+      },
+      {
+        title: "Clinical communication",
+        body: "Medication decisions should be discussed directly with your psychiatrist or prescribing clinician."
+      },
+      {
+        title: "Urgent concerns",
+        body: "Do not use this website for emergencies. Contact local emergency services for urgent medical concerns."
+      }
+    ]
+  }));
+});
+
+app.get("/privacy", (req, res) => {
+  res.setHeader("Cache-Control", htmlCacheControl);
+  res.type("html").send(renderPublicInfoPage(req, {
+    path: "/privacy",
+    title: "Privacy Policy - Medication Tracker",
+    heading: "Privacy policy",
+    description: "How data is handled in Medication Tracker.",
+    sections: [
+      {
+        title: "Data storage",
+        body: "Medication and wellbeing entries are stored for continuity and consult review. Storage can be local-only or synced depending on app settings."
+      },
+      {
+        title: "Sharing",
+        body: "Shared links are read-only and can be revoked by the owner. Access logging may include open count and last-opened time."
+      },
+      {
+        title: "Medical disclaimer",
+        body: "Medication Tracker supports documentation and discussion with your prescriber. It does not provide diagnosis or treatment instructions."
+      }
+    ]
+  }));
+});
+
+app.get("/terms", (req, res) => {
+  res.setHeader("Cache-Control", htmlCacheControl);
+  res.type("html").send(renderPublicInfoPage(req, {
+    path: "/terms",
+    title: "Terms of Use - Medication Tracker",
+    heading: "Terms of use",
+    description: "Usage terms for the Medication Tracker web app.",
+    sections: [
+      {
+        title: "Intended use",
+        body: "This app is intended for personal tracking and clinician review support."
+      },
+      {
+        title: "Account responsibility",
+        body: "Users are responsible for keeping access credentials and shared links secure."
+      },
+      {
+        title: "No emergency service",
+        body: "The app is not an emergency response tool. For urgent concerns, contact local emergency services or your care provider."
+      }
+    ]
+  }));
+});
+
 app.get("/robots.txt", (req, res) => {
   const siteUrl = resolveSiteUrl(req);
   const body = isPrivateSite
@@ -933,38 +1246,93 @@ app.get("/robots.txt", (req, res) => {
         "User-agent: *",
         "Allow: /",
         "Disallow: /api/",
+        "Disallow: /app",
+        "Disallow: /app/",
+        "Disallow: /tracker",
+        "Disallow: /tracker/",
+        "Disallow: /share",
+        "Disallow: /*share=*",
         `Sitemap: ${siteUrl}/sitemap.xml`
       ].join("\n");
   res.type("text/plain").send(body);
 });
 
 app.get("/sitemap.xml", (req, res) => {
-  const siteUrl = resolveSiteUrl(req);
-  const now = nowIso();
+  const now = nowIso().split("T")[0];
+  const urls = isPrivateSite ? [publicPages[0]] : publicPages;
+  const xmlItems = urls.map((page) => {
+    const loc = canonicalUrlFor(req, page.path);
+    return `  <url>
+    <loc>${loc}</loc>
+    <lastmod>${now}</lastmod>
+    <changefreq>${page.changefreq}</changefreq>
+    <priority>${page.priority}</priority>
+  </url>`;
+  }).join("\n");
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>${siteUrl}/</loc>
-    <lastmod>${now}</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.8</priority>
-  </url>
+${xmlItems}
 </urlset>`;
   res.type("application/xml").send(xml);
 });
 
-app.use(express.static(projectRoot, { index: false }));
+async function serveAppShell(req, res) {
+  try {
+    const html = await renderIndexHtml(req, {
+      canonicalPath: "/app",
+      robotsContent: "noindex, nofollow"
+    });
+    res.setHeader("X-Robots-Tag", "noindex, nofollow");
+    res.setHeader("Cache-Control", htmlCacheControl);
+    res.type("html").send(html);
+  } catch {
+    res.setHeader("X-Robots-Tag", "noindex, nofollow");
+    res.setHeader("Cache-Control", htmlCacheControl);
+    res.sendFile(path.join(projectRoot, "index.html"));
+  }
+}
+
+app.get("/app", serveAppShell);
+app.get("/app/*", serveAppShell);
+app.get("/tracker", serveAppShell);
+app.get("/tracker/*", serveAppShell);
+
+app.use(express.static(path.join(projectRoot, "public"), {
+  index: false,
+  setHeaders: (res, filePath) => {
+    const lower = filePath.toLowerCase();
+    if (/\.(?:css|js|mjs|map|png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf)$/.test(lower)) {
+      res.setHeader("Cache-Control", staticAssetCacheControl);
+    } else {
+      res.setHeader("Cache-Control", shortAssetCacheControl);
+    }
+  }
+}));
+
+app.use(express.static(projectRoot, {
+  index: false,
+  setHeaders: (res, filePath) => {
+    const lower = filePath.toLowerCase();
+    if (lower.endsWith("/index.html") || lower.endsWith(".html")) {
+      res.setHeader("Cache-Control", htmlCacheControl);
+      return;
+    }
+    if (lower.endsWith("/sw.js") || lower.endsWith("/manifest.webmanifest")) {
+      res.setHeader("Cache-Control", shortAssetCacheControl);
+      return;
+    }
+    if (/\.(?:css|js|mjs|map|png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf)$/.test(lower)) {
+      res.setHeader("Cache-Control", staticAssetCacheControl);
+    }
+  }
+}));
+
 app.get("*", async (req, res) => {
   if (req.path.startsWith("/api/")) {
     res.status(404).json({ error: "Not found" });
     return;
   }
-  try {
-    const html = await renderIndexHtml(req);
-    res.type("html").send(html);
-  } catch {
-    res.sendFile(path.join(projectRoot, "index.html"));
-  }
+  await serveAppShell(req, res);
 });
 
 app.listen(port, () => {

@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /app
+Disallow: /app/
+Disallow: /tracker
+Disallow: /tracker/
+Disallow: /share
+Disallow: /*share=*
+Sitemap: https://bradckennedy.org/sitemap.xml
