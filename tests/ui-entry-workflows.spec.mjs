@@ -1,10 +1,11 @@
 import { test, expect } from "@playwright/test";
 
 const BASE_URL = process.env.UI_BASE_URL || "http://127.0.0.1:8080";
+const APP_URL = process.env.UI_APP_URL || `${BASE_URL.replace(/\/+$/, "")}/app`;
 
 test.describe("Entry workflow interactions", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+    await page.goto(APP_URL, { waitUntil: "networkidle" });
   });
 
   test("reset to neutral updates full check-in fields", async ({ page }) => {
