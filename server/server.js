@@ -58,9 +58,61 @@ const corsOrigins = String(process.env.CORS_ORIGIN || "*")
 const allowAnyCorsOrigin = !corsOrigins.length || corsOrigins.includes("*");
 
 const app = express();
+app.disable("x-powered-by");
+app.set("trust proxy", true);
 app.use(express.json({ limit: "8mb" }));
 
 let indexTemplateCache = "";
+
+const publicPages = Object.freeze([
+  { path: "/", changefreq: "weekly", priority: "1.0" },
+  { path: "/privacy", changefreq: "monthly", priority: "0.6" },
+  { path: "/terms", changefreq: "monthly", priority: "0.6" }
+]);
+
+const htmlCacheControl = "public, max-age=0, must-revalidate";
+const staticAssetCacheControl = "public, max-age=604800, stale-while-revalidate=86400";
+const shortAssetCacheControl = "public, max-age=86400, stale-while-revalidate=3600";
+
+function appendVaryHeader(res, value) {
+  const existing = String(res.getHeader("Vary") || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!existing.includes(value)) {
+    existing.push(value);
+    res.setHeader("Vary", existing.join(", "));
+  }
+}
+
+app.use((req, res, next) => {
+  const csp = [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "form-action 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
+    "font-src 'self' data: https://fonts.gstatic.com",
+    "img-src 'self' data: https:",
+    "connect-src 'self' https:",
+    "manifest-src 'self'",
+    "worker-src 'self'",
+    "upgrade-insecure-requests"
+  ].join("; ");
+  res.setHeader("Content-Security-Policy", csp);
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  if (req.secure || String(req.header("x-forwarded-proto") || "").toLowerCase() === "https") {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
+  next();
+});
 
 app.use((req, res, next) => {
   const requestOrigin = String(req.header("origin") || "").trim();
@@ -68,7 +120,7 @@ app.use((req, res, next) => {
     ? "*"
     : (requestOrigin && corsOrigins.includes(requestOrigin) ? requestOrigin : corsOrigins[0]);
   res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
-  res.setHeader("Vary", "Origin");
+  appendVaryHeader(res, "Origin");
   res.setHeader("Access-Control-Allow-Headers", "content-type,authorization,x-account-id,x-owner-key");
   res.setHeader("Access-Control-Allow-Methods", "GET,PUT,POST,OPTIONS");
   if (req.method === "OPTIONS") {
@@ -90,17 +142,201 @@ function resolveSiteUrl(req) {
   return `${req.protocol}://${req.get("host")}`;
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function canonicalUrlFor(req, pathname = "/") {
+  const siteUrl = resolveSiteUrl(req).replace(/\/+$/, "");
+  const safePath = String(pathname || "/").startsWith("/") ? String(pathname || "/") : `/${String(pathname || "/")}`;
+  return `${siteUrl}${safePath === "/" ? "/" : safePath}`;
+}
+
+function renderLandingHtml(req) {
+  const canonicalUrl = canonicalUrlFor(req, "/");
+  const robotsContent = isPrivateSite ? "noindex, nofollow" : "index, follow";
+  const siteName = "Bradley Kennedy's Medication Tracker";
+  const description = "A personal tool for tracking medications, doses, and wellbeing trends.";
+  const socialImage = canonicalUrlFor(req, "/icons/icon-512-v2.png");
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        name: siteName,
+        url: canonicalUrl,
+        description
+      },
+      {
+        "@type": "SoftwareApplication",
+        name: "Medication Tracker",
+        applicationCategory: "HealthApplication",
+        operatingSystem: "Web",
+        url: canonicalUrlFor(req, "/app"),
+        description
+      }
+    ]
+  };
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(siteName)} - Daily Health Management</title>
+  <meta name="description" content="${escapeHtml(description)}">
+  <meta name="robots" content="${robotsContent}">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="${escapeHtml(siteName)} - Daily Health Management">
+  <meta property="og:description" content="${escapeHtml(description)}">
+  <meta property="og:url" content="${canonicalUrl}">
+  <meta property="og:image" content="${socialImage}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${escapeHtml(siteName)} - Daily Health Management">
+  <meta name="twitter:description" content="${escapeHtml(description)}">
+  <meta name="twitter:image" content="${socialImage}">
+  <link rel="canonical" href="${canonicalUrl}">
+  <link rel="icon" type="image/svg+xml" href="/site-icon.svg">
+  <style>
+    :root { color-scheme: light; --bg: #f3f6fb; --surface: #ffffff; --text: #12243a; --muted: #58708c; --accent: #2c6eea; --accent-soft: #e9f0ff; --border: #d9e3f2; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 16px/1.6 "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--text); background: linear-gradient(180deg, #f6f8fc 0%, #eef3fb 100%); }
+    a { color: inherit; }
+    .skip-link { position: absolute; left: 12px; top: -48px; background: #0f1726; color: #fff; padding: 8px 12px; border-radius: 8px; z-index: 10; text-decoration: none; }
+    .skip-link:focus { top: 12px; }
+    .container { width: min(1080px, calc(100% - 32px)); margin: 0 auto; }
+    header { padding: 18px 0 10px; }
+    nav ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 12px; flex-wrap: wrap; }
+    nav a { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); text-decoration: none; font-weight: 700; }
+    .hero { margin: 16px 0 20px; border: 1px solid var(--border); background: var(--surface); border-radius: 20px; padding: 28px; box-shadow: 0 12px 30px rgba(18,36,58,.08); }
+    h1 { margin: 0 0 10px; font-size: clamp(1.8rem, 3vw, 2.3rem); line-height: 1.2; }
+    h2 { margin: 0 0 6px; font-size: 1.35rem; line-height: 1.3; }
+    p { margin: 0 0 12px; color: var(--muted); max-width: 70ch; }
+    .cta-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+    .cta-primary, .cta-secondary { display: inline-flex; align-items: center; justify-content: center; min-height: 46px; padding: 0 16px; border-radius: 12px; text-decoration: none; font-weight: 800; border: 1px solid transparent; }
+    .cta-primary { background: var(--accent); color: #fff; }
+    .cta-secondary { border-color: var(--border); background: var(--accent-soft); color: var(--text); }
+    .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-top: 16px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+    .card p { margin: 6px 0 0; font-size: .95rem; }
+    :is(a, button):focus-visible { outline: 3px solid #8bb2ff; outline-offset: 2px; }
+    footer { padding: 20px 0 34px; color: var(--muted); font-size: .95rem; }
+    @media (max-width: 640px) { .hero { padding: 20px; border-radius: 16px; } nav a { min-height: 44px; } }
+  </style>
+  <script type="application/ld+json">${JSON.stringify(jsonLd)}</script>
+  <script src="/landing-compat.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <header>
+    <div class="container">
+      <nav aria-label="Primary">
+        <ul>
+          <li><a href="/">Home</a></li>
+          <li><a href="/app">Open App</a></li>
+          <li><a href="/privacy">Privacy</a></li>
+          <li><a href="/terms">Terms</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main id="main-content">
+    <section class="container hero" aria-labelledby="hero-title">
+      <h1 id="hero-title">Medication Tracker</h1>
+      <p>Shared-care medication tracking built for personal use and psychiatrist review. Log doses, monitor wellbeing, and keep consult notes in one place.</p>
+      <div class="cta-row">
+        <a class="cta-primary" href="/app" aria-label="Open the Medication Tracker app">Open Medication Tracker App</a>
+        <a class="cta-secondary" href="/app#consult" aria-label="Open consult summary">Go to Consult Summary</a>
+      </div>
+      <div class="grid" aria-label="Feature highlights">
+        <article class="card"><h2>Dose Tracking</h2><p>Record taken, skipped, or snoozed doses with reliable timestamps.</p></article>
+        <article class="card"><h2>Quick Check-ins</h2><p>Capture mood, anxiety, focus, sleep, and side effects in under 30 seconds.</p></article>
+        <article class="card"><h2>Consult Workflow</h2><p>Prepare a clean appointment summary with changes, trends, and open questions.</p></article>
+      </div>
+    </section>
+  </main>
+  <footer>
+    <div class="container">
+      <p>This tool is for tracking and discussion support. It does not replace professional medical advice.</p>
+    </div>
+  </footer>
+</body>
+</html>`;
+}
+
+function renderPolicyHtml(req, options) {
+  const canonicalUrl = canonicalUrlFor(req, options.path);
+  const robotsContent = isPrivateSite ? "noindex, nofollow" : "index, follow";
+  const bodySections = options.sections
+    .map((section) => `<section><h2>${escapeHtml(section.title)}</h2><p>${escapeHtml(section.body)}</p></section>`)
+    .join("");
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(options.title)} - Medication Tracker</title>
+  <meta name="description" content="${escapeHtml(options.description)}">
+  <meta name="robots" content="${robotsContent}">
+  <link rel="canonical" href="${canonicalUrl}">
+  <link rel="icon" type="image/svg+xml" href="/site-icon.svg">
+  <style>
+    :root { color-scheme: light; --bg:#f3f6fb; --surface:#fff; --text:#12243a; --muted:#58708c; --border:#d9e3f2; --accent:#2c6eea; }
+    * { box-sizing: border-box; }
+    body { margin:0; font:16px/1.65 "Manrope",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--text); background:var(--bg); }
+    .skip-link { position:absolute; left:12px; top:-48px; background:#0f1726; color:#fff; padding:8px 12px; border-radius:8px; z-index:10; text-decoration:none; }
+    .skip-link:focus { top:12px; }
+    .container { width:min(900px, calc(100% - 32px)); margin:0 auto; }
+    header, footer { padding:18px 0; }
+    nav a { color:var(--accent); text-decoration:none; font-weight:700; margin-right:12px; }
+    nav a:focus-visible { outline:3px solid #8bb2ff; outline-offset:2px; border-radius:6px; }
+    main article { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:24px; box-shadow:0 10px 26px rgba(18,36,58,.06); }
+    h1 { margin:0 0 8px; font-size:clamp(1.6rem,2.6vw,2rem); }
+    h2 { margin:20px 0 6px; font-size:1.2rem; }
+    p { margin:0; color:var(--muted); }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <header>
+    <div class="container">
+      <nav aria-label="Primary">
+        <a href="/">Home</a>
+        <a href="/app">Open App</a>
+      </nav>
+    </div>
+  </header>
+  <main id="main-content" class="container">
+    <article>
+      <h1>${escapeHtml(options.heading)}</h1>
+      <p>${escapeHtml(options.description)}</p>
+      ${bodySections}
+    </article>
+  </main>
+  <footer>
+    <div class="container"><p><a href="/app">Return to the app</a></p></div>
+  </footer>
+</body>
+</html>`;
+}
+
 async function getIndexTemplate() {
   if (indexTemplateCache) return indexTemplateCache;
   indexTemplateCache = await readFile(path.join(projectRoot, "index.html"), "utf8");
   return indexTemplateCache;
 }
 
-async function renderIndexHtml(req) {
+async function renderIndexHtml(req, options = {}) {
   const template = await getIndexTemplate();
-  const siteUrl = resolveSiteUrl(req).replace(/\/+$/, "");
-  const canonicalUrl = `${siteUrl}/`;
-  const robotsContent = isPrivateSite ? "noindex, nofollow" : "index, follow";
+  const canonicalUrl = canonicalUrlFor(req, options.canonicalPath || "/");
+  const robotsContent = String(
+    options.robotsContent
+      || (isPrivateSite ? "noindex, nofollow" : "index, follow")
+  );
   return template
     .replace(/<meta name="robots" content="[^"]*">/i, `<meta name="robots" content="${robotsContent}">`)
     .replace(/<meta property="og:url" content="[^"]*">/i, `<meta property="og:url" content="${canonicalUrl}">`)
@@ -921,6 +1157,59 @@ app.get("/api/audit", async (req, res) => {
   res.json({ ok: true, audit });
 });
 
+app.get("/", (req, res) => {
+  res.setHeader("Cache-Control", htmlCacheControl);
+  res.type("html").send(renderLandingHtml(req));
+});
+
+app.get("/privacy", (req, res) => {
+  res.setHeader("Cache-Control", htmlCacheControl);
+  res.type("html").send(renderPolicyHtml(req, {
+    path: "/privacy",
+    title: "Privacy Policy",
+    heading: "Privacy policy",
+    description: "How data is handled in Medication Tracker.",
+    sections: [
+      {
+        title: "Data storage",
+        body: "Medication and wellbeing entries are stored for continuity and consult review. Storage can be local-only or synced depending on app settings."
+      },
+      {
+        title: "Sharing",
+        body: "Shared links are read-only and can be revoked by the owner. Access logging may include open count and last-opened time."
+      },
+      {
+        title: "Medical disclaimer",
+        body: "Medication Tracker supports documentation and discussion with your prescriber. It does not provide diagnosis or treatment instructions."
+      }
+    ]
+  }));
+});
+
+app.get("/terms", (req, res) => {
+  res.setHeader("Cache-Control", htmlCacheControl);
+  res.type("html").send(renderPolicyHtml(req, {
+    path: "/terms",
+    title: "Terms of Use",
+    heading: "Terms of use",
+    description: "Usage terms for the Medication Tracker web app.",
+    sections: [
+      {
+        title: "Intended use",
+        body: "This app is intended for personal tracking and clinician review support."
+      },
+      {
+        title: "Account responsibility",
+        body: "Users are responsible for keeping access credentials and shared links secure."
+      },
+      {
+        title: "No emergency service",
+        body: "The app is not an emergency response tool. For urgent concerns, contact local emergency services or your care provider."
+      }
+    ]
+  }));
+});
+
 app.get("/robots.txt", (req, res) => {
   const siteUrl = resolveSiteUrl(req);
   const body = isPrivateSite
@@ -933,38 +1222,76 @@ app.get("/robots.txt", (req, res) => {
         "User-agent: *",
         "Allow: /",
         "Disallow: /api/",
+        "Disallow: /app",
+        "Disallow: /app/",
+        "Disallow: /share",
         `Sitemap: ${siteUrl}/sitemap.xml`
       ].join("\n");
   res.type("text/plain").send(body);
 });
 
 app.get("/sitemap.xml", (req, res) => {
-  const siteUrl = resolveSiteUrl(req);
-  const now = nowIso();
+  const now = nowIso().split("T")[0];
+  const urls = isPrivateSite ? [publicPages[0]] : publicPages;
+  const xmlItems = urls.map((page) => {
+    const loc = canonicalUrlFor(req, page.path);
+    return `  <url>
+    <loc>${loc}</loc>
+    <lastmod>${now}</lastmod>
+    <changefreq>${page.changefreq}</changefreq>
+    <priority>${page.priority}</priority>
+  </url>`;
+  }).join("\n");
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>${siteUrl}/</loc>
-    <lastmod>${now}</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.8</priority>
-  </url>
+${xmlItems}
 </urlset>`;
   res.type("application/xml").send(xml);
 });
 
-app.use(express.static(projectRoot, { index: false }));
+async function serveAppShell(req, res) {
+  try {
+    const html = await renderIndexHtml(req, {
+      canonicalPath: "/app",
+      robotsContent: "noindex, nofollow"
+    });
+    res.setHeader("X-Robots-Tag", "noindex, nofollow");
+    res.setHeader("Cache-Control", htmlCacheControl);
+    res.type("html").send(html);
+  } catch {
+    res.setHeader("X-Robots-Tag", "noindex, nofollow");
+    res.setHeader("Cache-Control", htmlCacheControl);
+    res.sendFile(path.join(projectRoot, "index.html"));
+  }
+}
+
+app.get("/app", serveAppShell);
+app.get("/app/*", serveAppShell);
+
+app.use(express.static(projectRoot, {
+  index: false,
+  setHeaders: (res, filePath) => {
+    const lower = filePath.toLowerCase();
+    if (lower.endsWith("/index.html") || lower.endsWith(".html")) {
+      res.setHeader("Cache-Control", htmlCacheControl);
+      return;
+    }
+    if (lower.endsWith("/sw.js") || lower.endsWith("/manifest.webmanifest")) {
+      res.setHeader("Cache-Control", shortAssetCacheControl);
+      return;
+    }
+    if (/\.(?:css|js|mjs|map|png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf)$/.test(lower)) {
+      res.setHeader("Cache-Control", staticAssetCacheControl);
+    }
+  }
+}));
+
 app.get("*", async (req, res) => {
   if (req.path.startsWith("/api/")) {
     res.status(404).json({ error: "Not found" });
     return;
   }
-  try {
-    const html = await renderIndexHtml(req);
-    res.type("html").send(html);
-  } catch {
-    res.sendFile(path.join(projectRoot, "index.html"));
-  }
+  await serveAppShell(req, res);
 });
 
 app.listen(port, () => {
