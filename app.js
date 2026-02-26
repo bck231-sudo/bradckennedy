@@ -302,6 +302,14 @@ const TOP_NAV_ITEMS = [
     preferredModes: ["clinical", "personal"]
   },
   {
+    id: "education",
+    label: "Education",
+    icon: "book",
+    primarySection: "education",
+    fallbackSections: ["medications"],
+    preferredModes: ["daily", "clinical", "personal"]
+  },
+  {
     id: "history",
     label: "History",
     icon: "chart",
@@ -4694,17 +4702,6 @@ function renderDashboard(root, data, context) {
         ) : `<div class="empty">No active medications yet.${ownerEditable ? ` <button class="btn btn-secondary small" type="button" data-dashboard-add-med="1">Add medication</button>` : ""}</div>`}
       </article>
 
-      <article class="card card-accent card-accent-ocean card-education-link">
-        <div class="card-head-row">
-          <div>
-            <h3>Medication education</h3>
-            <div class="subtle">Moved into a dedicated section to keep Dashboard focused on daily actions.</div>
-          </div>
-          <button class="btn btn-ghost small" type="button" data-dashboard-open-education="1">Open section</button>
-        </div>
-        <div class="subtle">Includes short descriptors for each current medication plus quick trusted references.</div>
-      </article>
-
       <article class="card card-accent card-accent-teal card-consult-prep">
         <div class="card-head-row">
           <div>
@@ -5131,16 +5128,6 @@ function renderDashboard(root, data, context) {
       navigateToSection("consult", {
         preferredModes: ["clinical", "personal"],
         fallbackSections: ["timeline"]
-      });
-      renderAll();
-    });
-  });
-
-  root.querySelectorAll("[data-dashboard-open-education]").forEach((button) => {
-    button.addEventListener("click", () => {
-      navigateToSection("education", {
-        preferredModes: ["daily", "clinical", "personal"],
-        fallbackSections: ["medications"]
       });
       renderAll();
     });
