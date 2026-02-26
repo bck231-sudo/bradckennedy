@@ -5275,6 +5275,55 @@ body.consult-focus-mode .main {
   }
 }
 
+.med-time-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.med-time-group {
+  padding: 12px;
+  border: 1px solid var(--line, #d6e0eb);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--panel, #ffffff) 84%, var(--accent-soft, #e9f3ff) 16%);
+}
+
+.med-time-group h4 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+}
+
+.med-time-group .timeline-list {
+  margin: 0;
+}
+
+.med-time-group li,
+.medication-education-inner li,
+.medication-education-inner .subtle {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.medication-education-card .medication-education-grid {
+  margin-top: 12px;
+  gap: 12px;
+}
+
+.medication-education-inner {
+  margin-top: 12px;
+}
+
+.medication-education-inner h4 {
+  margin-bottom: 8px;
+}
+
+@media (max-width: 900px) {
+  .medication-education-card .medication-education-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media print {
   .app-topbar,
   .top-navbar,

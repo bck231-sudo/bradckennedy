@@ -19,6 +19,14 @@ import {
 } from "./risk-engine.js";
 import { createStorageService } from "./storage-service.js";
 import { buildDataQualityIndicators, computeBeforeAfterComparison } from "./consult-engine.js";
+import {
+  CURRENT_MEDICATION_GROUPS,
+  CURRENT_MEDICATION_REGIMEN,
+  findRegimenMedicationConfigByMedication,
+  formatRegimenDose,
+  medicationConfigLookupKeys,
+  toProfileMedicationValues
+} from "./current-meds-config.js";
 
 const STORAGE_KEY = "medication_tracker_data_v1";
 const DRAFT_KEY = "medication_tracker_drafts_v2";
@@ -26,7 +34,7 @@ const ACCESS_LOG_KEY = "medication_tracker_access_logs_v1";
 const SYNC_CONFIG_KEY = "medication_tracker_sync_config_v1";
 const REMINDER_LOG_KEY = "medication_tracker_reminder_log_v1";
 const SYNC_QUEUE_KEY = "medication_tracker_sync_queue_v1";
-const PROFILE_PATCH_KEY = "medication_tracker_profile_patch_2026_02_21_v1";
+const PROFILE_PATCH_KEY = "medication_tracker_profile_patch_2026_02_26_v2";
 const APP_VERSION = 3;
 const DOSE_SNOOZE_MINUTES = 30;
 const REMOTE_SYNC_DEBOUNCE_MS = 800;
@@ -85,6 +93,8 @@ const TIMELINE_LAZY_CHART_DEFAULTS = Object.freeze({
   doseChanges: false
 });
 const DATA_CONFIDENCE_MIN_CHECKINS = 4;
+const DEFAULT_MEDICATION_EDUCATION_OWNER_NOTES = "Theo switched me off Vyvanse and stopped Luvox. Started Concerta; increased to 36 mg.";
+const REGIMEN_HISTORY_CHANGE_TEXT = "Stopped Vyvanse and Luvox; started Concerta; now 36 mg AM.";
 const storage = createStorageService(typeof window !== "undefined" ? window.localStorage : null);
 
 const SIDE_EFFECT_OPTIONS = [
@@ -100,19 +110,17 @@ const SIDE_EFFECT_OPTIONS = [
   "other"
 ];
 
-const COMMON_MEDICATION_NAMES = [
-  "Fluvoxamine",
-  "Vyvanse",
-  "Clonidine",
-  "Quetiapine",
-  "Clonazepam",
-  "Atenolol",
-  "Sertraline",
-  "Escitalopram",
-  "Fluoxetine",
-  "Mirtazapine",
-  "Lamotrigine"
-];
+const COMMON_MEDICATION_NAMES = Array.from(
+  new Set([
+    ...CURRENT_MEDICATION_REGIMEN.flatMap((medication) => [medication.name, medication.genericName].filter(Boolean)),
+    "Atenolol",
+    "Sertraline",
+    "Escitalopram",
+    "Fluoxetine",
+    "Mirtazapine",
+    "Lamotrigine"
+  ])
+);
 
 const SCHEDULE_PRESETS = {
   am: { label: "AM", times: ["08:00"] },
@@ -271,7 +279,11 @@ const OWNER_PERMISSIONS = Object.freeze({
 });
 
 const SENSITIVE_TAG_KEYWORDS = ["sensitive", "journal", "libido", "sexual", "substance", "private"];
-const TARGET_MEDICATION_KEYS = ["fluvoxamine", "clonazepam", "vyvanse", "lisdexamfetamine"];
+const TARGET_MEDICATION_KEYS = Array.from(
+  new Set(
+    CURRENT_MEDICATION_REGIMEN.flatMap((medication) => medicationConfigLookupKeys(medication))
+  )
+);
 const CHART_COLORS = Object.freeze({
   mood: "#1f7b90",
   anxiety: "#a86a2a",
@@ -732,67 +744,42 @@ function applyMedicationProfilePatch(inputState) {
   const nowIso = isoDateTime(now);
   const today = isoDate(now);
 
-  upsertMedicationFromProfile(state, {
-    name: "Fluvoxamine",
-    genericName: "fluvoxamine",
-    currentDose: "100 mg daily",
-    schedulePreset: "custom",
-    scheduleTimes: [],
-    route: "oral",
-    indication: "Reduced under psychiatrist Theo with plan to discontinue due to interaction/enzyme profile concerns.",
-    monitor: "Reduction sequence reported as 200 mg -> 150 mg -> 100 mg. Discuss taper pace and interaction implications with prescriber.",
-    questions: "Needs confirmation: exact dates for each dose reduction step.",
-    needsConfirmation: true,
-    confirmationNotes: "Needs confirmation: exact timeline dates for 200 mg -> 150 mg -> 100 mg reduction."
-  }, nowIso, today);
+  const currentRegimenKeys = new Set();
+  for (const medication of CURRENT_MEDICATION_REGIMEN) {
+    const values = toProfileMedicationValues(medication);
+    upsertMedicationFromProfile(state, values, nowIso, today);
+    for (const key of medicationConfigLookupKeys(medication)) {
+      currentRegimenKeys.add(key);
+    }
+  }
 
-  upsertMedicationFromProfile(state, {
-    name: "Clonazepam",
-    genericName: "clonazepam",
-    currentDose: "2 mg per day",
-    schedulePreset: "am",
-    scheduleTimes: ["08:00"],
-    route: "oral",
-    indication: "Current scheduled dose reported as 2 mg daily at 8am.",
-    monitor: "Maintain timing consistency and review effects with prescriber.",
-    questions: "",
-    needsConfirmation: false,
-    confirmationNotes: ""
-  }, nowIso, today);
+  for (const medication of state.medications) {
+    if (!medication.active) continue;
+    const medKey = normalizeMedicationKey(medication.name);
+    const genericKey = normalizeMedicationKey(medication.genericName);
+    if (currentRegimenKeys.has(medKey) || currentRegimenKeys.has(genericKey)) {
+      continue;
+    }
+    medication.active = false;
+    medication.updatedAt = nowIso;
+  }
 
-  upsertMedicationFromProfile(state, {
-    name: "Vyvanse",
-    genericName: "lisdexamfetamine",
-    currentDose: "70 mg/day split (40 mg at 8am + 30 mg at 2pm)",
-    schedulePreset: "custom",
-    scheduleTimes: ["08:00", "14:00"],
-    route: "oral",
-    indication: "Current dose reported as 70 mg/day split dosing.",
-    monitor: "Dose under review/approval discussion above 70 mg PBS-covered range; do not treat as approved unless confirmed.",
-    questions: "Needs confirmation: conflicting values reported (70 mg/day split vs prior mention of 100 mg/day; possible plan/request for 120 mg).",
-    needsConfirmation: true,
-    confirmationNotes: "Needs confirmation: conflicting reported values are 70 mg/day split, prior mention of 100 mg/day, and possible 120 mg plan/request."
-  }, nowIso, today);
-
-  upsertNoteFromProfile(state, {
-    date: today,
-    noteType: "free_text",
-    severity: "moderate",
-    noteText: "Recent medication changes summary: Fluvoxamine reduced 200 mg -> 150 mg -> 100 mg over time; psychiatrist intent is taper/discontinue due to interaction profile; Vyvanse dose is under review/approval discussion for dose above 70 mg PBS-covered range (not confirmed as approved).",
-    tags: ["medication-summary", "Needs confirmation"],
-    isSensitive: false
-  }, nowIso);
+  ensureRegimenHistoryEntry(state, nowIso, today);
 
   storage.writeText(PROFILE_PATCH_KEY, nowIso);
   return state;
 }
 
 function upsertMedicationFromProfile(state, values, nowIso, today) {
-  const key = normalizeMedicationKey(values.name);
+  const keys = new Set(
+    [values.name, values.genericName, ...(Array.isArray(values.lookupKeys) ? values.lookupKeys : [])]
+      .map((entry) => normalizeMedicationKey(entry))
+      .filter(Boolean)
+  );
   const existing = state.medications.find((med) => {
     const medKey = normalizeMedicationKey(med.name);
     const genericKey = normalizeMedicationKey(med.genericName);
-    return medKey === key || genericKey === key;
+    return keys.has(medKey) || keys.has(genericKey);
   });
 
   if (existing) {
@@ -840,6 +827,53 @@ function upsertMedicationFromProfile(state, values, nowIso, today) {
     createdAt: nowIso,
     updatedAt: nowIso
   });
+}
+
+function ensureRegimenHistoryEntry(state, nowIso, today) {
+  const exists = (state.changes || []).some((entry) => {
+    const reason = String(entry.reasonForChange || entry.reason || "").trim();
+    return normalizeMedicationKey(reason) === normalizeMedicationKey(REGIMEN_HISTORY_CHANGE_TEXT);
+  });
+  if (exists) return;
+
+  const newDoseText = CURRENT_MEDICATION_REGIMEN
+    .map((medication) => `${medication.name}: ${formatRegimenDose(medication)}`)
+    .join("; ");
+
+  const change = {
+    id: uid(),
+    medicationId: "",
+    medicationName: "Regimen update",
+    date: today,
+    dateEffective: today,
+    oldDose: "Previous regimen",
+    newDose: newDoseText,
+    reason: REGIMEN_HISTORY_CHANGE_TEXT,
+    reasonForChange: REGIMEN_HISTORY_CHANGE_TEXT,
+    route: "",
+    changedBy: "self",
+    expectedEffects: "",
+    monitorFor: "",
+    reviewDate: "",
+    notes: "",
+    interpretation: generateInterpretationTemplate({
+      medicationName: "Regimen update",
+      oldDose: "Previous regimen",
+      newDose: "Current regimen",
+      reason: REGIMEN_HISTORY_CHANGE_TEXT
+    }),
+    createdAt: nowIso
+  };
+  state.changes.push(change);
+  state.medicationChangeExperiments.push(
+    normalizeMedicationChangeExperiment({
+      ...change,
+      linkedChangeId: change.id,
+      dateEffective: today,
+      createdAt: nowIso,
+      updatedAt: nowIso
+    })
+  );
 }
 
 function upsertNoteFromProfile(state, values, nowIso) {
@@ -1552,7 +1586,9 @@ function applyThemePreference(profile) {
 function defaultDashboardConfig() {
   return {
     summaryNote: "",
-    monitoringReminders: []
+    monitoringReminders: [],
+    showMedicationEducationInConsult: false,
+    medicationEducationOwnerNotes: DEFAULT_MEDICATION_EDUCATION_OWNER_NOTES
   };
 }
 
@@ -1564,7 +1600,11 @@ function normalizeDashboardConfig(input) {
 
   return {
     summaryNote: String(input?.summaryNote || "").trim(),
-    monitoringReminders: reminders
+    monitoringReminders: reminders,
+    showMedicationEducationInConsult: Boolean(input?.showMedicationEducationInConsult),
+    medicationEducationOwnerNotes: String(input?.medicationEducationOwnerNotes || defaults.medicationEducationOwnerNotes)
+      .trim()
+      .slice(0, 1200)
   };
 }
 
@@ -3496,14 +3536,157 @@ function resolveCurrentMedsLastUpdatedDate(data) {
   return isoDate(new Date(latest));
 }
 
-function renderRecentMedicationSummary() {
+function formatMedicationDoseLabel(medication) {
+  const explicitDose = String(medication?.currentDose || "").trim();
+  if (explicitDose) return explicitDose;
+  const regimenConfig = findRegimenMedicationConfigByMedication(medication);
+  return regimenConfig ? formatRegimenDose(regimenConfig) : "-";
+}
+
+function medicationScheduleHint(medication, groupKey) {
+  const regimenConfig = findRegimenMedicationConfigByMedication(medication);
+  if (!regimenConfig) return "";
+  const regimenName = normalizeMedicationKey(regimenConfig.name);
+  if (regimenName === "nicotine patch") {
+    return "apply daily";
+  }
+  if (groupKey === "prn" && regimenConfig.prn) {
+    const hasNightHint = (regimenConfig.schedule || [])
+      .some((entry) => normalizeMedicationKey(entry.timeLabel) === "night");
+    return hasNightHint ? "at night as needed" : "as needed";
+  }
+  return "";
+}
+
+function buildCurrentMedicationTimeGroups(medications) {
+  const groups = CURRENT_MEDICATION_GROUPS.map((group) => ({ ...group, items: [] }));
+  const groupsByKey = new Map(groups.map((group) => [group.key, group]));
+
+  for (const medication of medications || []) {
+    const regimenConfig = findRegimenMedicationConfigByMedication(medication);
+    const placement = new Set();
+    const presetKey = normalizeSchedulePresetValue(medication.schedulePreset);
+    const scheduleTimes = normalizeTimes(
+      (medication.scheduleTimes || []).length
+        ? medication.scheduleTimes
+        : (regimenConfig?.schedule || []).map((entry) => entry.time24h).filter(Boolean)
+    );
+
+    if (presetKey === "prn" || Boolean(regimenConfig?.prn)) {
+      placement.add("prn");
+    }
+    for (const time of scheduleTimes) {
+      const matchingGroup = groups.find((group) => group.time24h === time);
+      if (matchingGroup) placement.add(matchingGroup.key);
+    }
+    if (!placement.size) {
+      if (presetKey === "am") placement.add("morning");
+      if (presetKey === "pm") placement.add("night");
+    }
+
+    for (const key of placement) {
+      const targetGroup = groupsByKey.get(key);
+      if (targetGroup) targetGroup.items.push(medication);
+    }
+  }
+
+  for (const group of groups) {
+    const byId = new Map();
+    for (const medication of group.items) {
+      const id = medication.id || normalizeMedicationKey(medication.name);
+      if (!byId.has(id)) byId.set(id, medication);
+    }
+    group.items = Array.from(byId.values()).sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  }
+
+  return groups;
+}
+
+function renderCurrentMedicationScheduleGroups(medications, options = {}) {
+  const groups = buildCurrentMedicationTimeGroups(medications || []);
+  const hasAny = groups.some((group) => group.items.length);
+  if (!hasAny) {
+    return `<div class="empty">${escapeHtml(options.emptyMessage || "No active medications recorded.")}</div>`;
+  }
+
   return `
-    <ul class="timeline-list">
-      <li>Fluvoxamine reduced from 200 mg -> 150 mg -> 100 mg over time.</li>
-      <li>Psychiatrist intent: taper/discontinue fluvoxamine due to interaction/enzyme profile concerns.</li>
-      <li>Vyvanse dose is under review / approval discussion for dose above 70 mg PBS-covered range. <strong>Needs confirmation</strong> and not listed as approved.</li>
-    </ul>
+    <div class="med-time-groups">
+      ${groups.map((group) => `
+        <article class="med-time-group">
+          <h4>${escapeHtml(group.label)}</h4>
+          ${group.items.length
+            ? `
+              <ul class="timeline-list">
+                ${group.items.map((medication) => {
+                  const hint = medicationScheduleHint(medication, group.key);
+                  return `<li><strong>${escapeHtml(medication.name || "Medication")}</strong> · ${escapeHtml(formatMedicationDoseLabel(medication))}${hint ? ` · ${escapeHtml(hint)}` : ""}</li>`;
+                }).join("")}
+              </ul>
+            `
+            : `<div class="subtle">No medications in this slot.</div>`}
+        </article>
+      `).join("")}
+    </div>
   `;
+}
+
+function renderMedicationEducationContent(ownerNotes, ownerEditable, { includeEditor = false } = {}) {
+  return `
+    <article class="card card-accent card-accent-ocean medication-education-card">
+      <div class="card-head-row">
+        <div>
+          <h3>Medication education (stimulants)</h3>
+          <div class="subtle">Owner education content for consult clarity and share-safe context.</div>
+        </div>
+      </div>
+      <div class="grid cols-2 medication-education-grid">
+        <article class="card medication-education-inner">
+          <h4>Concerta (methylphenidate ER) - MOA + profile</h4>
+          <ul class="timeline-list">
+            <li><strong>MOA:</strong> primarily DAT/NET reuptake inhibition -> increased synaptic dopamine/noradrenaline signaling.</li>
+            <li><strong>Delivery:</strong> OROS extended-release, with initial IR fraction then controlled release; typical coverage about 8-12 hours (varies).</li>
+            <li><strong>Typical profile:</strong> often steadier with less pronounced peak than IR stimulants; wear-off/crash can still occur and is dose-dependent.</li>
+          </ul>
+        </article>
+        <article class="card medication-education-inner">
+          <h4>Dexamphetamine / Vyvanse - MOA + profile</h4>
+          <ul class="timeline-list">
+            <li><strong>Dex MOA:</strong> promotes dopamine/noradrenaline release via VMAT2 disruption and reverse transport at DAT/NET (plus some reuptake inhibition).</li>
+            <li><strong>Vyvanse:</strong> prodrug converted to dexamphetamine for a smoother rise than IR dex, but with amphetamine MOA once active.</li>
+            <li><strong>Typical profile:</strong> stronger drive/activation with more noticeable peaks and higher risk of anxiety, irritability, or insomnia if overshooting.</li>
+          </ul>
+        </article>
+      </div>
+      <article class="card medication-education-inner">
+        <h4>Differences that matter clinically</h4>
+        <ul class="timeline-list">
+          <li>Reuptake blockade (methylphenidate) versus release/reverse transport (amphetamine).</li>
+          <li>Delivery system differences: OROS versus prodrug versus IR.</li>
+          <li>Onset/peak/crash pattern differences and how they can shift anxiety, rumination, and sleep.</li>
+        </ul>
+      </article>
+      <article class="card medication-education-inner">
+        <h4>Owner notes</h4>
+        ${includeEditor && ownerEditable
+          ? `
+            <form id="dashboardMedicationEducationForm" class="edit-inline-form">
+              <textarea name="medicationEducationOwnerNotes" maxlength="1200" placeholder="Owner notes for this section.">${escapeHtml(ownerNotes || DEFAULT_MEDICATION_EDUCATION_OWNER_NOTES)}</textarea>
+              <div class="inline-row" style="margin-top:8px;">
+                <button class="btn btn-primary small" type="submit">Save notes</button>
+              </div>
+            </form>
+          `
+          : `<div class="subtle">${escapeHtml(ownerNotes || DEFAULT_MEDICATION_EDUCATION_OWNER_NOTES)}</div>`}
+      </article>
+    </article>
+  `;
+}
+
+function renderRecentMedicationSummary(data) {
+  const meds = resolveCurrentMedications(data).filter((med) => med.isCurrent);
+  return renderCurrentMedicationScheduleGroups(meds, {
+    emptyMessage: "No active medications recorded."
+  });
 }
 
 function normalizeMedicationKey(value) {
@@ -3981,6 +4164,9 @@ function renderDashboard(root, data, context) {
 
   const dashboardConfig = normalizeDashboardConfig(app.ownerData.dashboardConfig || data.dashboardConfig);
   const summaryNote = dashboardConfig.summaryNote;
+  const medicationEducationOwnerNotes = String(
+    dashboardConfig.medicationEducationOwnerNotes || DEFAULT_MEDICATION_EDUCATION_OWNER_NOTES
+  ).trim();
 
   const resolvedMeds = resolveCurrentMedications(data);
   const activeMeds = resolvedMeds.filter((med) => med.isCurrent);
@@ -4326,6 +4512,8 @@ function renderDashboard(root, data, context) {
               </form>
             `
             : `
+          <div class="subtle" style="margin-bottom:8px;">Grouped by time: Morning, 2:00 pm, 8:00 pm, PRN.</div>
+          ${renderCurrentMedicationScheduleGroups(activeMeds, { emptyMessage: "No active medications yet." })}
           <div class="table-wrap">
             <table>
               <thead>
@@ -4341,7 +4529,7 @@ function renderDashboard(root, data, context) {
                 ${activeMeds.map((med) => `
                   <tr>
                     <td><span class="table-wrap-text">${escapeHtml(med.name)}</span></td>
-                    <td><span class="table-wrap-text">${escapeHtml(med.currentDose || "-")}</span></td>
+                    <td><span class="table-wrap-text">${escapeHtml(formatMedicationDoseLabel(med))}</span></td>
                     <td><span class="table-wrap-text">${escapeHtml(formatSchedule(med))}</span></td>
                     <td><span class="table-wrap-text">${escapeHtml(med.route || "-")}</span></td>
                     <td><button class="btn btn-secondary small" type="button" data-med-detail="${escapeHtml(med.id)}">View</button></td>
@@ -4353,6 +4541,8 @@ function renderDashboard(root, data, context) {
         `
         ) : `<div class="empty">No active medications yet.${ownerEditable ? ` <button class="btn btn-secondary small" type="button" data-dashboard-add-med="1">Add medication</button>` : ""}</div>`}
       </article>
+
+      ${ownerEditable ? renderMedicationEducationContent(medicationEducationOwnerNotes, ownerEditable, { includeEditor: true }) : ""}
 
       <article class="card card-accent card-accent-teal card-consult-prep">
         <div class="card-head-row">
@@ -4486,6 +4676,22 @@ function renderDashboard(root, data, context) {
     saveOwnerData(app.ownerData);
     app.ui.dashboardEdits = { ...app.ui.dashboardEdits, summary: false };
     setStatus("Summary note updated.");
+    renderAll();
+  });
+
+  root.querySelector("#dashboardMedicationEducationForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!ownerEditable) return;
+    const form = event.currentTarget;
+    const ownerNotes = String(form.elements.medicationEducationOwnerNotes?.value || "")
+      .trim()
+      .slice(0, 1200);
+    app.ownerData.dashboardConfig = normalizeDashboardConfig({
+      ...(app.ownerData.dashboardConfig || {}),
+      medicationEducationOwnerNotes: ownerNotes || DEFAULT_MEDICATION_EDUCATION_OWNER_NOTES
+    });
+    saveOwnerData(app.ownerData);
+    setStatus("Medication education notes updated.");
     renderAll();
   });
 
@@ -5023,7 +5229,7 @@ function renderMedications(root, data, context) {
                   ${med.brandName ? `<div class="subtle">${escapeHtml(med.brandName)}</div>` : ""}
                   ${med.needsConfirmation || !med.isTargetMedication ? `<div class="needs-confirmation">Needs confirmation: ${escapeHtml(formatNeedsConfirmationMessage(med.confirmationNotes || med.questions || (!med.isTargetMedication ? "Additional active record preserved from existing data." : "Conflicting values require confirmation.")))}</div>` : ""}
                 </td>
-                <td>${escapeHtml(med.currentDose || "-")}</td>
+                <td>${escapeHtml(formatMedicationDoseLabel(med))}</td>
                 <td>${escapeHtml(formatSchedule(med))}</td>
                 <td>${escapeHtml(med.route || "-")}</td>
                 <td>${escapeHtml(niceDate(med.startDate))}</td>
@@ -5565,8 +5771,8 @@ function renderChanges(root, data, context) {
     </article>
 
     <div class="card">
-      <h3>Recent medication changes summary</h3>
-      ${renderRecentMedicationSummary()}
+      <h3>Current regimen summary</h3>
+      ${renderRecentMedicationSummary(data)}
     </div>
 
     <div class="card table-controls-card">
@@ -6103,7 +6309,7 @@ function buildConsultClipboardSummary({
   lines.push("Current medications");
   if (meds.length) {
     meds.forEach((med) => {
-      lines.push(`- ${med.name}: ${med.currentDose || "-"} (${formatSchedule(med)})`);
+      lines.push(`- ${med.name}: ${formatMedicationDoseLabel(med)} (${formatSchedule(med)})`);
     });
   } else {
     lines.push("- None recorded");
@@ -6189,7 +6395,7 @@ function buildAppointmentPackSummary(data) {
   lines.push("Current medications");
   if (meds.length) {
     meds.forEach((med) => {
-      lines.push(`- ${med.name}: ${med.currentDose || "-"} (${formatSchedule(med)})`);
+      lines.push(`- ${med.name}: ${formatMedicationDoseLabel(med)} (${formatSchedule(med)})`);
     });
   } else {
     lines.push("- None recorded");
@@ -6238,6 +6444,11 @@ function renderConsult(root, data, context) {
   const allExperiments = resolveExperimentRows(data);
   const allExperimentsById = new Map(allExperiments.map((entry) => [entry.id, entry]));
   const consultConfig = normalizeConsultConfig(context.readOnly ? data.consultConfig : app.ownerData.consultConfig);
+  const dashboardConfig = normalizeDashboardConfig(context.readOnly ? data.dashboardConfig : app.ownerData.dashboardConfig || data.dashboardConfig);
+  const medicationEducationOwnerNotes = String(
+    dashboardConfig.medicationEducationOwnerNotes || DEFAULT_MEDICATION_EDUCATION_OWNER_NOTES
+  ).trim();
+  const showMedicationEducationInConsult = ownerEditable || dashboardConfig.showMedicationEducationInConsult;
   const filters = {
     ...consultConfig.activeFilters,
     ...(app.ui.consultFilters || {})
@@ -6502,7 +6713,7 @@ function renderConsult(root, data, context) {
                 ${meds.map((med) => `
                   <tr>
                     <td><span class="table-wrap-text consult-cell consult-cell-name">${escapeHtml(med.name)}</span></td>
-                    <td><span class="table-wrap-text consult-cell consult-cell-dose">${escapeHtml(med.currentDose || "-")}</span></td>
+                    <td><span class="table-wrap-text consult-cell consult-cell-dose">${escapeHtml(formatMedicationDoseLabel(med))}</span></td>
                     <td><span class="table-wrap-text consult-cell consult-cell-schedule">${escapeHtml(formatSchedule(med))}</span></td>
                     <td><span class="table-wrap-text consult-cell consult-cell-route">${escapeHtml(med.route || "-")}</span></td>
                     <td><span class="pill-badge ${med.active ? "status-open" : "status-discussed"}">${escapeHtml(med.active ? "Active" : "Inactive")}</span></td>
@@ -6518,7 +6729,7 @@ function renderConsult(root, data, context) {
                   <strong>${escapeHtml(med.name)}</strong>
                   <span class="pill-badge ${med.active ? "status-open" : "status-discussed"}">${escapeHtml(med.active ? "Active" : "Inactive")}</span>
                 </div>
-                <div class="subtle">Dose: ${escapeHtml(med.currentDose || "-")}</div>
+                <div class="subtle">Dose: ${escapeHtml(formatMedicationDoseLabel(med))}</div>
                 <div class="subtle">Schedule: ${escapeHtml(formatSchedule(med))}</div>
                 <div class="subtle">Route: ${escapeHtml(med.route || "-")}</div>
               </li>
@@ -6526,6 +6737,12 @@ function renderConsult(root, data, context) {
           </ul>
         ` : `<div class="empty">No active medications recorded.</div>`}
       </article>
+
+      ${showMedicationEducationInConsult ? `
+        <div class="consult-pane ${stepClass("review", "export")}" id="consult-medication-education" ${stepAttrs("review", "export")}>
+          ${renderMedicationEducationContent(medicationEducationOwnerNotes, ownerEditable, { includeEditor: false })}
+        </div>
+      ` : ""}
 
       <article class="card consult-section consult-section-main consult-pane ${stepClass("review", "export")}" id="consult-changes" ${stepAttrs("review", "export")}>
         <h3>Medication changes</h3>
@@ -10075,6 +10292,7 @@ function renderExports(root, data, context) {
   const ownerEditable = context.type === "owner" && !context.readOnly;
   const ownerProfile = normalizeOwnerProfile(app.ownerData.profile);
   const reminderSettings = normalizeReminderSettings(app.ownerData.reminderSettings);
+  const dashboardConfig = normalizeDashboardConfig(app.ownerData.dashboardConfig || data.dashboardConfig);
   const robotsMeta = String(document.querySelector("meta[name='robots']")?.getAttribute("content") || "index, follow").toLowerCase();
   const siteVisibilityLabel = robotsMeta.includes("noindex") ? "Private (search engines blocked)" : "Public (indexable)";
   const syncStatus = app.sync.status === "connected"
@@ -10204,8 +10422,17 @@ function renderExports(root, data, context) {
       <h3>Privacy / sharing</h3>
       <div class="subtle">Search visibility: ${escapeHtml(siteVisibilityLabel)}.</div>
       <div class="subtle">Share links and recipient previews are managed in the Share tab.</div>
+      <div class="field-grid" style="margin-top:10px;">
+        <div>
+          <label class="check-item">
+            <input type="checkbox" id="settingsShowMedicationEducationInConsult" ${dashboardConfig.showMedicationEducationInConsult ? "checked" : ""} ${ownerEditable ? "" : "disabled"}>
+            <span>Show medication education in Consult view</span>
+          </label>
+        </div>
+      </div>
       <div class="inline-row" style="margin-top:10px;">
         <button class="btn btn-ghost" type="button" id="openShareFromSettings">Open Share tab</button>
+        <button class="btn btn-secondary" type="button" id="saveSettingsVisibilityButton" ${ownerEditable ? "" : "disabled"}>Save consult visibility</button>
       </div>
     </div>
 
@@ -10305,6 +10532,17 @@ function renderExports(root, data, context) {
       preferredModes: ["clinical", "personal"],
       fallbackSections: ["exports"]
     });
+    renderAll();
+  });
+
+  root.querySelector("#saveSettingsVisibilityButton")?.addEventListener("click", () => {
+    if (!ownerEditable) return;
+    app.ownerData.dashboardConfig = normalizeDashboardConfig({
+      ...(app.ownerData.dashboardConfig || {}),
+      showMedicationEducationInConsult: Boolean(root.querySelector("#settingsShowMedicationEducationInConsult")?.checked)
+    });
+    saveOwnerData(app.ownerData);
+    setStatus("Consult visibility settings saved.");
     renderAll();
   });
 
@@ -11226,6 +11464,20 @@ function shiftDateKey(dateKey, days) {
 }
 
 function formatSchedule(medication) {
+  const regimenConfig = findRegimenMedicationConfigByMedication(medication);
+  if (normalizeMedicationKey(regimenConfig?.name) === "nicotine patch") {
+    const times = normalizeTimes(
+      (medication.scheduleTimes || []).length
+        ? medication.scheduleTimes
+        : (regimenConfig?.schedule || []).map((entry) => entry.time24h).filter(Boolean)
+    );
+    return times.length ? `Apply daily · ${times.join(", ")}` : "Apply daily";
+  }
+  if (regimenConfig?.prn) {
+    const hasNightHint = (regimenConfig.schedule || [])
+      .some((entry) => normalizeMedicationKey(entry.timeLabel) === "night");
+    return hasNightHint ? "PRN / as needed · night" : "PRN / as needed";
+  }
   const presetKey = normalizeSchedulePresetValue(medication.schedulePreset);
   const preset = SCHEDULE_PRESETS[presetKey]?.label || "Custom";
   const times = (medication.scheduleTimes || []).join(", ");
