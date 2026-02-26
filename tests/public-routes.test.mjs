@@ -69,14 +69,25 @@ test("GET / serves a crawlable HTML-first landing page", async () => {
   assert.match(String(response.headers.get("content-type") || ""), /text\/html/i);
 
   const body = await response.text();
-  assert.match(body, /<header>/i);
+  assert.match(body, /<header[^>]*>/i);
   assert.match(body, /<nav[^>]*>/i);
   assert.match(body, /<main id="main-content"/i);
-  assert.match(body, /<footer>/i);
+  assert.match(body, /<footer\b/i);
   assert.match(body, /Skip to main content/i);
+  assert.match(body, />About</i);
+  assert.match(body, />Contact</i);
   assert.match(body, /Open Medication Tracker App/i);
   assert.match(body, /application\/ld\+json/i);
   assert.match(body, /rel="canonical"/i);
+});
+
+test("public pages return 200 and HTML", async () => {
+  const pages = ["/", "/about", "/contact", "/privacy", "/terms"];
+  for (const pagePath of pages) {
+    const response = await fetch(`${baseUrl}${pagePath}`);
+    assert.equal(response.status, 200, `${pagePath} should return 200`);
+    assert.match(String(response.headers.get("content-type") || ""), /text\/html/i);
+  }
 });
 
 test("GET /robots.txt blocks app/auth surfaces from indexing", async () => {
@@ -88,6 +99,7 @@ test("GET /robots.txt blocks app/auth surfaces from indexing", async () => {
   assert.match(body, /Allow: \//);
   assert.match(body, /Disallow: \/api\//);
   assert.match(body, /Disallow: \/app/);
+  assert.match(body, /Disallow: \/\*share=\*/);
   assert.match(body, /Sitemap: http:\/\/127\.0\.0\.1:\d+\/sitemap\.xml/);
 });
 
@@ -98,6 +110,8 @@ test("GET /sitemap.xml includes only public pages", async () => {
 
   const body = await response.text();
   assert.match(body, /<loc>http:\/\/127\.0\.0\.1:\d+\/<\/loc>/);
+  assert.match(body, /<loc>http:\/\/127\.0\.0\.1:\d+\/about<\/loc>/);
+  assert.match(body, /<loc>http:\/\/127\.0\.0\.1:\d+\/contact<\/loc>/);
   assert.match(body, /<loc>http:\/\/127\.0\.0\.1:\d+\/privacy<\/loc>/);
   assert.match(body, /<loc>http:\/\/127\.0\.0\.1:\d+\/terms<\/loc>/);
   assert.doesNotMatch(body, /<loc>http:\/\/127\.0\.0\.1:\d+\/app<\/loc>/);
