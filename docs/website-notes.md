@@ -1,9 +1,9 @@
 # Website Routing Notes
 
-This project now serves two layers from the same Express server:
+This project now supports two deployment modes:
 
-1. Public website pages (crawlable when `MT_SITE_VISIBILITY=public`)
-2. Medication Tracker app shell (kept functional and mounted at `/app`)
+1. Static hosting (GitHub Pages): files in repo root are served directly.
+2. Express hosting: server routes in `/Users/brad/Documents/New project/bradckennedy/server/server.js`.
 
 ## Routing map
 
@@ -17,7 +17,21 @@ This project now serves two layers from the same Express server:
 - `/app` -> Medication Tracker app shell
 - `/app/*` -> Medication Tracker SPA deep links
 - `/tracker` and `/tracker/*` -> Legacy alias to app shell
-- Any other non-API route -> app shell fallback for backward compatibility
+- On Express, any other non-API route falls back to app shell for backward compatibility.
+
+## Static hosting notes (current production on GitHub Pages)
+
+- Public pages are static files:
+  - `/Users/brad/Documents/New project/bradckennedy/index.html`
+  - `/Users/brad/Documents/New project/bradckennedy/about/index.html`
+  - `/Users/brad/Documents/New project/bradckennedy/contact/index.html`
+  - `/Users/brad/Documents/New project/bradckennedy/privacy/index.html`
+  - `/Users/brad/Documents/New project/bradckennedy/terms/index.html`
+- App shell lives at `/Users/brad/Documents/New project/bradckennedy/app/index.html`.
+- Legacy root hash links are redirected to `/app` by `/Users/brad/Documents/New project/bradckennedy/landing-compat.js`.
+- Robots and sitemap are static:
+  - `/Users/brad/Documents/New project/bradckennedy/robots.txt`
+  - `/Users/brad/Documents/New project/bradckennedy/sitemap.xml`
 
 ## Why this structure
 
@@ -39,11 +53,15 @@ Optional canonical base URL:
 
 ## Where to edit public page copy
 
-Edit content in `/Users/brad/Documents/New project/bradckennedy/server/server.js`:
+For GitHub Pages/static hosting, edit:
 
-- Home page: `renderLandingHtml(req)`
-- Shared layout/nav/footer: `renderPublicLayout(req, options)`
-- About/Contact/Privacy/Terms: `renderPublicInfoPage(req, options)` and route blocks
+- `/Users/brad/Documents/New project/bradckennedy/index.html`
+- `/Users/brad/Documents/New project/bradckennedy/about/index.html`
+- `/Users/brad/Documents/New project/bradckennedy/contact/index.html`
+- `/Users/brad/Documents/New project/bradckennedy/privacy/index.html`
+- `/Users/brad/Documents/New project/bradckennedy/terms/index.html`
+
+For Express-hosted mode, edit server renderers in `/Users/brad/Documents/New project/bradckennedy/server/server.js`.
 
 ## Where to edit public page styling
 

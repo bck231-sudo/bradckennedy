@@ -1,4 +1,12 @@
 (() => {
+  const search = new URLSearchParams(window.location.search || "");
+  if (search.has("share")) {
+    const shareValue = search.get("share") || "";
+    const hash = shareValue ? `#share=${encodeURIComponent(shareValue)}` : "";
+    window.location.replace(`/app${hash}`);
+    return;
+  }
+
   const hash = window.location.hash || "";
   if (!hash) return;
 

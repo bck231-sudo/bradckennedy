@@ -298,7 +298,11 @@ function renderPublicInfoPage(req, options) {
 
 async function getIndexTemplate() {
   if (indexTemplateCache) return indexTemplateCache;
-  indexTemplateCache = await readFile(path.join(projectRoot, "index.html"), "utf8");
+  try {
+    indexTemplateCache = await readFile(path.join(projectRoot, "app", "index.html"), "utf8");
+  } catch {
+    indexTemplateCache = await readFile(path.join(projectRoot, "index.html"), "utf8");
+  }
   return indexTemplateCache;
 }
 
