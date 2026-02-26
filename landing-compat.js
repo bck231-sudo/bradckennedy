@@ -1,6 +1,5 @@
 (() => {
-  const isPrimaryDomain = /^(?:www\.)?bradckennedy\.org$/i.test(window.location.hostname || "");
-  const appBase = isPrimaryDomain ? "https://app.bradckennedy.org/app" : "/app";
+  const appBase = "/app";
 
   const search = new URLSearchParams(window.location.search || "");
   if (search.has("share")) {

@@ -51,7 +51,7 @@ const siteVisibility = String(
 const isPrivateSite = !["public", "indexable"].includes(siteVisibility);
 const configuredSiteUrl = String(process.env.MT_SITE_URL || "").trim().replace(/\/+$/, "");
 const configuredAppUrl = String(process.env.MT_APP_URL || "").trim().replace(/\/+$/, "");
-const publicAppUrl = configuredAppUrl || "https://app.bradckennedy.org/app";
+const publicAppUrl = configuredAppUrl || "/app";
 const allowLegacyOwnerKey = String(process.env.MT_ALLOW_LEGACY_OWNER_KEY || "true") !== "false";
 const corsOrigins = String(process.env.CORS_ORIGIN || "*")
   .split(",")
