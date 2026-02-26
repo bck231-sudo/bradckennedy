@@ -30,10 +30,16 @@ test("public landing page is accessible and has CTA links", async ({ page }) => 
   await expect(page.getByRole("link", { name: /Open (the )?Medication Tracker app/i })).toBeVisible();
   await expect(page.getByRole("link", { name: /Skip to main content/i })).toHaveCount(1);
 
-  await primaryNav.getByRole("link", { name: "Open App", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`${APP_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/?`));
-  await expect(page.locator("#mainContent")).toBeVisible();
-  await expect(page.locator("#sectionTitle")).toContainText(/Dashboard/i);
+  const openAppNavLink = primaryNav.getByRole("link", { name: "Open App", exact: true });
+  const openAppHref = String(await openAppNavLink.getAttribute("href") || "");
+  if (/^https?:\/\//i.test(openAppHref) && !openAppHref.startsWith(new URL(ROOT_URL).origin)) {
+    await expect(openAppNavLink).toHaveAttribute("href", /app\.bradckennedy\.org\/app/i);
+  } else {
+    await openAppNavLink.click();
+    await expect(page).toHaveURL(new RegExp(`${APP_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/?`));
+    await expect(page.locator("#mainContent")).toBeVisible();
+    await expect(page.locator("#sectionTitle")).toContainText(/Dashboard/i);
+  }
 
   expect(consoleErrors).toEqual([]);
 });

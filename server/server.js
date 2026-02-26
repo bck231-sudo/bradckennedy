@@ -50,6 +50,8 @@ const siteVisibility = String(
 ).trim().toLowerCase();
 const isPrivateSite = !["public", "indexable"].includes(siteVisibility);
 const configuredSiteUrl = String(process.env.MT_SITE_URL || "").trim().replace(/\/+$/, "");
+const configuredAppUrl = String(process.env.MT_APP_URL || "").trim().replace(/\/+$/, "");
+const publicAppUrl = configuredAppUrl || "https://app.bradckennedy.org/app";
 const allowLegacyOwnerKey = String(process.env.MT_ALLOW_LEGACY_OWNER_KEY || "true") !== "false";
 const corsOrigins = String(process.env.CORS_ORIGIN || "*")
   .split(",")
@@ -76,7 +78,7 @@ const publicNavItems = Object.freeze([
   { href: "/", label: "Home" },
   { href: "/about", label: "About" },
   { href: "/contact", label: "Contact" },
-  { href: "/app", label: "Open App" }
+  { href: publicAppUrl, label: "Open App" }
 ]);
 
 const htmlCacheControl = "public, max-age=0, must-revalidate";
@@ -204,7 +206,7 @@ function renderPublicLayout(req, options) {
               name: "Medication Tracker",
               applicationCategory: "HealthApplication",
               operatingSystem: "Web",
-              url: canonicalUrlFor(req, "/app"),
+              url: publicAppUrl,
               description: "Track medications, doses, and wellbeing trends."
             }
           ]
@@ -265,8 +267,8 @@ function renderLandingHtml(req) {
         <h1 id="hero-title">Medication Tracker</h1>
         <p class="lead">Shared-care medication tracking for personal consistency and psychiatrist review.</p>
         <div class="cta-row">
-          <a class="button button-primary" href="/app" aria-label="Open the Medication Tracker app">Open Medication Tracker App</a>
-          <a class="button button-secondary" href="/app#consult" aria-label="Open consult summary">Go to Consult Summary</a>
+          <a class="button button-primary" href="${escapeHtml(publicAppUrl)}" aria-label="Open the Medication Tracker app">Open Medication Tracker App</a>
+          <a class="button button-secondary" href="${escapeHtml(`${publicAppUrl}#consult`)}" aria-label="Open consult summary">Go to Consult Summary</a>
         </div>
         <div class="feature-grid" aria-label="Feature highlights">
           <article class="feature-card"><h2>Dose tracking</h2><p>Log taken, skipped, and snoozed doses with timestamps.</p></article>

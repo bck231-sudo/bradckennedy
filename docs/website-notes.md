@@ -28,7 +28,7 @@ This project now supports two deployment modes:
   - `/Users/brad/Documents/New project/bradckennedy/privacy/index.html`
   - `/Users/brad/Documents/New project/bradckennedy/terms/index.html`
 - App shell lives at `/Users/brad/Documents/New project/bradckennedy/app/index.html`.
-- Legacy root hash links are redirected to `/app` by `/Users/brad/Documents/New project/bradckennedy/landing-compat.js`.
+- Legacy root hash links are redirected to `/app` locally and to `https://app.bradckennedy.org/app` on production domain by `/Users/brad/Documents/New project/bradckennedy/landing-compat.js`.
 - Robots and sitemap are static:
   - `/Users/brad/Documents/New project/bradckennedy/robots.txt`
   - `/Users/brad/Documents/New project/bradckennedy/sitemap.xml`
