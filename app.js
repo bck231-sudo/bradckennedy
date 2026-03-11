@@ -40,7 +40,7 @@ const REMOTE_SYNC_DEBOUNCE_MS = 800;
 const REMOTE_REQUEST_TIMEOUT_MS = 12000;
 const DASHBOARD_DOSE_PAGE_SIZE = 8;
 const UTILITY_PANEL_MIN_WIDTH = 1440;
-const PRODUCTION_SYNC_ENDPOINT = "https://medication-tracker-api.onrender.com";
+const PRODUCTION_SYNC_ENDPOINT = "https://adhdagenda.com";
 const LOCAL_ONLY_MODE = false;
 const SUMMARY_RANGE_OPTIONS = ["7", "14", "30"];
 const CONSULT_RANGE_OPTIONS = ["7", "14", "30"];
@@ -3503,8 +3503,8 @@ function renderAuthShell() {
   renderPublicStateShell(
     mode === "reset" ? "Reset password" : "Sign in required",
     mode === "reset"
-      ? "Set a new password to regain access to CarePanel."
-      : "Use your secure account to open CarePanel. Public visitors cannot edit or view patient data.",
+      ? "Set a new password to regain access to AdhdAgenda."
+      : "Use your secure account to open AdhdAgenda. Public visitors cannot edit or view private workspace data.",
     `
       ${hasLocalData ? `<div class="banner" style="margin-bottom:12px;"><strong>Existing browser data found.</strong> When you create or sign in to your owner account on this device, this data can be attached to that account.</div>` : ""}
       <div class="auth-mode-row">
@@ -7198,7 +7198,7 @@ function buildConsultClipboardSummary({
   focusText = ""
 }) {
   const lines = [];
-  lines.push("CarePanel - Consult Summary");
+  lines.push("AdhdAgenda - Consult Summary");
   lines.push(`Window: ${windowLabel}`);
   lines.push("");
   lines.push("Current medications");
@@ -11712,7 +11712,7 @@ function buildClinicianSummaryHtml(data, rangeDays = "14") {
         </style>
       </head>
       <body>
-        <h1>CarePanel · Clinician Summary</h1>
+        <h1>AdhdAgenda · Clinician Summary</h1>
         <p>Generated: ${escapeHtml(niceDateTime(isoDateTime(new Date())))}</p>
         <p>Summary range: ${snapshot.days} days (${escapeHtml(niceDate(snapshot.startDate))} to ${escapeHtml(niceDate(snapshot.endDate))})</p>
 

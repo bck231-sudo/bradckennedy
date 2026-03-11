@@ -1,7 +1,11 @@
 node_modules/
 server/data/store.json
 npm-debug.log*
+*.log
 .DS_Store
+.env
+.env.*
+.python-version
 
 # Local Netlify folder
 /.netlify/
@@ -20,3 +24,5 @@ npm-debug.log*
 
 # Local caches
 /.cache/
+/.venv/
+/coverage/

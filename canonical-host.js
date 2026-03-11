@@ -1,6 +1,7 @@
 (() => {
-  const canonicalOrigin = "https://www.adhdagenda.com";
+  const canonicalOrigin = "https://adhdagenda.com";
   const redirectHosts = new Set([
+    "www.adhdagenda.com",
     "adhdagenda.com",
     "carepanel.org",
     "www.carepanel.org",

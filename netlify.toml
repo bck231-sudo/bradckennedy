@@ -1,3 +1,7 @@
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
 [[redirects]]
   from = "/server/*"
   to = "/404.html"
@@ -17,12 +21,23 @@
   force = true
 
 [[redirects]]
-  from = "/assets/*"
-  to = "/public/assets/:splat"
-  status = 200
-
-[[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/api/:splat"
   status = 200
   force = true
+
+[[redirects]]
+  from = "/app/*"
+  to = "/app/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/tracker"
+  to = "/app"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/tracker/*"
+  to = "/app/index.html"
+  status = 200

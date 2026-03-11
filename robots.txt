@@ -7,4 +7,4 @@ Disallow: /tracker
 Disallow: /tracker/
 Disallow: /share
 Disallow: /*share=*
-Sitemap: https://www.adhdagenda.com/sitemap.xml
+Sitemap: https://adhdagenda.com/sitemap.xml

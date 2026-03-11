@@ -1,70 +1,41 @@
-# Website Routing Notes
+# Website Notes
 
-This project now supports two deployment modes:
+This repo is organised for one main deployment path:
 
-1. Static hosting (GitHub Pages): files in repo root are served directly.
-2. Express hosting: server routes in `/server/server.js`.
+1. Push to GitHub
+2. Connect the repo to Netlify
+3. Deploy from the repo root
 
-## Routing map
+## Source of truth
 
-- `/` -> Public home page (HTML-first, no JS required)
-- `/about` -> Public about page
-- `/contact` -> Public contact page
-- `/privacy` -> Public privacy page
-- `/terms` -> Public terms page
-- `/robots.txt` -> Crawl rules
-- `/sitemap.xml` -> Public page sitemap
-- `/app` -> CarePanel app shell
-- `/app/*` -> CarePanel SPA deep links
-- `/tracker` and `/tracker/*` -> Legacy alias to app shell
-- On Express, any other non-API route falls back to app shell for backward compatibility.
-
-## Static hosting notes (current production on GitHub Pages)
-
-- Public pages are static files:
+- Public pages live in static HTML files:
   - `/index.html`
   - `/about/index.html`
   - `/contact/index.html`
   - `/privacy/index.html`
   - `/terms/index.html`
-- App shell lives at `/app/index.html`.
-- Supported root app hashes are redirected to `/app` by `/landing-compat.js`.
-- Robots and sitemap are static:
-  - `/robots.txt`
-  - `/sitemap.xml`
+- The app shell lives at `/app/index.html`
+- Public-site styling lives at `/assets/site.css`
+- App styling lives at `/styles.css`
+- The Express server in `/server/server.js` serves the same public HTML files locally and powers the Netlify API function
 
-## Why this structure
+## Routing
 
-- Public pages at `/` provide a normal website entry point.
-- App remains fully available at `/app`.
-- Legacy app links still work because non-API routes fall back to the app shell.
-- Share and private routes stay out of indexing (`robots.txt` disallows app/private surfaces).
+- `/` -> public homepage
+- `/about`, `/contact`, `/privacy`, `/terms` -> public pages
+- `/app` and `/app/*` -> app shell
+- `/api/*` -> Netlify Function / Express API
+- `/tracker` and `/tracker/*` -> intentional legacy redirect to `/app`
 
-## SEO + privacy switch
+Legacy hash links like `#invite=`, `#share_token=`, and `#reset=` are intentionally forwarded to `/app` by `/landing-compat.js`.
 
-Set visibility with environment variables:
+## Domain
 
-- `MT_SITE_VISIBILITY=public` (or `indexable`) -> pages are indexable
-- `MT_SITE_VISIBILITY=private` (default) -> `noindex` behavior enabled
+- Canonical domain: `https://adhdagenda.com`
+- `www.adhdagenda.com` and older legacy domains are redirected to the canonical host by `/canonical-host.js`
 
-Optional canonical base URL:
+## Search indexing
 
-- `MT_SITE_URL=https://adhdagenda.com`
-
-## Where to edit public page copy
-
-For GitHub Pages/static hosting, edit:
-
-- `/index.html`
-- `/about/index.html`
-- `/contact/index.html`
-- `/privacy/index.html`
-- `/terms/index.html`
-
-For Express-hosted mode, edit server renderers in `/server/server.js`.
-
-## Where to edit public page styling
-
-- `/public/assets/site.css`
-
-This stylesheet is only for public pages. App styling remains in `/styles.css`.
+- `robots.txt` and `sitemap.xml` are static files for the public site
+- API and app surfaces stay out of indexing
+- If `MT_SITE_VISIBILITY=private` is used on the server/API runtime, the server also adds `X-Robots-Tag: noindex`

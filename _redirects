@@ -1,4 +1,0 @@
-/server/*  /404.html  404!
-/docs/*  /404.html  404!
-/tests/*  /404.html  404!
-/api/*  /.netlify/functions/api/:splat  200

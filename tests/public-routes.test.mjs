@@ -78,7 +78,7 @@ test("GET / serves a crawlable HTML-first landing page", async () => {
   assert.match(body, />Contact</i);
   assert.match(body, />Privacy</i);
   assert.match(body, />Terms</i);
-  assert.match(body, /(Open|Enter) CarePanel/i);
+  assert.match(body, /(Open|Enter) AdhdAgenda/i);
   assert.doesNotMatch(body, /Open App/i);
   assert.match(body, /application\/ld\+json/i);
   assert.match(body, /rel="canonical"/i);

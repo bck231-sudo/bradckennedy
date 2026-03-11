@@ -1,7 +1,7 @@
 {
-  "name": "CarePanel",
-  "short_name": "CarePanel",
-  "description": "Private medication tracking and care review workspace",
+  "name": "AdhdAgenda",
+  "short_name": "AdhdAgenda",
+  "description": "Private medication tracking and appointment review workspace",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
