@@ -1,5 +1,5 @@
 (() => {
-  const canonicalOrigin = "https://adhdagenda.com";
+  const canonicalOrigin = "https://www.adhdagenda.com";
   const redirectHosts = new Set([
     "www.adhdagenda.com",
     "adhdagenda.com",
@@ -10,6 +10,7 @@
   ]);
 
   try {
+    if (window.__adhdagendaCacheResetPending) return;
     const { protocol, hostname, pathname, search, hash, href } = window.location;
     if (protocol !== "http:" && protocol !== "https:") return;
     const host = String(hostname || "").trim().toLowerCase();

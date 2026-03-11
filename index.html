@@ -8,16 +8,14 @@
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://adhdagenda.com/">
   <link rel="icon" type="image/svg+xml" href="/site-icon.svg">
-  <script src="/canonical-host.js"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <script>
   (() => {
-    const cacheResetVersion = "adhdagenda-repo-cleanup-20260311-1";
+    const cacheResetVersion = "adhdagenda-host-fix-20260311-2";
     try {
       if (!("serviceWorker" in navigator) && !("caches" in window)) return;
       if (window.localStorage?.getItem("adhdagenda_cache_reset_version") === cacheResetVersion) return;
       window.localStorage?.setItem("adhdagenda_cache_reset_version", cacheResetVersion);
+      window.__adhdagendaCacheResetPending = true;
       const tasks = [];
       if ("serviceWorker" in navigator) {
         tasks.push(
@@ -37,6 +35,9 @@
     }
   })();
   </script>
+  <script src="/canonical-host.js?v=20260311-host-fix-1"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/site.css?v=20260311-repo-cleanup-1">
 
