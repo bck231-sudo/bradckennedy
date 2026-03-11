@@ -6,7 +6,7 @@ import {
   getLocalDateKey,
   normalizeAdherenceStatus,
   parseDoseOccurrenceId
-} from "./dose-actions.js";
+} from "./dose-actions.js?v=20260311-1";
 import {
   RISK_LEVEL_META,
   computeRiskAssessment,
@@ -14,9 +14,9 @@ import {
   defaultWarningSigns,
   normalizeRiskConfig,
   normalizeWarningSigns
-} from "./risk-engine.js";
-import { createStorageService } from "./storage-service.js";
-import { buildDataQualityIndicators, computeBeforeAfterComparison } from "./consult-engine.js";
+} from "./risk-engine.js?v=20260311-1";
+import { createStorageService } from "./storage-service.js?v=20260311-1";
+import { buildDataQualityIndicators, computeBeforeAfterComparison } from "./consult-engine.js?v=20260311-1";
 import {
   CURRENT_MEDICATION_GROUPS,
   CURRENT_MEDICATION_REGIMEN,
@@ -24,7 +24,7 @@ import {
   formatRegimenDose,
   medicationConfigLookupKeys,
   toProfileMedicationValues
-} from "./current-meds-config.js";
+} from "./current-meds-config.js?v=20260311-1";
 
 const STORAGE_KEY = "medication_tracker_data_v1";
 const DRAFT_KEY = "medication_tracker_drafts_v2";

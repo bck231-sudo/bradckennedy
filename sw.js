@@ -1,4 +1,4 @@
-const CACHE_NAME = "medication-tracker-shell-v33";
+const CACHE_NAME = "medication-tracker-shell-v34";
 const APP_SHELL_FILES = [
   "./",
   "./index.html",
@@ -16,7 +16,19 @@ const APP_SHELL_FILES = [
   "./icons/icon-512-v2.png"
 ];
 
-const NETWORK_FIRST_PATHS = new Set(["/", "/index.html", "/app", "/app/", "/styles.css", "/app.js"]);
+const NETWORK_FIRST_PATHS = new Set([
+  "/",
+  "/index.html",
+  "/app",
+  "/app/",
+  "/styles.css",
+  "/app.js",
+  "/current-meds-config.js",
+  "/dose-actions.js",
+  "/risk-engine.js",
+  "/storage-service.js",
+  "/consult-engine.js"
+]);
 
 function isNetworkFirstRequest(request) {
   try {
