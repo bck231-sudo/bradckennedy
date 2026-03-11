@@ -20,17 +20,18 @@ test("public landing page is accessible and has CTA links", async ({ page }) => 
 
   await page.goto(ROOT_URL, { waitUntil: "networkidle" });
 
-  await expect(page.getByRole("heading", { level: 1, name: /Clear daily tracking\. Cleaner clinician review\./i })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: /Track ADHD treatment privately\. Review it clearly\./i })).toBeVisible();
   const primaryNav = page.getByRole("navigation", { name: /primary/i });
   await expect(primaryNav).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "Home", exact: true })).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "About", exact: true })).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "Contact", exact: true })).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "Open App", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: /(Open|Enter) AdhdAgenda/i })).toBeVisible();
+  const workspaceCtas = page.getByRole("link", { name: /Open the Workspace/i });
+  await expect(workspaceCtas.first()).toBeVisible();
   await expect(page.getByRole("link", { name: /Skip to main content/i })).toHaveCount(1);
 
-  const openTrackerCta = page.getByRole("link", { name: /(Open|Enter) AdhdAgenda/i });
+  const openTrackerCta = workspaceCtas.first();
   await openTrackerCta.click();
   await expect(page).toHaveURL(new RegExp(`${APP_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/?`));
   await expect(page.locator("#mainContent")).toBeVisible();
