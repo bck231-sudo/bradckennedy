@@ -1,7 +1,7 @@
 {
-  "name": "Medication Tracker",
-  "short_name": "MedTracker",
-  "description": "Shared-care medication and stability tracker",
+  "name": "AdhdAgenda",
+  "short_name": "AdhdAgenda",
+  "description": "Private medication tracking and appointment review workspace",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

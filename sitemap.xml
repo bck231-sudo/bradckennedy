@@ -1,27 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://bradckennedy.org/</loc>
+    <loc>https://adhdagenda.com/</loc>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://bradckennedy.org/about</loc>
+    <loc>https://adhdagenda.com/about/</loc>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://bradckennedy.org/contact</loc>
+    <loc>https://adhdagenda.com/contact/</loc>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://bradckennedy.org/privacy</loc>
+    <loc>https://adhdagenda.com/privacy/</loc>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://bradckennedy.org/terms</loc>
+    <loc>https://adhdagenda.com/terms/</loc>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>

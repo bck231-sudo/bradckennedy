@@ -1,4 +1,28 @@
 node_modules/
 server/data/store.json
 npm-debug.log*
+*.log
 .DS_Store
+.env
+.env.*
+.python-version
+
+# Local Netlify folder
+/.netlify/
+
+# Local test output and QA screenshots
+/output/
+/playwright-report/
+/test-results/
+/tmp/
+/.tmp/
+/tmp-*.png
+/qa-*.png
+/consult-*-before.png
+/consult-*-after.png
+/consult-*-optimized.png
+
+# Local caches
+/.cache/
+/.venv/
+/coverage/

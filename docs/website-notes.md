@@ -1,70 +1,41 @@
-# Website Routing Notes
+# Website Notes
 
-This project now supports two deployment modes:
+This repo is organised for one main deployment path:
 
-1. Static hosting (GitHub Pages): files in repo root are served directly.
-2. Express hosting: server routes in `/Users/brad/Documents/New project/bradckennedy/server/server.js`.
+1. Push to GitHub
+2. Connect the repo to Netlify
+3. Deploy from the repo root
 
-## Routing map
+## Source of truth
 
-- `/` -> Public home page (HTML-first, no JS required)
-- `/about` -> Public about page
-- `/contact` -> Public contact page
-- `/privacy` -> Public privacy page
-- `/terms` -> Public terms page
-- `/robots.txt` -> Crawl rules
-- `/sitemap.xml` -> Public page sitemap
-- `/app` -> Medication Tracker app shell
-- `/app/*` -> Medication Tracker SPA deep links
-- `/tracker` and `/tracker/*` -> Legacy alias to app shell
-- On Express, any other non-API route falls back to app shell for backward compatibility.
+- Public pages live in static HTML files:
+  - `/index.html`
+  - `/about/index.html`
+  - `/contact/index.html`
+  - `/privacy/index.html`
+  - `/terms/index.html`
+- The app shell lives at `/app/index.html`
+- Public-site styling lives at `/assets/site.css`
+- App styling lives at `/styles.css`
+- The Express server in `/server/server.js` serves the same public HTML files locally and powers the Netlify API function
 
-## Static hosting notes (current production on GitHub Pages)
+## Routing
 
-- Public pages are static files:
-  - `/Users/brad/Documents/New project/bradckennedy/index.html`
-  - `/Users/brad/Documents/New project/bradckennedy/about/index.html`
-  - `/Users/brad/Documents/New project/bradckennedy/contact/index.html`
-  - `/Users/brad/Documents/New project/bradckennedy/privacy/index.html`
-  - `/Users/brad/Documents/New project/bradckennedy/terms/index.html`
-- App shell lives at `/Users/brad/Documents/New project/bradckennedy/app/index.html`.
-- Legacy root hash/share links are redirected to `/app` by `/Users/brad/Documents/New project/bradckennedy/landing-compat.js`.
-- Robots and sitemap are static:
-  - `/Users/brad/Documents/New project/bradckennedy/robots.txt`
-  - `/Users/brad/Documents/New project/bradckennedy/sitemap.xml`
+- `/` -> public homepage
+- `/about`, `/contact`, `/privacy`, `/terms` -> public pages
+- `/app` and `/app/*` -> app shell
+- `/api/*` -> Netlify Function / Express API
+- `/tracker` and `/tracker/*` -> intentional legacy redirect to `/app`
 
-## Why this structure
+Legacy hash links like `#invite=`, `#share_token=`, and `#reset=` are intentionally forwarded to `/app` by `/landing-compat.js`.
 
-- Public pages at `/` provide a normal website entry point.
-- App remains fully available at `/app`.
-- Legacy app links still work because non-API routes fall back to the app shell.
-- Share and private routes stay out of indexing (`robots.txt` disallows app/private surfaces).
+## Domain
 
-## SEO + privacy switch
+- Canonical domain: `https://adhdagenda.com`
+- `www.adhdagenda.com` and older legacy domains are redirected to the canonical host by `/canonical-host.js`
 
-Set visibility with environment variables:
+## Search indexing
 
-- `MT_SITE_VISIBILITY=public` (or `indexable`) -> pages are indexable
-- `MT_SITE_VISIBILITY=private` (default) -> `noindex` behavior enabled
-
-Optional canonical base URL:
-
-- `MT_SITE_URL=https://bradckennedy.org`
-
-## Where to edit public page copy
-
-For GitHub Pages/static hosting, edit:
-
-- `/Users/brad/Documents/New project/bradckennedy/index.html`
-- `/Users/brad/Documents/New project/bradckennedy/about/index.html`
-- `/Users/brad/Documents/New project/bradckennedy/contact/index.html`
-- `/Users/brad/Documents/New project/bradckennedy/privacy/index.html`
-- `/Users/brad/Documents/New project/bradckennedy/terms/index.html`
-
-For Express-hosted mode, edit server renderers in `/Users/brad/Documents/New project/bradckennedy/server/server.js`.
-
-## Where to edit public page styling
-
-- `/Users/brad/Documents/New project/bradckennedy/public/assets/site.css`
-
-This stylesheet is only for public pages. App styling remains in `/Users/brad/Documents/New project/bradckennedy/styles.css`.
+- `robots.txt` and `sitemap.xml` are static files for the public site
+- API and app surfaces stay out of indexing
+- If `MT_SITE_VISIBILITY=private` is used on the server/API runtime, the server also adds `X-Robots-Tag: noindex`

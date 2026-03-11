@@ -3,90 +3,141 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bradley Kennedy's Medication Tracker - Daily Health Management</title>
-  <meta name="description" content="A personal tool for tracking medications, doses, and wellbeing trends.">
+  <title>AdhdAgenda | Private Medication Tracking</title>
+  <meta name="description" content="AdhdAgenda is a private medication tracking workspace for daily records, care review, and controlled sharing.">
   <meta name="robots" content="index, follow">
-  <meta property="og:title" content="Bradley Kennedy's Medication Tracker - Daily Health Management">
-  <meta property="og:description" content="A personal tool for tracking medications, doses, and wellbeing trends.">
+  <meta property="og:title" content="AdhdAgenda | Private Medication Tracking">
+  <meta property="og:description" content="AdhdAgenda is a private medication tracking workspace for daily records, care review, and controlled sharing.">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://app.bradckennedy.org/app">
+  <meta property="og:url" content="https://adhdagenda.com/app">
+  <meta property="og:image" content="https://adhdagenda.com/icons/icon-512-v2.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="AdhdAgenda | Private Medication Tracking">
+  <meta name="twitter:description" content="AdhdAgenda is a private medication tracking workspace for daily records, care review, and controlled sharing.">
+  <meta name="twitter:image" content="https://adhdagenda.com/icons/icon-512-v2.png">
   <meta name="theme-color" content="#2c6eea">
+  <meta name="mt-sync-endpoint" content="">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <link rel="canonical" href="https://app.bradckennedy.org/app">
+  <link rel="canonical" href="https://adhdagenda.com/app">
   <link rel="icon" type="image/svg+xml" href="/site-icon.svg">
+  <script src="/canonical-host.js"></script>
   <link rel="apple-touch-icon" href="/icons/icon-192-v2.png">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <script>
+  (() => {
+    const cacheResetVersion = "adhdagenda-repo-cleanup-20260311-1";
+    try {
+      if (!("serviceWorker" in navigator) && !("caches" in window)) return;
+      if (window.localStorage?.getItem("adhdagenda_cache_reset_version") === cacheResetVersion) return;
+      window.localStorage?.setItem("adhdagenda_cache_reset_version", cacheResetVersion);
+      const tasks = [];
+      if ("serviceWorker" in navigator) {
+        tasks.push(
+          navigator.serviceWorker.getRegistrations().then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+        );
+      }
+      if ("caches" in window) {
+        tasks.push(
+          caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+        );
+      }
+      Promise.allSettled(tasks).finally(() => {
+        window.location.reload();
+      });
+    } catch (_error) {
+      // Best-effort cache reset only.
+    }
+  })();
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-  <link rel="stylesheet" href="/styles.css?v=20260226-10">
+  <link rel="stylesheet" href="/styles.css?v=20260311-repo-cleanup-1">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@type": "WebApplication",
-    "name": "Medication Tracker",
+    "name": "AdhdAgenda",
     "applicationCategory": "HealthApplication",
     "operatingSystem": "Web",
-    "description": "A personal tool for tracking medications, doses, and wellbeing trends.",
-    "url": "https://app.bradckennedy.org/app"
+    "description": "AdhdAgenda is a private medication tracking workspace for daily records, care review, and controlled sharing.",
+    "url": "https://adhdagenda.com/app"
   }
   </script>
 </head>
 <body>
   <a href="#section-dashboard" class="skip-link">Skip to main content</a>
   <header class="app-topbar panel">
-    <div class="brand-lockup app-brand">
-      <div class="logo-mark logo-mark-brand" aria-hidden="true">
-        <svg class="logo-glyph" viewBox="0 0 64 64" fill="none">
-          <defs>
-            <linearGradient id="brandGlyphGrad" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse">
-              <stop offset="0" stop-color="#2D79F3"/>
-              <stop offset="1" stop-color="#22C8D8"/>
-            </linearGradient>
-          </defs>
-          <circle cx="32" cy="32" r="22" fill="url(#brandGlyphGrad)" opacity="0.16"/>
-          <rect x="18" y="24" width="28" height="16" rx="8" fill="none" stroke="url(#brandGlyphGrad)" stroke-width="3"/>
-          <path d="M32 24V40" stroke="url(#brandGlyphGrad)" stroke-width="3" stroke-linecap="round"/>
-          <path d="M12 32H19L23 27L28 36L34 22L39 32H52" stroke="#2D79F3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <span class="logo-monogram">BK</span>
+    <div class="app-topbar-grid">
+      <div class="brand-lockup app-brand">
+        <div class="logo-mark logo-mark-brand" aria-hidden="true">
+          <svg class="logo-glyph" viewBox="0 0 64 64" fill="none">
+            <defs>
+              <linearGradient id="brandGlyphGrad" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="#2D79F3"/>
+                <stop offset="1" stop-color="#22C8D8"/>
+              </linearGradient>
+            </defs>
+            <circle cx="32" cy="32" r="22" fill="url(#brandGlyphGrad)" opacity="0.16"/>
+            <rect x="18" y="24" width="28" height="16" rx="8" fill="none" stroke="url(#brandGlyphGrad)" stroke-width="3"/>
+            <path d="M32 24V40" stroke="url(#brandGlyphGrad)" stroke-width="3" stroke-linecap="round"/>
+            <path d="M12 32H19L23 27L28 36L34 22L39 32H52" stroke="#2D79F3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="logo-monogram">AA</span>
+        </div>
+        <div class="brand-copy">
+          <p class="app-kicker">Private medication workspace</p>
+          <h1>AdhdAgenda</h1>
+          <p>Daily tracking for you, with a cleaner review view for appointments.</p>
+        </div>
       </div>
-      <div class="brand-copy">
-        <h1>Medication Tracker</h1>
-        <p>Daily medications, wellbeing trends, and clean sharing views.</p>
+
+      <div class="app-topbar-status" aria-hidden="true">
+        <article class="topbar-status-card">
+          <span class="topbar-status-label">Owner flow</span>
+          <strong>Track daily without noise</strong>
+          <p>Medications, changes, check-ins, notes, and quick actions stay organised.</p>
+        </article>
+        <article class="topbar-status-card topbar-status-card-accent">
+          <span class="topbar-status-label">Clinician review</span>
+          <strong>Review quickly and clearly</strong>
+          <p>Current regimen, changes, questions, and trends are separated into a calmer view.</p>
+        </article>
       </div>
     </div>
   </header>
 
   <nav class="top-navbar navbar panel" aria-label="Primary navigation">
-    <div id="topNavLinks" class="top-navbar-nav nav nav-pills">
-      <button type="button" class="top-nav-link nav-link active" data-topnav-id="dashboard" aria-label="Open dashboard">Dashboard</button>
-      <button type="button" class="top-nav-link nav-link" data-topnav-id="consult" aria-label="Open consult">Consult</button>
-      <button type="button" class="top-nav-link nav-link" data-topnav-id="education" aria-label="Open medication education">Education</button>
-      <button type="button" class="top-nav-link nav-link" data-topnav-id="history" aria-label="Open history">History</button>
-      <button type="button" class="top-nav-link nav-link" data-topnav-id="settings" aria-label="Open settings">Settings</button>
-      <button type="button" class="top-nav-link nav-link" data-topnav-id="share" aria-label="Open sharing">Share</button>
-    </div>
+    <div id="topNavLinks" class="top-navbar-nav nav nav-pills"></div>
   </nav>
 
   <div class="layout">
     <aside class="sidebar panel">
+      <div class="sidebar-intro">
+        <p class="sidebar-kicker">Workspace</p>
+        <h2 id="navGroupTitle">Daily tracking</h2>
+        <p id="navGroupCopy">Today, current regimen, medication education, and check-ins.</p>
+      </div>
       <nav id="sectionNav" class="section-nav"></nav>
 
       <div class="sidebar-footnote">
-        <p id="contextPill" class="pill">My View</p>
+        <p id="contextPill" class="pill">Owner</p>
       </div>
     </aside>
 
     <main id="mainContent" class="main panel">
       <header class="main-header">
         <div class="main-header-meta">
+          <div class="header-kicker-row">
+            <span id="sectionEyebrow" class="section-eyebrow">Daily tracking</span>
+            <div id="sectionMetaPills" class="section-meta-pills"></div>
+          </div>
           <h2 id="sectionTitle">Dashboard</h2>
           <p id="sectionSubtitle">Today at a glance.</p>
-          <div class="header-mode-control">
-            <label for="viewerModeSegment">Mode</label>
+          <div class="header-mode-control" hidden>
+            <label for="viewerModeSegment">View</label>
             <div id="viewerModeSegment" class="segmented-control segmented-control-header" role="tablist" aria-label="Viewer context"></div>
             <select id="viewerModeSelect" class="hidden-native-control"></select>
             <select id="viewModeSelect" class="hidden-native-control"></select>
@@ -96,7 +147,7 @@
           </div>
         </div>
         <div class="header-actions">
-          <span id="roleBadge" class="role-badge is-owner" aria-live="polite">Owner</span>
+          <span id="roleBadge" class="role-badge is-owner" aria-live="polite" hidden>Owner</span>
           <button id="addToConsultButton" class="btn btn-secondary" type="button">Add to Consult</button>
           <button id="quickCheckinButton" class="btn btn-primary btn-large" type="button">Quick check-in</button>
         </div>
@@ -148,6 +199,6 @@
 
   <datalist id="commonMedicationNames"></datalist>
 
-  <script type="module" src="/app.js?v=20260226-10"></script>
+  <script type="module" src="/app.js?v=20260311-domain-cutover-2"></script>
 </body>
 </html>

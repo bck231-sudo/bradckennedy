@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { hashOpaqueToken } from "./security.js";
 
 export function nowIso() {
   return new Date().toISOString();
@@ -70,12 +71,53 @@ function normalizeNotification(input) {
   };
 }
 
+function normalizeShare(input) {
+  if (!input || typeof input !== "object") return null;
+  const tokenHash = String(input.tokenHash || "").trim()
+    || (input.token ? hashOpaqueToken(String(input.token)) : "");
+  if (!input.id || !tokenHash) return null;
+  return {
+    id: String(input.id),
+    tokenHash,
+    name: String(input.name || "Shared viewer"),
+    email: String(input.email || "").toLowerCase(),
+    role: String(input.role || "viewer").toLowerCase(),
+    preset: String(input.preset || "full"),
+    permissions: normalizeObject(input.permissions),
+    allowedModes: normalizeArray(input.allowedModes).map((value) => String(value || "")).filter(Boolean),
+    startSection: String(input.startSection || "dashboard"),
+    createdByUserId: String(input.createdByUserId || ""),
+    createdAt: String(input.createdAt || nowIso()),
+    expiresAt: String(input.expiresAt || ""),
+    revokedAt: String(input.revokedAt || ""),
+    lastOpenedAt: String(input.lastOpenedAt || ""),
+    opens: Number(input.opens || 0)
+  };
+}
+
+function normalizePasswordReset(input) {
+  if (!input || typeof input !== "object") return null;
+  if (!input.id || !input.tokenHash || !input.userId) return null;
+  return {
+    id: String(input.id),
+    tokenHash: String(input.tokenHash),
+    userId: String(input.userId),
+    email: String(input.email || "").toLowerCase(),
+    createdAt: String(input.createdAt || nowIso()),
+    expiresAt: String(input.expiresAt || ""),
+    consumedAt: String(input.consumedAt || ""),
+    accountId: String(input.accountId || ""),
+    requestedFromIp: String(input.requestedFromIp || "")
+  };
+}
+
 export function createEmptyStore() {
   return {
     version: 2,
     users: {},
     sessions: {},
-    accounts: {}
+    accounts: {},
+    passwordResets: {}
   };
 }
 
@@ -128,6 +170,7 @@ export function normalizeStore(raw) {
       shareAccess: normalizeObject(account?.shareAccess),
       members: {},
       invites: {},
+      shares: {},
       notifications: [],
       audit: []
     };
@@ -146,6 +189,13 @@ export function normalizeStore(raw) {
       normalizedAccount.invites[normalizedInvite.id] = normalizedInvite;
     }
 
+    const shares = normalizeObject(account?.shares);
+    for (const [shareId, share] of Object.entries(shares)) {
+      const normalizedShare = normalizeShare({ ...share, id: share?.id || shareId });
+      if (!normalizedShare) continue;
+      normalizedAccount.shares[normalizedShare.id] = normalizedShare;
+    }
+
     for (const notification of normalizeArray(account?.notifications)) {
       const normalizedNotification = normalizeNotification(notification);
       if (normalizedNotification) normalizedAccount.notifications.push(normalizedNotification);
@@ -157,6 +207,13 @@ export function normalizeStore(raw) {
     }
 
     store.accounts[accountId] = normalizedAccount;
+  }
+
+  const passwordResets = normalizeObject(source.passwordResets);
+  for (const [resetId, reset] of Object.entries(passwordResets)) {
+    const normalizedReset = normalizePasswordReset({ ...reset, id: reset?.id || resetId });
+    if (!normalizedReset) continue;
+    store.passwordResets[normalizedReset.id] = normalizedReset;
   }
 
   return store;
@@ -174,6 +231,7 @@ export function ensureAccount(store, accountId) {
       shareAccess: {},
       members: {},
       invites: {},
+      shares: {},
       notifications: [],
       audit: []
     };
@@ -216,6 +274,10 @@ export function listInvites(account) {
   return Object.values(normalizeObject(account?.invites));
 }
 
+export function listShares(account) {
+  return Object.values(normalizeObject(account?.shares));
+}
+
 export function accountHasMembers(account) {
   return listMembers(account).length > 0;
 }
@@ -228,4 +290,9 @@ export function findUserByEmail(store, email) {
 
 export function memberForUser(account, userId) {
   return normalizeObject(account?.members)[String(userId || "")] || null;
+}
+
+export function findPasswordResetByHash(store, tokenHash) {
+  const resets = normalizeObject(store?.passwordResets);
+  return Object.values(resets).find((entry) => entry?.tokenHash === tokenHash) || null;
 }

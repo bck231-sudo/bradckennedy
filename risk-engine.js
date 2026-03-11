@@ -61,59 +61,6 @@ export function defaultRiskConfig() {
   };
 }
 
-export function defaultActionPlans() {
-  return [
-    {
-      id: "plan-watch-1",
-      triggerLevel: "watch",
-      stepOrder: 1,
-      stepText: "Review dose log and complete a check-in today.",
-      notifyRole: "",
-      enabled: true
-    },
-    {
-      id: "plan-watch-2",
-      triggerLevel: "watch",
-      stepOrder: 2,
-      stepText: "Increase sleep consistency and monitor side effects for 24-48 hours.",
-      notifyRole: "",
-      enabled: true
-    },
-    {
-      id: "plan-elevated-1",
-      triggerLevel: "elevated",
-      stepOrder: 1,
-      stepText: "Review recent medication changes and warning signs with support person.",
-      notifyRole: "family",
-      enabled: true
-    },
-    {
-      id: "plan-elevated-2",
-      triggerLevel: "elevated",
-      stepOrder: 2,
-      stepText: "Document key symptoms and consider contacting prescriber team.",
-      notifyRole: "clinician",
-      enabled: true
-    },
-    {
-      id: "plan-high-1",
-      triggerLevel: "high",
-      stepOrder: 1,
-      stepText: "Contact prescriber/clinical support urgently and share current summary.",
-      notifyRole: "clinician",
-      enabled: true
-    },
-    {
-      id: "plan-high-2",
-      triggerLevel: "high",
-      stepOrder: 2,
-      stepText: "Reduce non-essential stressors and follow pre-agreed safety steps.",
-      notifyRole: "family",
-      enabled: true
-    }
-  ];
-}
-
 export function normalizeWarningSigns(input) {
   const source = Array.isArray(input) ? input : defaultWarningSigns();
   return source
@@ -144,26 +91,6 @@ export function normalizeRiskConfig(input) {
     elevatedScore: clampInt(input?.elevatedScore, 1, 100, defaults.elevatedScore),
     highScore: clampInt(input?.highScore, 1, 100, defaults.highScore)
   };
-}
-
-export function normalizeActionPlans(input) {
-  const source = Array.isArray(input) ? input : defaultActionPlans();
-  return source
-    .map((entry, index) => ({
-      id: String(entry?.id || `action-plan-${index + 1}`),
-      triggerLevel: normalizeLevel(entry?.triggerLevel, "watch"),
-      stepOrder: clampInt(entry?.stepOrder, 1, 99, index + 1),
-      stepText: String(entry?.stepText || "").trim(),
-      notifyRole: String(entry?.notifyRole || "").trim(),
-      enabled: entry?.enabled !== false
-    }))
-    .filter((entry) => entry.stepText)
-    .sort((left, right) => {
-      if (left.triggerLevel !== right.triggerLevel) {
-        return levelRank(left.triggerLevel) - levelRank(right.triggerLevel);
-      }
-      return left.stepOrder - right.stepOrder;
-    });
 }
 
 export function computeRiskAssessment({

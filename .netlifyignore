@@ -1,0 +1,13 @@
+server/data/
+docs/
+tests/
+output/
+test-results/
+.netlify/
+.venv/
+README.md
+package.json
+package-lock.json
+qa-*.png
+tmp-playwright-*.png
+consult-*.png
