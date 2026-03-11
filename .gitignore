@@ -4,4 +4,19 @@ npm-debug.log*
 .DS_Store
 
 # Local Netlify folder
-.netlify
+/.netlify/
+
+# Local test output and QA screenshots
+/output/
+/playwright-report/
+/test-results/
+/tmp/
+/.tmp/
+/tmp-*.png
+/qa-*.png
+/consult-*-before.png
+/consult-*-after.png
+/consult-*-optimized.png
+
+# Local caches
+/.cache/
