@@ -3,7 +3,7 @@
 This project now supports two deployment modes:
 
 1. Static hosting (GitHub Pages): files in repo root are served directly.
-2. Express hosting: server routes in `/Users/brad/Documents/New project/bradckennedy/server/server.js`.
+2. Express hosting: server routes in `/server/server.js`.
 
 ## Routing map
 
@@ -14,24 +14,24 @@ This project now supports two deployment modes:
 - `/terms` -> Public terms page
 - `/robots.txt` -> Crawl rules
 - `/sitemap.xml` -> Public page sitemap
-- `/app` -> Medication Tracker app shell
-- `/app/*` -> Medication Tracker SPA deep links
+- `/app` -> CarePanel app shell
+- `/app/*` -> CarePanel SPA deep links
 - `/tracker` and `/tracker/*` -> Legacy alias to app shell
 - On Express, any other non-API route falls back to app shell for backward compatibility.
 
 ## Static hosting notes (current production on GitHub Pages)
 
 - Public pages are static files:
-  - `/Users/brad/Documents/New project/bradckennedy/index.html`
-  - `/Users/brad/Documents/New project/bradckennedy/about/index.html`
-  - `/Users/brad/Documents/New project/bradckennedy/contact/index.html`
-  - `/Users/brad/Documents/New project/bradckennedy/privacy/index.html`
-  - `/Users/brad/Documents/New project/bradckennedy/terms/index.html`
-- App shell lives at `/Users/brad/Documents/New project/bradckennedy/app/index.html`.
-- Legacy root hash/share links are redirected to `/app` by `/Users/brad/Documents/New project/bradckennedy/landing-compat.js`.
+  - `/index.html`
+  - `/about/index.html`
+  - `/contact/index.html`
+  - `/privacy/index.html`
+  - `/terms/index.html`
+- App shell lives at `/app/index.html`.
+- Supported root app hashes are redirected to `/app` by `/landing-compat.js`.
 - Robots and sitemap are static:
-  - `/Users/brad/Documents/New project/bradckennedy/robots.txt`
-  - `/Users/brad/Documents/New project/bradckennedy/sitemap.xml`
+  - `/robots.txt`
+  - `/sitemap.xml`
 
 ## Why this structure
 
@@ -49,22 +49,22 @@ Set visibility with environment variables:
 
 Optional canonical base URL:
 
-- `MT_SITE_URL=https://bradckennedy.org`
+- `MT_SITE_URL=https://adhdagenda.com`
 
 ## Where to edit public page copy
 
 For GitHub Pages/static hosting, edit:
 
-- `/Users/brad/Documents/New project/bradckennedy/index.html`
-- `/Users/brad/Documents/New project/bradckennedy/about/index.html`
-- `/Users/brad/Documents/New project/bradckennedy/contact/index.html`
-- `/Users/brad/Documents/New project/bradckennedy/privacy/index.html`
-- `/Users/brad/Documents/New project/bradckennedy/terms/index.html`
+- `/index.html`
+- `/about/index.html`
+- `/contact/index.html`
+- `/privacy/index.html`
+- `/terms/index.html`
 
-For Express-hosted mode, edit server renderers in `/Users/brad/Documents/New project/bradckennedy/server/server.js`.
+For Express-hosted mode, edit server renderers in `/server/server.js`.
 
 ## Where to edit public page styling
 
-- `/Users/brad/Documents/New project/bradckennedy/public/assets/site.css`
+- `/public/assets/site.css`
 
-This stylesheet is only for public pages. App styling remains in `/Users/brad/Documents/New project/bradckennedy/styles.css`.
+This stylesheet is only for public pages. App styling remains in `/styles.css`.

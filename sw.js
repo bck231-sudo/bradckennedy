@@ -1,7 +1,8 @@
-const CACHE_NAME = "medication-tracker-shell-v15";
+const CACHE_NAME = "medication-tracker-shell-v33";
 const APP_SHELL_FILES = [
   "./",
   "./index.html",
+  "./app/",
   "./styles.css",
   "./app.js",
   "./current-meds-config.js",
@@ -10,11 +11,12 @@ const APP_SHELL_FILES = [
   "./storage-service.js",
   "./site-icon.svg",
   "./manifest.webmanifest",
+  "./canonical-host.js",
   "./icons/icon-192-v2.png",
   "./icons/icon-512-v2.png"
 ];
 
-const NETWORK_FIRST_PATHS = new Set(["/", "/index.html", "/styles.css", "/app.js"]);
+const NETWORK_FIRST_PATHS = new Set(["/", "/index.html", "/app", "/app/", "/styles.css", "/app.js"]);
 
 function isNetworkFirstRequest(request) {
   try {
@@ -53,6 +55,14 @@ async function networkFirst(request) {
     if (cached) return cached;
     if (request.mode === "navigate") {
       const cache = await caches.open(CACHE_NAME);
+      try {
+        const url = new URL(request.url);
+        if (url.pathname === "/app" || url.pathname.startsWith("/app/")) {
+          return (await cache.match("./app/")) || (await cache.match("./index.html")) || Response.error();
+        }
+      } catch {
+        // Fall through to the default shell fallback.
+      }
       return (await cache.match("./index.html")) || Response.error();
     }
     return Response.error();

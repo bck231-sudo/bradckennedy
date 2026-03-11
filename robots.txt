@@ -7,4 +7,4 @@ Disallow: /tracker
 Disallow: /tracker/
 Disallow: /share
 Disallow: /*share=*
-Sitemap: https://bradckennedy.org/sitemap.xml
+Sitemap: https://www.adhdagenda.com/sitemap.xml

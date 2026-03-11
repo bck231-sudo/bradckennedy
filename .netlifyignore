@@ -1,0 +1,14 @@
+server/data/
+docs/
+tests/
+output/
+test-results/
+.netlify/
+README.md
+package.json
+package-lock.json
+render.yaml
+qa-*.png
+tmp-playwright-*.png
+consult-*.png
+

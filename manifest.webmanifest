@@ -1,7 +1,7 @@
 {
-  "name": "Medication Tracker",
-  "short_name": "MedTracker",
-  "description": "Shared-care medication and stability tracker",
+  "name": "CarePanel",
+  "short_name": "CarePanel",
+  "description": "Private medication tracking and care review workspace",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

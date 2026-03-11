@@ -76,7 +76,10 @@ test("GET / serves a crawlable HTML-first landing page", async () => {
   assert.match(body, /Skip to main content/i);
   assert.match(body, />About</i);
   assert.match(body, />Contact</i);
-  assert.match(body, /Open Medication Tracker App/i);
+  assert.match(body, />Privacy</i);
+  assert.match(body, />Terms</i);
+  assert.match(body, /(Open|Enter) CarePanel/i);
+  assert.doesNotMatch(body, /Open App/i);
   assert.match(body, /application\/ld\+json/i);
   assert.match(body, /rel="canonical"/i);
 });
@@ -110,10 +113,10 @@ test("GET /sitemap.xml includes only public pages", async () => {
 
   const body = await response.text();
   assert.match(body, /<loc>http:\/\/127\.0\.0\.1:\d+\/<\/loc>/);
-  assert.match(body, /<loc>http:\/\/127\.0\.0\.1:\d+\/about<\/loc>/);
-  assert.match(body, /<loc>http:\/\/127\.0\.0\.1:\d+\/contact<\/loc>/);
-  assert.match(body, /<loc>http:\/\/127\.0\.0\.1:\d+\/privacy<\/loc>/);
-  assert.match(body, /<loc>http:\/\/127\.0\.0\.1:\d+\/terms<\/loc>/);
+  assert.match(body, /<loc>http:\/\/127\.0\.0\.1:\d+\/about\/<\/loc>/);
+  assert.match(body, /<loc>http:\/\/127\.0\.0\.1:\d+\/contact\/<\/loc>/);
+  assert.match(body, /<loc>http:\/\/127\.0\.0\.1:\d+\/privacy\/<\/loc>/);
+  assert.match(body, /<loc>http:\/\/127\.0\.0\.1:\d+\/terms\/<\/loc>/);
   assert.doesNotMatch(body, /<loc>http:\/\/127\.0\.0\.1:\d+\/app<\/loc>/);
   assert.doesNotMatch(body, /\/api\//);
 });

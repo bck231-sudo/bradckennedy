@@ -10,10 +10,8 @@ import {
 import {
   RISK_LEVEL_META,
   computeRiskAssessment,
-  defaultActionPlans,
   defaultRiskConfig,
   defaultWarningSigns,
-  normalizeActionPlans,
   normalizeRiskConfig,
   normalizeWarningSigns
 } from "./risk-engine.js";
@@ -34,15 +32,16 @@ const ACCESS_LOG_KEY = "medication_tracker_access_logs_v1";
 const SYNC_CONFIG_KEY = "medication_tracker_sync_config_v1";
 const REMINDER_LOG_KEY = "medication_tracker_reminder_log_v1";
 const SYNC_QUEUE_KEY = "medication_tracker_sync_queue_v1";
+const ACCOUNT_MIGRATION_KEY = "medication_tracker_account_migration_v1";
 const PROFILE_PATCH_KEY = "medication_tracker_profile_patch_2026_02_26_v2";
 const APP_VERSION = 3;
 const DOSE_SNOOZE_MINUTES = 30;
 const REMOTE_SYNC_DEBOUNCE_MS = 800;
 const REMOTE_REQUEST_TIMEOUT_MS = 12000;
 const DASHBOARD_DOSE_PAGE_SIZE = 8;
-const UTILITY_PANEL_MIN_WIDTH = 1500;
+const UTILITY_PANEL_MIN_WIDTH = 1440;
 const PRODUCTION_SYNC_ENDPOINT = "https://medication-tracker-api.onrender.com";
-const LOCAL_ONLY_MODE = true;
+const LOCAL_ONLY_MODE = false;
 const SUMMARY_RANGE_OPTIONS = ["7", "14", "30"];
 const CONSULT_RANGE_OPTIONS = ["7", "14", "30"];
 const QUICK_CHECKIN_30S_OPTIONS = Object.freeze({
@@ -95,7 +94,7 @@ const TIMELINE_LAZY_CHART_DEFAULTS = Object.freeze({
 const DATA_CONFIDENCE_MIN_CHECKINS = 4;
 const DEFAULT_MEDICATION_EDUCATION_OWNER_NOTES = "Theo switched me off Vyvanse and stopped Luvox. Started Concerta; increased to 36 mg.";
 const REGIMEN_HISTORY_CHANGE_TEXT = "Stopped Vyvanse and Luvox; started Concerta; now 36 mg AM.";
-const REGIMEN_HISTORY_CHANGED_BY = "psychiatrist";
+const REGIMEN_HISTORY_CHANGED_BY = "clinician";
 const MEDICATION_EDU_CONCERTA = Object.freeze({
   descriptor:
     "Extended-release stimulant that may improve focus and daytime task follow-through by increasing dopamine and noradrenaline signaling.",
@@ -225,17 +224,15 @@ const SCHEDULE_PRESETS = {
 const SCHEDULE_PRESET_ORDER = ["am", "pm", "bid", "tid", "prn", "custom"];
 
 const VIEWER_MODE_OPTIONS = {
-  my: { label: "My View", shortLabel: "My View" },
-  clinician: { label: "Psychiatrist View", shortLabel: "Psychiatrist" },
+  my: { label: "Owner", shortLabel: "Owner" },
   family: { label: "Family", shortLabel: "Family" },
   preview_link: { label: "Shared Preview", shortLabel: "Shared Preview" }
 };
-const VIEWER_MODE_ORDER = ["my", "family", "clinician", "preview_link"];
-const PRIMARY_VIEWER_MODE_ORDER = ["my", "clinician"];
+const VIEWER_MODE_ORDER = ["my", "preview_link"];
+const PRIMARY_VIEWER_MODE_ORDER = ["my"];
 
 const VIEWER_BADGES = {
-  owner: "My View (Editable)",
-  clinician: "Psychiatrist View (Read-only)",
+  owner: "Owner (Editable)",
   family: "Family View (Simplified)",
   preview_link: "Shared Preview (Read-only)",
   share: "Shared Link View (Read-only)"
@@ -244,94 +241,117 @@ const VIEWER_BADGES = {
 const MOBILE_TABS = [
   {
     id: "dashboard",
-    label: "Dashboard",
+    label: "Today",
     icon: "home",
     primarySection: "dashboard",
+    activeSections: ["dashboard", "medications", "education", "checkins"],
     fallbackSections: [],
     preferredModes: ["daily", "clinical", "personal"]
   },
   {
-    id: "medications",
-    label: "Meds",
-    icon: "capsule",
-    primarySection: "medications",
+    id: "consult",
+    label: "Review",
+    icon: "stethoscope",
+    primarySection: "consult",
+    activeSections: ["consult", "timeline", "changes", "notes"],
     fallbackSections: ["dashboard"],
-    preferredModes: ["daily", "clinical", "personal"]
+    preferredModes: ["clinical", "personal", "daily"]
   },
   {
-    id: "history",
-    label: "History",
-    icon: "chart",
-    primarySection: "changes",
-    fallbackSections: [],
-    preferredModes: ["clinical", "personal"]
+    id: "record",
+    label: "Record",
+    icon: "plus",
+    primarySection: "entry",
+    activeSections: ["entry"],
+    fallbackSections: ["dashboard"],
+    preferredModes: ["daily", "clinical", "personal"],
+    ownerOnly: true
   },
   {
     id: "share",
     label: "Share",
     icon: "share",
     primarySection: "sharing",
+    activeSections: ["sharing"],
     fallbackSections: ["exports"],
-    preferredModes: ["clinical", "personal"]
+    preferredModes: ["clinical", "personal"],
+    ownerOnly: true
   },
   {
     id: "settings",
     label: "Settings",
-    icon: "plus",
+    icon: "download",
     primarySection: "exports",
+    activeSections: ["exports"],
     fallbackSections: ["sharing"],
-    preferredModes: ["personal", "clinical"]
+    preferredModes: ["personal", "clinical"],
+    ownerOnly: true
   }
 ];
 
 const TOP_NAV_ITEMS = [
   {
     id: "dashboard",
-    label: "Dashboard",
+    label: "Today",
     icon: "home",
     primarySection: "dashboard",
+    activeSections: ["dashboard", "medications", "education", "checkins"],
     fallbackSections: [],
-    preferredModes: ["daily", "clinical", "personal"]
+    preferredModes: ["daily", "clinical", "personal"],
+    sectionGroup: ["dashboard", "medications", "education", "checkins"],
+    groupTitle: "Daily tracking",
+    groupDescription: "Today, current regimen, medication education, and wellbeing check-ins."
   },
   {
     id: "consult",
-    label: "Consult",
+    label: "Review",
     icon: "stethoscope",
     primarySection: "consult",
+    activeSections: ["consult", "timeline", "changes", "notes"],
     fallbackSections: ["timeline"],
-    preferredModes: ["clinical", "personal"]
+    preferredModes: ["clinical", "personal"],
+    sectionGroup: ["consult", "changes", "notes", "timeline"],
+    groupTitle: "Clinician review",
+    groupDescription: "Review current medications, changes, notes, and trends without owner-editing noise."
   },
   {
-    id: "education",
-    label: "Education",
-    icon: "book",
-    primarySection: "education",
-    fallbackSections: ["medications"],
-    preferredModes: ["daily", "clinical", "personal"]
-  },
-  {
-    id: "history",
-    label: "History",
-    icon: "chart",
-    primarySection: "changes",
-    fallbackSections: ["timeline"],
-    preferredModes: ["clinical", "personal"]
-  },
-  {
-    id: "settings",
-    label: "Settings",
+    id: "record",
+    label: "Record",
     icon: "plus",
-    primarySection: "exports",
-    fallbackSections: ["sharing"],
-    preferredModes: ["personal", "clinical"]
+    primarySection: "entry",
+    activeSections: ["entry"],
+    fallbackSections: ["dashboard"],
+    preferredModes: ["daily", "clinical", "personal"],
+    ownerOnly: true,
+    sectionGroup: ["entry"],
+    groupTitle: "Owner actions",
+    groupDescription: "Add or update medications, changes, side-effect notes, and check-ins."
   },
   {
     id: "share",
     label: "Share",
     icon: "share",
     primarySection: "sharing",
+    activeSections: ["sharing"],
     fallbackSections: ["exports"],
-    preferredModes: ["clinical", "personal"]
+    preferredModes: ["clinical", "personal"],
+    ownerOnly: true,
+    sectionGroup: ["sharing"],
+    groupTitle: "Sharing",
+    groupDescription: "Create controlled read-only links and preview what recipients will see."
+  },
+  {
+    id: "settings",
+    label: "Settings",
+    icon: "download",
+    primarySection: "exports",
+    activeSections: ["exports"],
+    fallbackSections: ["sharing"],
+    preferredModes: ["personal", "clinical"],
+    ownerOnly: true,
+    sectionGroup: ["exports"],
+    groupTitle: "Preferences",
+    groupDescription: "Appearance, reminders, exports, privacy preferences, and device behaviour."
   }
 ];
 
@@ -405,18 +425,6 @@ const PRESETS = {
       showFreeText: false
     }
   },
-  clinician: {
-    label: "Clinician View",
-    defaultModes: ["daily", "clinical"],
-    permissions: {
-      showSensitiveNotes: true,
-      showSensitiveTags: true,
-      showJournalText: false,
-      showLibido: true,
-      showSubstance: true,
-      showFreeText: true
-    }
-  },
   full: {
     label: "Full Read-Only",
     defaultModes: ["daily", "clinical", "personal"],
@@ -434,8 +442,7 @@ const PRESETS = {
 const AUTH_ROLE_TO_PRESET = Object.freeze({
   owner: "full",
   viewer: "full",
-  family: "family",
-  clinician: "clinician"
+  family: "family"
 });
 
 const VIEW_MODE_META = {
@@ -456,10 +463,10 @@ const VIEW_MODE_META = {
 const SECTION_META = [
   {
     id: "dashboard",
-    label: "Dashboard",
+    label: "Today",
     icon: "home",
-    title: "Dashboard",
-    subtitle: "Today’s priorities, changes, trends, and sharing status.",
+    title: "Today",
+    subtitle: "What needs attention today and what is worth carrying into your next review.",
     viewModes: ["daily", "clinical", "personal"]
   },
   {
@@ -504,10 +511,10 @@ const SECTION_META = [
   },
   {
     id: "consult",
-    label: "Consult",
+    label: "Review",
     icon: "stethoscope",
-    title: "Consult",
-    subtitle: "Psychiatrist-focused review summary for appointments and continuity.",
+    title: "Review",
+    subtitle: "Cleaner psychiatrist-ready review of current regimen, recent changes, questions, and trends.",
     viewModes: ["clinical", "personal"]
   },
   {
@@ -520,19 +527,19 @@ const SECTION_META = [
   },
   {
     id: "entry",
-    label: "Add Entries",
+    label: "Record",
     icon: "plus",
-    title: "Add Entry Workflows",
-    subtitle: "Separate structured workflows for clean data capture.",
+    title: "Record",
+    subtitle: "Add medications, check-ins, changes, notes, and other structured entries.",
     viewModes: ["daily", "clinical", "personal"],
     ownerOnly: true
   },
   {
     id: "sharing",
-    label: "Sharing",
+    label: "Share Links",
     icon: "share",
-    title: "Sharing and Permissions",
-    subtitle: "Create and manage read-only links with role presets.",
+    title: "Share Links",
+    subtitle: "Create, preview, and manage clean read-only links for clinician or family review.",
     viewModes: ["clinical", "personal"],
     ownerOnly: true
   },
@@ -541,8 +548,9 @@ const SECTION_META = [
     label: "Settings",
     icon: "download",
     title: "Settings",
-    subtitle: "Appearance, reminders, data view, sync, and export tools.",
-    viewModes: ["clinical", "personal"]
+    subtitle: "Owner preferences, reminders, risk thresholds, sync, and export tools.",
+    viewModes: ["clinical", "personal"],
+    ownerOnly: true
   }
 ];
 
@@ -568,13 +576,18 @@ const ICON_SVG_PATHS = Object.freeze({
 
 const dom = {
   topNavLinks: document.getElementById("topNavLinks"),
+  topNavbar: document.querySelector(".top-navbar"),
   viewerModeSegment: document.getElementById("viewerModeSegment"),
   viewerModeSelect: document.getElementById("viewerModeSelect"),
   viewModeSelect: document.getElementById("viewModeSelect"),
   previewLinkControl: document.getElementById("previewLinkControl"),
   previewLinkSelect: document.getElementById("previewLinkSelect"),
   sectionNav: document.getElementById("sectionNav"),
+  navGroupTitle: document.getElementById("navGroupTitle"),
+  navGroupCopy: document.getElementById("navGroupCopy"),
   contextPill: document.getElementById("contextPill"),
+  sectionEyebrow: document.getElementById("sectionEyebrow"),
+  sectionMetaPills: document.getElementById("sectionMetaPills"),
   sectionTitle: document.getElementById("sectionTitle"),
   sectionSubtitle: document.getElementById("sectionSubtitle"),
   headerActions: document.querySelector(".header-actions"),
@@ -587,7 +600,10 @@ const dom = {
   globalStatus: document.getElementById("globalStatus"),
   toastStack: document.getElementById("toastStack"),
   initialSkeleton: document.getElementById("initialSkeleton"),
+  layoutShell: document.querySelector(".layout"),
   utilityPanel: document.getElementById("utilityPanel"),
+  sidebar: document.querySelector(".sidebar"),
+  mainContent: document.getElementById("mainContent"),
   mobileNav: document.getElementById("mobileNav"),
   commonMedicationNames: document.getElementById("commonMedicationNames"),
   medicationModal: document.getElementById("medicationModal"),
@@ -610,11 +626,14 @@ const dom = {
 
 const app = {
   ownerData: loadOwnerData(),
-  shareSession: parseSharePayload(),
+  shareSession: null,
+  pendingShareToken: parseShareTokenFromHash(),
+  pendingResetToken: parseResetTokenFromHash(),
   drafts: loadDrafts(),
   accessLogs: loadAccessLogs(),
   syncConfig: loadSyncConfig(),
   reminderLog: loadReminderLog(),
+  migrationState: loadAccountMigrationState(),
   ui: {
     viewerMode: "my",
     activeViewMode: "daily",
@@ -649,8 +668,7 @@ const app = {
       summary: false,
       alerts: false,
       changes: false,
-      medications: false,
-      actionPlan: false
+      medications: false
     },
     dashboardCollapsedPanels: {
       changes: false,
@@ -675,12 +693,13 @@ const app = {
       openQuestionsOnly: true,
       sideEffectsWindow: "all"
     },
-    consultWorkflowStep: "prepare",
+    consultWorkflowStep: "review",
     consultActivePane: "current",
     consultEditingExperimentId: "",
     consultEditingQuestionId: "",
     consultEditingDecisionId: "",
-    consultEditingAppointmentId: ""
+    consultEditingAppointmentId: "",
+    authScreenMode: parseResetTokenFromHash() ? "reset" : "signin"
   },
   statusTimeout: null,
   doseUndoTimeout: null,
@@ -696,6 +715,7 @@ const app = {
   },
   cloud: {
     invites: [],
+    shares: [],
     audit: [],
     notifications: [],
     loaded: false
@@ -712,8 +732,15 @@ const app = {
     timelineFilteredKey: "",
     timelineFilteredValue: null
   },
+  legacyLocalCandidate: null,
+  authResolved: false,
   queueRemoteSync: () => {}
 };
+
+app.legacyLocalCandidate = hasMeaningfulLocalOwnerData(app.ownerData)
+  ? deepClone(app.ownerData)
+  : null;
+app.authResolved = !Boolean(app.syncConfig.sessionActive);
 
 if (app.drafts?.ui && typeof app.drafts.ui === "object") {
   if (app.drafts.ui.dashboardCollapsedPanels && typeof app.drafts.ui.dashboardCollapsedPanels === "object") {
@@ -739,16 +766,19 @@ if (app.drafts?.ui && typeof app.drafts.ui === "object") {
 window.__medicationTrackerApp = app;
 
 const inviteTokenFromHash = parseInviteTokenFromHash();
-if (inviteTokenFromHash && !app.shareSession) {
+if (inviteTokenFromHash && !app.shareSession && !app.pendingShareToken) {
   app.drafts.cloudInviteToken = inviteTokenFromHash;
   app.ui.activeSection = "sharing";
   app.ui.activeViewMode = "clinical";
+  app.ui.authScreenMode = "accept_invite";
 }
 
 if (app.shareSession) {
   handleShareSessionInit();
 }
-applySectionRouteFromHash(window.location.hash);
+if (!app.shareSession && !app.pendingShareToken) {
+  applySectionRouteFromHash(window.location.hash);
+}
 applyThemePreference(app.ownerData.profile);
 
 hydrateMedicationNameOptions();
@@ -756,29 +786,21 @@ bindGlobalHandlers();
 bindShareHashListener();
 app.queueRemoteSync = scheduleRemoteSync;
 renderAll();
+void bootstrapAppSession();
 initializeBackgroundServices();
 void registerPwaServiceWorker();
 
 function loadOwnerData() {
   const raw = storage.readText(STORAGE_KEY, "");
   if (!raw) {
-    const seeded = buildSeedState();
-    const patched = applyMedicationProfilePatch(seeded);
-    saveOwnerData(patched);
-    return patched;
+    return buildSeedState();
   }
 
   try {
     const parsed = JSON.parse(raw);
-    const migrated = migrateToV2(parsed);
-    const patched = applyMedicationProfilePatch(migrated);
-    saveOwnerData(patched);
-    return patched;
+    return migrateToV2(parsed);
   } catch (_error) {
-    const fallback = buildSeedState();
-    const patched = applyMedicationProfilePatch(fallback);
-    saveOwnerData(patched);
-    return patched;
+    return buildSeedState();
   }
 }
 
@@ -786,6 +808,9 @@ function saveOwnerData(nextData, options = {}) {
   const payload = ensureStateShape(nextData);
   if (!options.keepTimestamp) {
     payload.stateUpdatedAt = isoDateTime(new Date());
+  }
+  if (nextData && typeof nextData === "object") {
+    nextData.stateUpdatedAt = payload.stateUpdatedAt;
   }
   const persisted = storage.writeJson(STORAGE_KEY, payload);
   if (!persisted && options.throwOnPersistFailure) {
@@ -835,8 +860,7 @@ function buildSeedState() {
     sideEffectEvents: [],
     appointmentEvents: [],
     warningSigns: defaultWarningSigns(),
-    riskConfig: defaultRiskConfig(),
-    actionPlans: defaultActionPlans()
+    riskConfig: defaultRiskConfig()
   });
 }
 
@@ -1100,8 +1124,7 @@ function migrateToV2(input) {
     sideEffectEvents: [],
     appointmentEvents: [],
     warningSigns: normalizeWarningSigns(input.warningSigns),
-    riskConfig: normalizeRiskConfig(input.riskConfig),
-    actionPlans: normalizeActionPlans(input.actionPlans)
+    riskConfig: normalizeRiskConfig(input.riskConfig)
   };
 
   // Compatibility layer for older versions where dose/time lived directly on medication rows.
@@ -1143,10 +1166,10 @@ function migrateToV2(input) {
       date: change.date || isoDate(new Date()),
       oldDose: change.oldDose || extractOldDose(change.change || ""),
       newDose: change.newDose || extractNewDose(change.change || ""),
-      reason: change.reason || "",
-      reasonForChange: change.reasonForChange || change.reason || "",
+      reason: normalizeLegacyRoleCopy(change.reason || ""),
+      reasonForChange: normalizeLegacyRoleCopy(change.reasonForChange || change.reason || ""),
       route: change.route || "",
-      changedBy: change.changedBy || "self",
+      changedBy: normalizeChangedByValue(change.changedBy),
       expectedEffects: change.expectedEffects || "",
       monitorFor: change.monitorFor || "",
       reviewDate: change.reviewDate || "",
@@ -1264,8 +1287,7 @@ function ensureStateShape(input) {
     sideEffectEvents: [],
     appointmentEvents: [],
     warningSigns: normalizeWarningSigns(input.warningSigns),
-    riskConfig: normalizeRiskConfig(input.riskConfig),
-    actionPlans: normalizeActionPlans(input.actionPlans)
+    riskConfig: normalizeRiskConfig(input.riskConfig)
   };
 
   for (const med of Array.isArray(input.medications) ? input.medications : []) {
@@ -1308,10 +1330,10 @@ function ensureStateShape(input) {
       dateEffective,
       oldDose: change.oldDose || "",
       newDose: change.newDose || "",
-      reason: change.reason || "",
-      reasonForChange: change.reasonForChange || change.reason || "",
+      reason: normalizeLegacyRoleCopy(change.reason || ""),
+      reasonForChange: normalizeLegacyRoleCopy(change.reasonForChange || change.reason || ""),
       route: change.route || "",
-      changedBy: change.changedBy || "self",
+      changedBy: normalizeChangedByValue(change.changedBy),
       expectedEffects: change.expectedEffects || "",
       monitorFor: change.monitorFor || "",
       reviewDate: change.reviewDate || "",
@@ -1537,68 +1559,31 @@ function normalizeSchedulePresetValue(preset) {
   return "custom";
 }
 
-function parseSharePayload() {
-  const hash = window.location.hash || "";
-  if (!hash.startsWith("#share=")) {
-    return null;
-  }
-
-  try {
-    const encoded = decodeURIComponent(hash.slice("#share=".length));
-    const decoded = decodeURIComponent(escape(atob(encoded)));
-    const payload = JSON.parse(decoded);
-
-    if (!payload || typeof payload !== "object") {
-      return null;
-    }
-
-    if (payload.version === 2 && payload.snapshot) {
-      return {
-        version: 2,
-        linkId: payload.linkId || "",
-        token: payload.token || "",
-        recipient: payload.recipient || { name: "Shared viewer", email: "" },
-        preset: payload.preset || "full",
-        permissions: normalizePermissions(payload.permissions || PRESETS.full.permissions),
-        allowedModes: normalizeAllowedModes(payload.allowedModes || PRESETS.full.defaultModes),
-        startSection: ["dashboard", "consult"].includes(String(payload.startSection || "").toLowerCase())
-          ? String(payload.startSection).toLowerCase()
-          : "dashboard",
-        expiresAt: payload.expiresAt || "",
-        createdAt: payload.createdAt || isoDateTime(new Date()),
-        snapshot: ensureStateShape(migrateToV2(payload.snapshot))
-      };
-    }
-
-    // Legacy share links from older builds.
-    if (payload.data && typeof payload.data === "object") {
-      const migratedData = migrateToV2(payload.data);
-      return {
-        version: payload.version || 1,
-        linkId: payload.linkId || "",
-        token: payload.token || "",
-        recipient: payload.recipient || { name: "Shared viewer", email: "" },
-        preset: "full",
-        permissions: normalizePermissions(PRESETS.full.permissions),
-        allowedModes: ["daily", "clinical", "personal"],
-        startSection: "dashboard",
-        expiresAt: "",
-        createdAt: payload.createdAt || isoDateTime(new Date()),
-        snapshot: ensureStateShape(migratedData)
-      };
-    }
-  } catch (_error) {
-    return null;
-  }
-
-  return null;
-}
-
 function parseInviteTokenFromHash() {
   const hash = window.location.hash || "";
   if (!hash.startsWith("#invite=")) return "";
   try {
     return decodeURIComponent(hash.slice("#invite=".length)).trim();
+  } catch (_error) {
+    return "";
+  }
+}
+
+function parseShareTokenFromHash() {
+  const hash = window.location.hash || "";
+  if (!hash.startsWith("#share_token=")) return "";
+  try {
+    return decodeURIComponent(hash.slice("#share_token=".length)).trim();
+  } catch (_error) {
+    return "";
+  }
+}
+
+function parseResetTokenFromHash() {
+  const hash = window.location.hash || "";
+  if (!hash.startsWith("#reset=")) return "";
+  try {
+    return decodeURIComponent(hash.slice("#reset=".length)).trim();
   } catch (_error) {
     return "";
   }
@@ -1632,14 +1617,7 @@ function handleShareSessionInit() {
 function loadDrafts() {
   const raw = storage.readText(DRAFT_KEY, "");
   if (!raw) {
-    return {
-      medication: {},
-      change: {},
-      note: {},
-      checkin: {},
-      checkinQuick: { ...DEFAULT_QUICK_CHECKIN_30S_STATE },
-      ui: {}
-    };
+    return buildEmptyDrafts();
   }
 
   try {
@@ -1653,14 +1631,7 @@ function loadDrafts() {
       ui: parsed.ui && typeof parsed.ui === "object" ? parsed.ui : {}
     };
   } catch (_error) {
-    return {
-      medication: {},
-      change: {},
-      note: {},
-      checkin: {},
-      checkinQuick: { ...DEFAULT_QUICK_CHECKIN_30S_STATE },
-      ui: {}
-    };
+    return buildEmptyDrafts();
   }
 }
 
@@ -1769,6 +1740,16 @@ function normalizeConsultConfig(input) {
   };
 }
 
+function normalizeChangedByValue(input) {
+  const raw = String(input || "self").trim().toLowerCase();
+  if (raw.includes("psych")) return "clinician";
+  return ["self", "gp", "clinician", "other"].includes(raw) ? raw : "self";
+}
+
+function normalizeLegacyRoleCopy(input) {
+  return String(input || "").replace(/\bpsych[a-z]*\b/gi, "clinician");
+}
+
 function normalizeMedicationChangeExperiment(input) {
   const now = isoDateTime(new Date());
   const dateEffective = String(input?.dateEffective || input?.date || isoDate(new Date()));
@@ -1783,8 +1764,8 @@ function normalizeMedicationChangeExperiment(input) {
     newDose: String(input?.newDose || ""),
     route: String(input?.route || ""),
     scheduleChange: String(input?.scheduleChange || ""),
-    changedBy: String(input?.changedBy || "self"),
-    reasonForChange: String(input?.reasonForChange || input?.reason || ""),
+    changedBy: normalizeChangedByValue(input?.changedBy),
+    reasonForChange: normalizeLegacyRoleCopy(input?.reasonForChange || input?.reason || ""),
     expectedBenefit: String(input?.expectedBenefit || input?.expectedEffects || ""),
     expectedSideEffects: String(input?.expectedSideEffects || ""),
     whatToMonitor: String(input?.whatToMonitor || input?.monitorFor || ""),
@@ -1810,7 +1791,7 @@ function convertChangeToExperiment(change) {
     oldDose: change?.oldDose || "",
     newDose: change?.newDose || "",
     route: change?.route || "",
-    changedBy: change?.changedBy || "self",
+    changedBy: normalizeChangedByValue(change?.changedBy),
     reasonForChange: change?.reasonForChange || change?.reason || "",
     expectedBenefit: change?.expectedEffects || "",
     whatToMonitor: change?.monitorFor || change?.interpretation?.monitor || "",
@@ -1904,11 +1885,11 @@ function normalizeSideEffectEvent(input) {
 
 function normalizeAppointmentEvent(input) {
   const now = isoDateTime(new Date());
-  const type = String(input?.appointmentType || "psychiatrist").toLowerCase();
+  const type = String(input?.appointmentType || "clinician").toLowerCase();
   return {
     id: String(input?.id || uid()),
     appointmentDate: String(input?.appointmentDate || isoDate(new Date())),
-    appointmentType: ["psychiatrist", "gp", "other"].includes(type) ? type : "other",
+    appointmentType: ["clinician", "gp", "other"].includes(type) ? type : "other",
     summaryNote: String(input?.summaryNote || ""),
     createdAt: String(input?.createdAt || now)
   };
@@ -1916,32 +1897,54 @@ function normalizeAppointmentEvent(input) {
 
 function defaultSyncConfig() {
   return {
-    enabled: false,
+    enabled: true,
     endpoint: LOCAL_ONLY_MODE ? "" : inferDefaultSyncEndpoint(),
-    accountId: "default",
-    ownerKey: "",
-    authToken: "",
+    accountId: "",
+    sessionActive: false,
+    localFallback: false,
     authRole: "",
-    authUser: null
+    authUser: null,
+    availableAccounts: []
   };
+}
+
+function hostUsesSameOriginSync(hostname) {
+  const host = String(hostname || "").toLowerCase();
+  return (
+    host === "localhost"
+    || host === "127.0.0.1"
+    || host === "adhdagenda.com"
+    || host === "www.adhdagenda.com"
+    || host.endsWith(".netlify.app")
+    || host.endsWith(".onrender.com")
+  );
 }
 
 function inferDefaultSyncEndpoint() {
   if (LOCAL_ONLY_MODE) return "";
   if (typeof window === "undefined") return "";
+  const host = String(window.location.hostname || "").toLowerCase();
+  if (hostUsesSameOriginSync(host)) return window.location.origin;
   const meta = document.querySelector("meta[name='mt-sync-endpoint']")?.getAttribute("content")?.trim();
   if (meta) return meta;
-  const host = String(window.location.hostname || "").toLowerCase();
-  if (host === "localhost" || host === "127.0.0.1") {
+  if (window.location.origin) {
     return window.location.origin;
-  }
-  if (host.endsWith(".onrender.com")) {
-    return window.location.origin;
-  }
-  if (host === "bradckennedy.org" || host === "www.bradckennedy.org") {
-    return PRODUCTION_SYNC_ENDPOINT;
   }
   return "";
+}
+
+function resolveSyncEndpoint(endpoint, fallback = "") {
+  const normalizedEndpoint = String(endpoint || "").trim().replace(/\/+$/, "");
+  const normalizedFallback = String(fallback || "").trim().replace(/\/+$/, "");
+  if (typeof window === "undefined") {
+    return normalizedEndpoint || normalizedFallback;
+  }
+  const host = String(window.location.hostname || "").toLowerCase();
+  const origin = String(window.location.origin || "").trim().replace(/\/+$/, "");
+  if (hostUsesSameOriginSync(host) && (!normalizedEndpoint || normalizedEndpoint === origin || normalizedEndpoint === PRODUCTION_SYNC_ENDPOINT)) {
+    return origin;
+  }
+  return normalizedEndpoint || normalizedFallback;
 }
 
 function loadSyncConfig() {
@@ -1953,10 +1956,10 @@ function loadSyncConfig() {
     const parsed = JSON.parse(raw);
     return {
       enabled: Boolean(parsed.enabled),
-      endpoint: String(parsed.endpoint || defaults.endpoint || "").trim(),
-      accountId: String(parsed.accountId || "default").trim() || "default",
-      ownerKey: String(parsed.ownerKey || ""),
-      authToken: String(parsed.authToken || ""),
+      endpoint: resolveSyncEndpoint(parsed.endpoint, defaults.endpoint),
+      accountId: String(parsed.accountId || "").trim(),
+      sessionActive: Boolean(parsed.sessionActive),
+      localFallback: Boolean(parsed.localFallback),
       authRole: String(parsed.authRole || "").trim().toLowerCase(),
       authUser: parsed.authUser && typeof parsed.authUser === "object"
         ? {
@@ -1964,7 +1967,14 @@ function loadSyncConfig() {
             email: String(parsed.authUser.email || ""),
             name: String(parsed.authUser.name || "")
           }
-        : null
+        : null,
+      availableAccounts: Array.isArray(parsed.availableAccounts)
+        ? parsed.availableAccounts.map((entry) => ({
+            accountId: String(entry?.accountId || "").trim(),
+            role: String(entry?.role || "").trim().toLowerCase(),
+            accountLabel: String(entry?.accountLabel || "")
+          })).filter((entry) => entry.accountId)
+        : []
     };
   } catch (_error) {
     return defaults;
@@ -1976,7 +1986,7 @@ function saveSyncConfig() {
 }
 
 function hasCloudSession() {
-  return Boolean(String(app.syncConfig.authToken || "").trim());
+  return Boolean(app.syncConfig.sessionActive);
 }
 
 function authRolePresetKey(role) {
@@ -1984,15 +1994,19 @@ function authRolePresetKey(role) {
 }
 
 function applyCloudAuthSession(payload) {
-  const token = String(payload?.token || "").trim();
-  if (!token) {
-    throw new Error("Missing auth token.");
-  }
+  const availableAccounts = Array.isArray(payload?.accounts)
+    ? payload.accounts.map((entry) => ({
+        accountId: String(entry?.accountId || "").trim(),
+        role: String(entry?.role || "").trim().toLowerCase(),
+        accountLabel: String(entry?.accountLabel || "")
+      })).filter((entry) => entry.accountId)
+    : app.syncConfig.availableAccounts || [];
   app.syncConfig = {
     ...app.syncConfig,
-    authToken: token,
+    sessionActive: true,
+    localFallback: false,
     authRole: String(payload?.role || "").trim().toLowerCase(),
-    accountId: String(payload?.accountId || app.syncConfig.accountId || "default").trim() || "default",
+    accountId: String(payload?.accountId || app.syncConfig.accountId || "").trim(),
     authUser: payload?.user && typeof payload.user === "object"
       ? {
           id: String(payload.user.id || ""),
@@ -2000,7 +2014,8 @@ function applyCloudAuthSession(payload) {
           name: String(payload.user.name || "")
         }
       : null,
-    enabled: true
+    enabled: true,
+    availableAccounts
   };
   if (app.syncConfig.authRole && app.syncConfig.authRole !== "owner") {
     clearSyncQueue();
@@ -2012,11 +2027,69 @@ function applyCloudAuthSession(payload) {
 function clearCloudAuthSession() {
   app.syncConfig = {
     ...app.syncConfig,
-    authToken: "",
+    sessionActive: false,
+    localFallback: false,
     authRole: "",
-    authUser: null
+    authUser: null,
+    accountId: "",
+    availableAccounts: []
   };
   app.cloud.loaded = false;
+  app.authResolved = true;
+  saveSyncConfig();
+}
+
+function shouldRecoverSignupLocally(error) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return (
+    /Owner registration failed \((404|405|500|502|503|504)\)/i.test(message)
+    || /Cannot reach cloud API/i.test(message)
+    || /Cloud request timed out/i.test(message)
+    || /Remote sync endpoint is not configured/i.test(message)
+  );
+}
+
+function activateLocalOwnerWorkspace(payload = {}, reason = "") {
+  const email = String(payload?.email || "").trim().toLowerCase();
+  const trimmedName = String(payload?.name || "").trim();
+  const fallbackName = trimmedName || (email.includes("@") ? email.split("@")[0] : "Owner");
+
+  app.ownerData = ensureStateShape({
+    ...app.ownerData,
+    profile: normalizeOwnerProfile({
+      ...app.ownerData.profile,
+      displayName: app.ownerData.profile?.displayName || fallbackName
+    })
+  });
+  applyThemePreference(app.ownerData.profile);
+  saveOwnerData(app.ownerData, { skipRemote: true });
+
+  app.syncConfig = {
+    ...app.syncConfig,
+    enabled: false,
+    endpoint: "",
+    accountId: "local-workspace",
+    sessionActive: true,
+    localFallback: true,
+    authRole: "owner",
+    authUser: {
+      id: "local-owner",
+      email,
+      name: fallbackName
+    },
+    availableAccounts: [
+      {
+        accountId: "local-workspace",
+        role: "owner",
+        accountLabel: "This device"
+      }
+    ]
+  };
+  app.cloud.loaded = false;
+  app.sync.status = "local-only";
+  app.sync.lastSyncedAt = "";
+  app.sync.lastError = reason || "Cloud account service is unavailable. This workspace is saving only on this device.";
+  app.authResolved = true;
   saveSyncConfig();
 }
 
@@ -2033,6 +2106,61 @@ function loadReminderLog() {
 
 function saveReminderLog() {
   storage.writeJson(REMINDER_LOG_KEY, app.reminderLog);
+}
+
+function buildEmptyDrafts() {
+  return {
+    medication: {},
+    change: {},
+    note: {},
+    checkin: {},
+    checkinQuick: { ...DEFAULT_QUICK_CHECKIN_30S_STATE },
+    ui: {}
+  };
+}
+
+function clearLocalWorkspaceCache() {
+  storage.remove(STORAGE_KEY);
+  storage.remove(DRAFT_KEY);
+  storage.remove(ACCESS_LOG_KEY);
+  storage.remove(REMINDER_LOG_KEY);
+  storage.remove(SYNC_QUEUE_KEY);
+  storage.remove(ACCOUNT_MIGRATION_KEY);
+
+  app.ownerData = buildSeedState();
+  app.drafts = buildEmptyDrafts();
+  app.accessLogs = {};
+  app.reminderLog = {};
+  app.syncQueue = [];
+  app.migrationState = {};
+  app.legacyLocalCandidate = null;
+  app.lastDoseUndo = null;
+  updateConnectivityBanner();
+}
+
+function loadAccountMigrationState() {
+  const raw = storage.readJson(ACCOUNT_MIGRATION_KEY, {});
+  return raw && typeof raw === "object" ? raw : {};
+}
+
+function saveAccountMigrationState() {
+  storage.writeJson(ACCOUNT_MIGRATION_KEY, app.migrationState || {});
+}
+
+function hasMeaningfulLocalOwnerData(data) {
+  if (!data || typeof data !== "object") return false;
+  return [
+    "medications",
+    "changes",
+    "notes",
+    "checkins",
+    "adherence",
+    "medicationChangeExperiments",
+    "consultQuestions",
+    "decisionLog",
+    "sideEffectEvents",
+    "appointmentEvents"
+  ].some((key) => Array.isArray(data[key]) && data[key].length > 0);
 }
 
 function loadAccessLogs() {
@@ -2149,8 +2277,8 @@ function getActiveContext() {
     };
   }
 
-  if (app.ui.viewerMode === "clinician" || app.ui.viewerMode === "family") {
-    const preset = PRESETS[app.ui.viewerMode];
+  if (app.ui.viewerMode === "family") {
+    const preset = PRESETS.family;
     return {
       type: "preview",
       label: `${preset.label} preview`,
@@ -2159,7 +2287,7 @@ function getActiveContext() {
       allowedModes: normalizeAllowedModes(preset.defaultModes),
       blockedReason: "",
       expiresAt: "",
-      preset: app.ui.viewerMode
+      preset: "family"
     };
   }
 
@@ -2169,7 +2297,7 @@ function getActiveContext() {
     const preset = PRESETS[presetKey] || PRESETS.full;
     return {
       type: "authenticated_viewer",
-      label: `${authRole === "clinician" ? "Clinician" : authRole === "family" ? "Family" : "Viewer"} account`,
+      label: `${authRole === "family" ? "Family" : "Viewer"} account`,
       readOnly: true,
       permissions: normalizePermissions(preset.permissions),
       allowedModes: normalizeAllowedModes(preset.defaultModes),
@@ -2279,6 +2407,9 @@ function hydrateMedicationNameOptions() {
 }
 
 function bindGlobalHandlers() {
+  // Legacy cleanup: remove stale install button markup if an older shell is cached.
+  dom.installAppButton?.remove();
+
   dom.viewerModeSelect?.addEventListener("change", (event) => {
     app.ui.viewerMode = event.target.value;
     if (app.ui.viewerMode !== "preview_link") {
@@ -2333,10 +2464,6 @@ function bindGlobalHandlers() {
     renderAll();
   });
 
-  dom.installAppButton?.addEventListener("click", () => {
-    void promptPwaInstall();
-  });
-
   dom.closeMedicationModal?.addEventListener("click", closeMedicationModal);
   dom.medicationModal?.addEventListener("click", (event) => {
     if (event.target === dom.medicationModal) {
@@ -2354,6 +2481,20 @@ function bindGlobalHandlers() {
   window.addEventListener("offline", () => {
     updateConnectivityBanner();
   });
+
+  let responsiveRenderFrame = 0;
+  const rerenderForViewport = () => {
+    if (responsiveRenderFrame) {
+      window.cancelAnimationFrame(responsiveRenderFrame);
+    }
+    responsiveRenderFrame = window.requestAnimationFrame(() => {
+      responsiveRenderFrame = 0;
+      renderAll();
+    });
+  };
+
+  window.addEventListener("resize", rerenderForViewport, { passive: true });
+  window.visualViewport?.addEventListener?.("resize", rerenderForViewport);
 
   window.addEventListener("beforeinstallprompt", (event) => {
     event.preventDefault();
@@ -2384,9 +2525,12 @@ function parseSectionRouteFromHash(hashValue) {
   if (route === "dashboard") return { sectionId: "dashboard", preferredModes: ["daily", "clinical", "personal"], fallbackSections: [] };
   if (route === "medications") return { sectionId: "medications", preferredModes: ["daily", "clinical", "personal"], fallbackSections: ["dashboard"] };
   if (route === "education") return { sectionId: "education", preferredModes: ["daily", "clinical", "personal"], fallbackSections: ["medications"] };
+  if (route === "checkins") return { sectionId: "checkins", preferredModes: ["daily", "clinical", "personal"], fallbackSections: ["dashboard"] };
+  if (route === "notes") return { sectionId: "notes", preferredModes: ["clinical", "personal"], fallbackSections: ["changes"] };
   if (route === "trends") return { sectionId: "timeline", preferredModes: ["clinical", "personal"], fallbackSections: ["changes"] };
   if (route === "consult") return { sectionId: "consult", preferredModes: ["clinical", "personal"], fallbackSections: ["timeline"] };
   if (route === "history") return { sectionId: "changes", preferredModes: ["clinical", "personal"], fallbackSections: ["timeline"] };
+  if (route === "record") return { sectionId: "entry", preferredModes: ["daily", "clinical", "personal"], fallbackSections: ["dashboard"] };
   if (route === "settings") return { sectionId: "exports", preferredModes: ["personal", "clinical"], fallbackSections: ["sharing"] };
   if (route === "share") return { sectionId: "sharing", preferredModes: ["clinical", "personal"], fallbackSections: ["exports"] };
   return null;
@@ -2404,15 +2548,22 @@ function applySectionRouteFromHash(hashValue) {
 
 function bindShareHashListener() {
   window.addEventListener("hashchange", () => {
-    app.shareSession = parseSharePayload();
+    const nextShareToken = parseShareTokenFromHash();
+    app.pendingShareToken = nextShareToken;
+    if (nextShareToken || app.shareSession) {
+      app.shareSession = null;
+    }
+    app.pendingResetToken = parseResetTokenFromHash();
+    if (app.pendingResetToken) {
+      app.ui.authScreenMode = "reset";
+    }
     const inviteToken = parseInviteTokenFromHash();
     if (inviteToken) {
       app.drafts.cloudInviteToken = inviteToken;
-      app.ui.activeSection = "sharing";
-      app.ui.activeViewMode = "clinical";
+      app.ui.authScreenMode = "accept_invite";
     }
-    if (app.shareSession) {
-      handleShareSessionInit();
+    if (app.pendingShareToken) {
+      void bootstrapRemoteShareSession();
     } else {
       app.ui.viewerMode = "my";
       applySectionRouteFromHash(window.location.hash);
@@ -2425,9 +2576,9 @@ function bindShareHashListener() {
 
 function initializeBackgroundServices() {
   updateConnectivityBanner();
-  if (app.shareSession) return;
+  if (app.shareSession || app.pendingShareToken) return;
   if (canUseRemoteSync()) {
-    if (hasCloudSession() || app.syncConfig.ownerKey) {
+    if (hasCloudSession()) {
       void pullRemoteStateOnBoot();
       void refreshCloudSideData();
       if (app.syncQueue.length) {
@@ -2435,19 +2586,97 @@ function initializeBackgroundServices() {
       }
     } else {
       app.sync.status = "auth-required";
-      app.sync.lastError = "Sign in to enable cloud sync.";
+      app.sync.lastError = "Sign in required.";
     }
   } else {
     app.sync.status = "local-only";
   }
-  restartReminderLoop();
+  if (hasCloudSession()) {
+    restartReminderLoop();
+  }
+}
+
+async function bootstrapRemoteShareSession() {
+  if (!app.pendingShareToken) return;
+  app.sync.status = "loading-share";
+  renderAll();
+  try {
+    const payload = await cloudLoadShareSession(app.pendingShareToken);
+    app.shareSession = {
+      version: 3,
+      linkId: payload?.share?.id || "",
+      token: app.pendingShareToken,
+      recipient: {
+        name: payload?.share?.name || "Shared viewer",
+        email: payload?.share?.email || ""
+      },
+      preset: payload?.share?.preset || "viewer",
+      permissions: normalizePermissions(payload?.share?.permissions || PRESETS.family.permissions),
+      allowedModes: normalizeAllowedModes(payload?.share?.allowedModes || PRESETS.family.defaultModes),
+      startSection: String(payload?.share?.startSection || "dashboard") === "consult" ? "consult" : "dashboard",
+      expiresAt: payload?.share?.expiresAt || "",
+      createdAt: payload?.share?.createdAt || isoDateTime(new Date()),
+      snapshot: ensureStateShape(migrateToV2(payload?.state || {}))
+    };
+    app.pendingShareToken = "";
+    handleShareSessionInit();
+    app.sync.status = "connected";
+    app.sync.lastError = "";
+  } catch (error) {
+    app.shareSession = {
+      version: 3,
+      linkId: "",
+      token: app.pendingShareToken,
+      recipient: { name: "Shared viewer", email: "" },
+      preset: "viewer",
+      permissions: normalizePermissions(PRESETS.family.permissions),
+      allowedModes: normalizeAllowedModes(PRESETS.family.defaultModes),
+      startSection: "dashboard",
+      expiresAt: "",
+      createdAt: isoDateTime(new Date()),
+      blockedReason: error instanceof Error ? error.message : "Shared link could not be loaded.",
+      snapshot: buildSeedState()
+    };
+    app.pendingShareToken = "";
+    handleShareSessionInit();
+    app.sync.status = "error";
+    app.sync.lastError = app.shareSession.blockedReason || "Shared link could not be loaded.";
+  } finally {
+    renderAll();
+  }
+}
+
+async function bootstrapAppSession() {
+  app.authResolved = false;
+  if (app.pendingShareToken) {
+    await bootstrapRemoteShareSession();
+    return;
+  }
+  if (!hasCloudSession()) {
+    app.authResolved = true;
+    app.sync.status = "auth-required";
+    app.sync.lastError = "Sign in required.";
+    renderAll();
+    return;
+  }
+  try {
+    await refreshCloudSideData();
+    await pullRemoteStateOnBoot();
+    await maybeImportLegacyLocalState();
+    restartReminderLoop();
+  } catch (_error) {
+    // UI reflects current auth/sync status elsewhere.
+  } finally {
+    app.authResolved = true;
+    renderAll();
+  }
 }
 
 async function registerPwaServiceWorker() {
   if (typeof window === "undefined") return;
   if (!("serviceWorker" in navigator)) return;
   try {
-    const registration = await navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" });
+    const registration = await navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" });
     registration.update().catch(() => {});
     if (registration.waiting) {
       registration.waiting.postMessage({ type: "SKIP_WAITING" });
@@ -2513,8 +2742,8 @@ function updateConnectivityBanner() {
   const pendingSync = canUseRemoteSync() ? app.syncQueue.length : 0;
   dom.offlineBanner.classList.remove("hidden");
   dom.offlineBanner.textContent = pendingSync
-    ? `Offline mode active. ${pendingSync} change${pendingSync === 1 ? "" : "s"} queued for sync when connection returns.`
-    : "Offline mode active. Changes will continue saving locally.";
+    ? `Offline access active. ${pendingSync} change${pendingSync === 1 ? "" : "s"} queued for sync when connection returns.`
+    : "Offline access active. Changes will continue saving locally.";
 }
 
 function canUseRemoteSync() {
@@ -2529,14 +2758,10 @@ function normalizedApiBase() {
 
 function remoteHeaders() {
   const headers = {
-    "content-type": "application/json",
-    "x-account-id": String(app.syncConfig.accountId || "default")
+    "content-type": "application/json"
   };
-  if (app.syncConfig.ownerKey) {
-    headers["x-owner-key"] = app.syncConfig.ownerKey;
-  }
-  if (app.syncConfig.authToken) {
-    headers.authorization = `Bearer ${app.syncConfig.authToken}`;
+  if (app.syncConfig.accountId) {
+    headers["x-account-id"] = String(app.syncConfig.accountId);
   }
   return headers;
 }
@@ -2553,6 +2778,7 @@ async function remoteRequest(path, init = {}) {
   try {
     return await fetch(`${base}${path}`, {
       ...init,
+      credentials: "include",
       ...(controller ? { signal: controller.signal } : {}),
       headers: {
         ...remoteHeaders(),
@@ -2590,10 +2816,10 @@ async function postShareAccessEvent(token) {
 
 function scheduleRemoteSync() {
   if (!canUseRemoteSync() || app.shareSession) return;
-  if (hasCloudSession() && app.syncConfig.authRole && app.syncConfig.authRole !== "owner" && !app.syncConfig.ownerKey) {
+  if (hasCloudSession() && app.syncConfig.authRole && app.syncConfig.authRole !== "owner") {
     return;
   }
-  if (!hasCloudSession() && !app.syncConfig.ownerKey) {
+  if (!hasCloudSession()) {
     app.sync.status = "auth-required";
     app.sync.lastError = "Sign in to enable cloud sync.";
     return;
@@ -2606,10 +2832,10 @@ function scheduleRemoteSync() {
 
 async function flushRemoteSync() {
   if (!canUseRemoteSync() || app.shareSession || app.sync.inFlight) return;
-  if (hasCloudSession() && app.syncConfig.authRole && app.syncConfig.authRole !== "owner" && !app.syncConfig.ownerKey) {
+  if (hasCloudSession() && app.syncConfig.authRole && app.syncConfig.authRole !== "owner") {
     return;
   }
-  if (!hasCloudSession() && !app.syncConfig.ownerKey) {
+  if (!hasCloudSession()) {
     app.sync.status = "auth-required";
     app.sync.lastError = "Sign in to enable cloud sync.";
     renderAll();
@@ -2645,7 +2871,7 @@ async function flushRemoteSync() {
 
 async function pullRemoteStateOnBoot() {
   if (!canUseRemoteSync() || app.shareSession) return;
-  if (!hasCloudSession() && !app.syncConfig.ownerKey) {
+  if (!hasCloudSession()) {
     app.sync.status = "auth-required";
     app.sync.lastError = "Sign in to enable cloud sync.";
     renderAll();
@@ -2659,7 +2885,6 @@ async function pullRemoteStateOnBoot() {
       app.sync.status = "connected";
       app.sync.lastSyncedAt = "";
       app.sync.lastError = "";
-      scheduleRemoteSync();
       renderAll();
       return;
     }
@@ -2676,7 +2901,7 @@ async function pullRemoteStateOnBoot() {
         app.ownerData = remoteState;
         saveOwnerData(app.ownerData, { skipRemote: true, keepTimestamp: true });
         setStatus("Synced latest data from cloud.");
-      } else if (localUpdatedAt > remoteUpdatedAt && (!hasCloudSession() || String(app.syncConfig.authRole || "") === "owner" || app.syncConfig.ownerKey)) {
+      } else if (localUpdatedAt > remoteUpdatedAt && String(app.syncConfig.authRole || "") === "owner") {
         scheduleRemoteSync();
       }
     }
@@ -2699,16 +2924,9 @@ async function pullRemoteShareAccess() {
     if (!response.ok) return;
     const payload = await response.json();
     const remoteMap = payload?.shareAccess || {};
-    for (const [token, access] of Object.entries(remoteMap)) {
-      app.accessLogs[token] = {
-        totalOpens: Number(access.opens || 0),
-        lastOpenedAt: String(access.lastOpenedAt || "")
-      };
-    }
-    saveAccessLogs();
     if (app.ownerData.shareLinks.length) {
       for (const link of app.ownerData.shareLinks) {
-        const access = app.accessLogs[link.token];
+        const access = remoteMap[link.id];
         if (!access) continue;
         link.totalOpens = access.totalOpens;
         link.lastOpenedAt = access.lastOpenedAt;
@@ -2721,7 +2939,7 @@ async function pullRemoteShareAccess() {
 }
 
 async function cloudRegisterOwner(payload) {
-  const response = await remoteRequest("/api/auth/register-owner", {
+  const response = await remoteRequest("/api/auth/sign-up", {
     method: "POST",
     body: JSON.stringify(payload || {})
   });
@@ -2759,12 +2977,42 @@ async function cloudAcceptInvite(payload) {
   return json;
 }
 
+async function cloudRequestPasswordReset(payload) {
+  const response = await remoteRequest("/api/auth/password-reset/request", {
+    method: "POST",
+    body: JSON.stringify(payload || {})
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error || `Password reset request failed (${response.status})`);
+  }
+  return json;
+}
+
+async function cloudCompletePasswordReset(payload) {
+  const response = await remoteRequest("/api/auth/password-reset/complete", {
+    method: "POST",
+    body: JSON.stringify(payload || {})
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error || `Password reset failed (${response.status})`);
+  }
+  return json;
+}
+
 async function cloudLogout() {
   if (!hasCloudSession()) return;
+  const preserveLocalWorkspace = Boolean(app.syncConfig.localFallback);
   try {
-    await remoteRequest("/api/auth/logout", { method: "POST" });
+    if (!preserveLocalWorkspace && canUseRemoteSync()) {
+      await remoteRequest("/api/auth/logout", { method: "POST" });
+    }
   } catch (_error) {
     // Ignore logout API errors and clear local session anyway.
+  }
+  if (!preserveLocalWorkspace) {
+    clearLocalWorkspaceCache();
   }
   clearCloudAuthSession();
 }
@@ -2775,13 +3023,14 @@ async function cloudFetchMe() {
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
     if (response.status === 401) {
+      clearLocalWorkspaceCache();
       clearCloudAuthSession();
     }
     throw new Error(json.error || `Could not load cloud profile (${response.status})`);
   }
   app.syncConfig = {
     ...app.syncConfig,
-    accountId: String(json.accountId || app.syncConfig.accountId || "default"),
+    accountId: String(json.accountId || app.syncConfig.accountId || ""),
     authRole: String(json.role || app.syncConfig.authRole || "").toLowerCase(),
     authUser: json.user && typeof json.user === "object"
       ? {
@@ -2789,7 +3038,14 @@ async function cloudFetchMe() {
           email: String(json.user.email || ""),
           name: String(json.user.name || "")
         }
-      : app.syncConfig.authUser
+      : app.syncConfig.authUser,
+    availableAccounts: Array.isArray(json.accounts)
+      ? json.accounts.map((entry) => ({
+          accountId: String(entry?.accountId || "").trim(),
+          role: String(entry?.role || "").trim().toLowerCase(),
+          accountLabel: String(entry?.accountLabel || "")
+        })).filter((entry) => entry.accountId)
+      : app.syncConfig.availableAccounts
   };
   saveSyncConfig();
   return json;
@@ -2803,6 +3059,69 @@ async function cloudCreateInvite(payload) {
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(json.error || `Invite creation failed (${response.status})`);
+  }
+  return json;
+}
+
+async function cloudCreateShare(payload) {
+  const response = await remoteRequest("/api/shares", {
+    method: "POST",
+    body: JSON.stringify(payload || {})
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error || `Could not create share link (${response.status})`);
+  }
+  return json.share || null;
+}
+
+async function cloudListShares() {
+  const response = await remoteRequest("/api/shares", { method: "GET" });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error || `Could not load share links (${response.status})`);
+  }
+  app.cloud.shares = Array.isArray(json.shares) ? json.shares : [];
+  return app.cloud.shares;
+}
+
+async function cloudRevokeShare(shareId) {
+  const response = await remoteRequest("/api/shares/revoke", {
+    method: "POST",
+    body: JSON.stringify({ shareId })
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error || `Could not revoke share link (${response.status})`);
+  }
+  return json.share || null;
+}
+
+async function cloudLoadShareSession(token) {
+  const endpoint = inferDefaultSyncEndpoint();
+  if (!endpoint) {
+    throw new Error("Share links require the server-backed app endpoint.");
+  }
+  const response = await fetch(`${String(endpoint).replace(/\/+$/, "")}/api/shares/session`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token })
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error || `Could not open share link (${response.status})`);
+  }
+  return json;
+}
+
+async function cloudImportLocalState(payload) {
+  const response = await remoteRequest("/api/account/import-local", {
+    method: "POST",
+    body: JSON.stringify(payload || {})
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error || `Could not import local data (${response.status})`);
   }
   return json;
 }
@@ -2851,6 +3170,7 @@ async function cloudLoadNotifications() {
 
 async function cloudPostRiskNotification(payload) {
   if (!hasCloudSession()) return;
+  if (String(app.syncConfig.authRole || "") !== "owner") return;
   try {
     await remoteRequest("/api/notifications/risk", {
       method: "POST",
@@ -2864,6 +3184,7 @@ async function cloudPostRiskNotification(payload) {
 async function refreshCloudSideData() {
   if (!hasCloudSession()) {
     app.cloud.invites = [];
+    app.cloud.shares = [];
     app.cloud.audit = [];
     app.cloud.notifications = [];
     app.cloud.loaded = false;
@@ -2877,16 +3198,60 @@ async function refreshCloudSideData() {
 
   if (String(app.syncConfig.authRole || "") === "owner") {
     await Promise.allSettled([
+      cloudListShares(),
       cloudListInvites(),
       cloudLoadAudit(),
       cloudLoadNotifications()
     ]);
   } else {
+    app.cloud.shares = [];
     app.cloud.invites = [];
     app.cloud.audit = [];
     await Promise.allSettled([cloudLoadNotifications()]);
   }
+  if (Array.isArray(app.cloud.shares)) {
+    app.ownerData.shareLinks = app.cloud.shares.slice();
+  }
   app.cloud.loaded = true;
+}
+
+async function maybeImportLegacyLocalState() {
+  if (!hasCloudSession()) return;
+  if (String(app.syncConfig.authRole || "") !== "owner") return;
+  if (!hasMeaningfulLocalOwnerData(app.legacyLocalCandidate)) return;
+  const accountId = String(app.syncConfig.accountId || "");
+  if (!accountId) return;
+  if (app.migrationState?.[accountId]) return;
+
+  const remoteLooksEmpty = !hasMeaningfulLocalOwnerData(app.ownerData);
+  const payload = ensureStateShape(app.legacyLocalCandidate);
+  if (!hasMeaningfulLocalOwnerData(payload)) return;
+
+  const result = await cloudImportLocalState({
+    state: payload,
+    overwrite: remoteLooksEmpty
+  });
+  if (result?.imported) {
+    app.legacyLocalCandidate = null;
+    app.migrationState = {
+      ...(app.migrationState || {}),
+      [accountId]: {
+        importedAt: isoDateTime(new Date())
+      }
+    };
+    saveAccountMigrationState();
+    await pullRemoteStateOnBoot();
+    setStatus("Existing browser data was attached to your account.");
+  } else {
+    app.migrationState = {
+      ...(app.migrationState || {}),
+      [accountId]: {
+        skippedAt: isoDateTime(new Date()),
+        reason: String(result?.reason || "existing_state")
+      }
+    };
+    saveAccountMigrationState();
+  }
 }
 
 function restartReminderLoop() {
@@ -3026,7 +3391,20 @@ async function requestNotificationPermission() {
 }
 
 function renderAll() {
+  setShellState();
   applyThemePreference(app.ownerData.profile);
+  if (app.pendingShareToken && !app.shareSession) {
+    renderPublicStateShell("Opening shared review", "Loading the read-only shared view.");
+    return;
+  }
+  if (!app.authResolved && hasCloudSession()) {
+    renderPublicStateShell("Signing in", "Loading your workspace.");
+    return;
+  }
+  if (authGateRequired()) {
+    renderAuthShell();
+    return;
+  }
   const context = getActiveContext();
 
   if (!context.allowedModes.includes(app.ui.activeViewMode)) {
@@ -3043,11 +3421,267 @@ function renderAll() {
   renderSections(context, visibleData);
   renderUtilityPanel(context, visibleData);
 
+  finalizeInitialRender();
+}
+
+function finalizeInitialRender() {
   if (!app.ui.hasRendered) {
     app.ui.hasRendered = true;
     document.body.classList.add("app-ready");
     dom.initialSkeleton?.classList.add("hidden");
   }
+}
+
+function authGateRequired() {
+  return !app.shareSession && !hasCloudSession();
+}
+
+function setShellState({ publicState = false, authState = false } = {}) {
+  if (typeof document === "undefined" || !document.body) return;
+  document.body.classList.toggle("app-public-state", publicState);
+  document.body.classList.toggle("app-auth-state", authState);
+  document.body.classList.remove("viewer-mode", "owner-mode", "consult-focus-mode");
+  dom.layoutShell?.classList.remove("layout--with-utility");
+}
+
+function renderPublicStateShell(title, subtitle, contentHtml = "", options = {}) {
+  setShellState({
+    publicState: true,
+    authState: Boolean(options.authState)
+  });
+  if (dom.topNavLinks) dom.topNavLinks.innerHTML = "";
+  if (dom.sectionNav) dom.sectionNav.innerHTML = "";
+  if (dom.mobileNav) {
+    dom.mobileNav.innerHTML = "";
+    dom.mobileNav.hidden = true;
+  }
+  if (dom.utilityPanel) dom.utilityPanel.innerHTML = "";
+  if (dom.navGroupTitle) dom.navGroupTitle.textContent = "Secure access";
+  if (dom.navGroupCopy) dom.navGroupCopy.textContent = "Sign in, create an account, or open a protected shared workspace.";
+  if (dom.contextPill) dom.contextPill.textContent = "Protected";
+  if (dom.sectionEyebrow) dom.sectionEyebrow.textContent = "Secure access";
+  if (dom.sectionMetaPills) {
+    dom.sectionMetaPills.innerHTML = '<span class="section-meta-pill is-readonly">Protected</span>';
+  }
+  if (dom.sectionTitle) dom.sectionTitle.textContent = title;
+  if (dom.sectionSubtitle) dom.sectionSubtitle.textContent = subtitle;
+  if (dom.readOnlyBanner) {
+    dom.readOnlyBanner.classList.add("hidden");
+    dom.readOnlyBanner.innerHTML = "";
+  }
+  if (dom.roleBadge) {
+    dom.roleBadge.hidden = true;
+  }
+  if (dom.quickCheckinButton) dom.quickCheckinButton.hidden = true;
+  if (dom.addToConsultButton) dom.addToConsultButton.hidden = true;
+  Object.values(dom.sections).forEach((sectionNode) => sectionNode.classList.add("hidden"));
+  dom.sections.dashboard.classList.remove("hidden");
+  dom.sections.dashboard.innerHTML = `
+    <section class="card card-accent card-accent-ocean public-state-card">
+      <div class="public-state-copy">
+        <h3>${escapeHtml(title)}</h3>
+        <p class="subtle">${escapeHtml(subtitle)}</p>
+      </div>
+      ${contentHtml}
+    </section>
+  `;
+  finalizeInitialRender();
+}
+
+function renderAuthShell() {
+  const hasLocalData = hasMeaningfulLocalOwnerData(app.legacyLocalCandidate);
+  const inviteToken = app.drafts.cloudInviteToken || "";
+  const resetToken = app.pendingResetToken || "";
+  const mode = app.ui.authScreenMode || "signin";
+  const modeButtons = [
+    { id: "signin", label: "Sign in" },
+    { id: "signup", label: "Create account" },
+    { id: "accept_invite", label: "Join workspace" },
+    { id: "request_reset", label: "Reset password" }
+  ];
+
+  renderPublicStateShell(
+    mode === "reset" ? "Reset password" : "Sign in required",
+    mode === "reset"
+      ? "Set a new password to regain access to CarePanel."
+      : "Use your secure account to open CarePanel. Public visitors cannot edit or view patient data.",
+    `
+      ${hasLocalData ? `<div class="banner" style="margin-bottom:12px;"><strong>Existing browser data found.</strong> When you create or sign in to your owner account on this device, this data can be attached to that account.</div>` : ""}
+      <div class="auth-mode-row">
+        ${modeButtons.map((item) => `<button class="btn ${mode === item.id ? "btn-primary" : "btn-ghost"} small" type="button" data-auth-mode="${item.id}">${escapeHtml(item.label)}</button>`).join("")}
+      </div>
+      ${mode === "signup" ? `
+        <form id="authSignupForm" class="field-grid">
+          <div><label>Name</label><input name="name" autocomplete="name" required></div>
+          <div><label>Email</label><input name="email" type="email" autocomplete="email" required></div>
+          <div><label>Password</label><input name="password" type="password" autocomplete="new-password" minlength="8" required></div>
+          ${hasLocalData ? `<label class="check-item" style="grid-column:1/-1;"><input name="importLegacyData" type="checkbox"><span>Attach the existing browser data on this device to this owner account</span></label>` : ""}
+          <div class="auth-submit-row"><button class="btn btn-primary" type="submit">Create my workspace</button></div>
+        </form>
+      ` : ""}
+      ${mode === "signin" ? `
+        <form id="authSigninForm" class="field-grid">
+          <div><label>Email</label><input name="email" type="email" autocomplete="email" required></div>
+          <div><label>Password</label><input name="password" type="password" autocomplete="current-password" required></div>
+          ${hasLocalData ? `<label class="check-item" style="grid-column:1/-1;"><input name="importLegacyData" type="checkbox"><span>Attach the existing browser data on this device to this owner account after sign-in</span></label>` : ""}
+          <div class="auth-submit-row"><button class="btn btn-primary" type="submit">Sign in</button></div>
+        </form>
+      ` : ""}
+      ${mode === "accept_invite" ? `
+        <form id="authAcceptInviteForm" class="field-grid">
+          <div><label>Invite token</label><input name="token" value="${escapeHtml(inviteToken)}" required></div>
+          <div><label>Name</label><input name="name" autocomplete="name"></div>
+          <div><label>Password</label><input name="password" type="password" autocomplete="new-password" minlength="8" required></div>
+          <div class="auth-submit-row"><button class="btn btn-primary" type="submit">Join workspace</button></div>
+        </form>
+      ` : ""}
+      ${mode === "request_reset" ? `
+        <form id="authRequestResetForm" class="field-grid">
+          <div><label>Email</label><input name="email" type="email" autocomplete="email" required></div>
+          <div class="auth-submit-row"><button class="btn btn-primary" type="submit">Send reset link</button></div>
+        </form>
+      ` : ""}
+      ${mode === "reset" ? `
+        <form id="authResetForm" class="field-grid">
+          <div><label>Reset token</label><input name="token" value="${escapeHtml(resetToken)}" required></div>
+          <div><label>New password</label><input name="password" type="password" autocomplete="new-password" minlength="8" required></div>
+          <div class="auth-submit-row"><button class="btn btn-primary" type="submit">Set new password</button></div>
+        </form>
+      ` : ""}
+    `,
+    { authState: true }
+  );
+
+  dom.sections.dashboard.querySelectorAll("[data-auth-mode]").forEach((button) => {
+    button.addEventListener("click", () => {
+      app.ui.authScreenMode = String(button.getAttribute("data-auth-mode") || "signin");
+      renderAll();
+    });
+  });
+
+  const runSignedInBootstrap = async ({ importLegacyData = false } = {}) => {
+    await refreshCloudSideData();
+    await pullRemoteStateOnBoot();
+    if (importLegacyData) {
+      await maybeImportLegacyLocalState();
+    }
+    restartReminderLoop();
+    app.ui.activeSection = "dashboard";
+    app.ui.activeViewMode = "daily";
+    renderAll();
+  };
+
+  dom.sections.dashboard.querySelector("#authSignupForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = formToObject(form);
+    void (async () => {
+      setFormBusy(form, true, "Creating...");
+      try {
+        await cloudRegisterOwner(values);
+        await runSignedInBootstrap({
+          importLegacyData: Boolean(form.querySelector('input[name="importLegacyData"]')?.checked)
+        });
+        setStatus("Account created and signed in.");
+      } catch (error) {
+        if (shouldRecoverSignupLocally(error)) {
+          activateLocalOwnerWorkspace(
+            values,
+            "Cloud account service is unavailable. Opened a local workspace in this browser instead."
+          );
+          await runSignedInBootstrap();
+          setStatus("Cloud account service is unavailable. Opened a local workspace in this browser instead.");
+        } else {
+          setStatus(error instanceof Error ? error.message : "Could not create account.", "error");
+        }
+      } finally {
+        setFormBusy(form, false);
+      }
+    })();
+  });
+
+  dom.sections.dashboard.querySelector("#authSigninForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = formToObject(form);
+    void (async () => {
+      setFormBusy(form, true, "Signing in...");
+      try {
+        await cloudLogin(values);
+        await runSignedInBootstrap({
+          importLegacyData: Boolean(form.querySelector('input[name="importLegacyData"]')?.checked)
+        });
+        setStatus("Signed in.");
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Could not sign in.", "error");
+      } finally {
+        setFormBusy(form, false);
+      }
+    })();
+  });
+
+  dom.sections.dashboard.querySelector("#authAcceptInviteForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = formToObject(form);
+    void (async () => {
+      setFormBusy(form, true, "Joining...");
+      try {
+        await cloudAcceptInvite(values);
+        app.drafts.cloudInviteToken = "";
+        saveDrafts();
+        await runSignedInBootstrap();
+        setStatus("Workspace access granted.");
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Could not accept invite.", "error");
+      } finally {
+        setFormBusy(form, false);
+      }
+    })();
+  });
+
+  dom.sections.dashboard.querySelector("#authRequestResetForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = formToObject(form);
+    void (async () => {
+      setFormBusy(form, true, "Preparing...");
+      try {
+        const payload = await cloudRequestPasswordReset(values);
+        if (payload?.resetUrl && navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(payload.resetUrl);
+          setStatus("Reset link prepared and copied.");
+        } else {
+          setStatus(payload?.message || "If the account exists, a reset link has been prepared.");
+        }
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Could not start password reset.", "error");
+      } finally {
+        setFormBusy(form, false);
+      }
+    })();
+  });
+
+  dom.sections.dashboard.querySelector("#authResetForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = formToObject(form);
+    void (async () => {
+      setFormBusy(form, true, "Saving...");
+      try {
+        await cloudCompletePasswordReset(values);
+        app.pendingResetToken = "";
+        app.ui.authScreenMode = "signin";
+        window.history.replaceState(null, "", `${window.location.pathname}#signin`);
+        setStatus("Password updated. Sign in with your new password.");
+        renderAll();
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Could not reset password.", "error");
+      } finally {
+        setFormBusy(form, false);
+      }
+    })();
+  });
 }
 
 function renderViewModeSelector(context) {
@@ -3056,12 +3690,15 @@ function renderViewModeSelector(context) {
   }
   if (!app.shareSession && context.type === "authenticated_viewer") {
     const role = String(app.syncConfig.authRole || "viewer").toLowerCase();
-    const label = role === "clinician" ? "Clinician Account" : role === "family" ? "Family Account" : "Viewer Account";
+    const label = role === "family" ? "Family Account" : "Viewer Account";
     dom.viewerModeSelect.innerHTML = `<option value="my">${escapeHtml(label)}</option>`;
     dom.viewerModeSelect.disabled = true;
     dom.viewerModeSegment.innerHTML = `<button type="button" role="tab" aria-selected="true" class="active" disabled>${escapeHtml(label)}</button>`;
     app.ui.viewerMode = "my";
   } else if (!app.shareSession) {
+    if (!Object.prototype.hasOwnProperty.call(VIEWER_MODE_OPTIONS, app.ui.viewerMode)) {
+      app.ui.viewerMode = "my";
+    }
     dom.viewerModeSelect.innerHTML = VIEWER_MODE_ORDER
       .map((value) => `<option value="${value}">${escapeHtml(VIEWER_MODE_OPTIONS[value].label)}</option>`)
       .join("");
@@ -3070,7 +3707,7 @@ function renderViewModeSelector(context) {
 
     const primaryMode = PRIMARY_VIEWER_MODE_ORDER.includes(app.ui.viewerMode)
       ? app.ui.viewerMode
-      : "clinician";
+      : "my";
 
     dom.viewerModeSegment.innerHTML = PRIMARY_VIEWER_MODE_ORDER
       .map((value) => {
@@ -3137,7 +3774,7 @@ function renderContextElements(context) {
     dom.readOnlyBanner.innerHTML = `<strong>Read-only account:</strong> You are signed in with viewer permissions (${escapeHtml(context.label)}).${renderViewerCapabilitySummary(context)}`;
   } else if (context.type === "preview") {
     dom.readOnlyBanner.classList.remove("hidden");
-    dom.readOnlyBanner.innerHTML = `<strong>Preview mode:</strong> You are previewing ${escapeHtml(context.label)} permissions in read-only mode.${renderViewerCapabilitySummary(context)}`;
+    dom.readOnlyBanner.innerHTML = `<strong>Preview:</strong> You are previewing ${escapeHtml(context.label)} permissions in read-only access.${renderViewerCapabilitySummary(context)}`;
   } else {
     dom.readOnlyBanner.classList.add("hidden");
     dom.readOnlyBanner.innerHTML = "";
@@ -3158,7 +3795,6 @@ function resolveContextBadge(context) {
   if (context.type === "owner") return VIEWER_BADGES.owner;
   if (context.type === "share") return VIEWER_BADGES.share;
   if (context.type === "authenticated_viewer") return "Account View (Read-only)";
-  if (app.ui.viewerMode === "clinician") return VIEWER_BADGES.clinician;
   if (app.ui.viewerMode === "family") return VIEWER_BADGES.family;
   if (app.ui.viewerMode === "preview_link") return VIEWER_BADGES.preview_link;
   return context.label;
@@ -3180,6 +3816,35 @@ function availableSections(context, mode) {
   });
 }
 
+function visibleTopNavItems(context) {
+  return TOP_NAV_ITEMS.filter((item) => !(item.ownerOnly && context.readOnly));
+}
+
+function findTopNavForSection(context, sectionId) {
+  const navItems = visibleTopNavItems(context);
+  const directMatch = navItems.find((item) => {
+    const targets = [
+      item.primarySection,
+      ...(Array.isArray(item.activeSections) ? item.activeSections : []),
+      ...(Array.isArray(item.sectionGroup) ? item.sectionGroup : [])
+    ];
+    return targets.includes(sectionId);
+  });
+  if (directMatch) return directMatch;
+
+  return navItems.find((item) => Array.isArray(item.fallbackSections) && item.fallbackSections.includes(sectionId)) || navItems[0] || null;
+}
+
+function scopedSectionsForTopNav(context, mode, topNavItem) {
+  const sections = availableSections(context, mode);
+  if (!topNavItem || !Array.isArray(topNavItem.sectionGroup) || !topNavItem.sectionGroup.length) {
+    return sections;
+  }
+  const allowedIds = new Set(topNavItem.sectionGroup);
+  const scoped = sections.filter((section) => allowedIds.has(section.id));
+  return scoped.length ? scoped : sections;
+}
+
 function findModeForSection(context, sectionId, preferredModes = []) {
   const modeCandidates = [...new Set([...preferredModes, ...context.allowedModes])];
 
@@ -3198,9 +3863,12 @@ function hashForSection(sectionId) {
   if (sectionId === "dashboard") return "#dashboard";
   if (sectionId === "medications") return "#medications";
   if (sectionId === "education") return "#education";
+  if (sectionId === "checkins") return "#checkins";
+  if (sectionId === "notes") return "#notes";
   if (sectionId === "consult") return "#consult";
   if (sectionId === "timeline") return "#trends";
   if (sectionId === "changes") return "#history";
+  if (sectionId === "entry") return "#record";
   if (sectionId === "sharing") return "#share";
   if (sectionId === "exports") return "#settings";
   return "";
@@ -3220,6 +3888,22 @@ function navigateToSection(sectionId, options = {}) {
   const fallbackSections = Array.isArray(options.fallbackSections) ? options.fallbackSections : [];
   const candidates = [sectionId, ...fallbackSections];
 
+  // Owner-only settings/share routes should land predictably even when the
+  // current view mode is still on a daily context.
+  if (!context.readOnly && sectionId === "exports" && context.allowedModes.includes("personal")) {
+    app.ui.activeViewMode = "personal";
+    app.ui.activeSection = "exports";
+    syncHashWithSection("exports");
+    return true;
+  }
+
+  if (!context.readOnly && sectionId === "sharing" && context.allowedModes.includes("clinical")) {
+    app.ui.activeViewMode = "clinical";
+    app.ui.activeSection = "sharing";
+    syncHashWithSection("sharing");
+    return true;
+  }
+
   for (const candidate of candidates) {
     const mode = findModeForSection(context, candidate, preferredModes);
     if (!mode) continue;
@@ -3237,12 +3921,25 @@ function navigateToSection(sectionId, options = {}) {
 }
 
 function renderNavigation(context) {
-  const sections = availableSections(context, app.ui.activeViewMode);
-  if (!sections.find((section) => section.id === app.ui.activeSection)) {
-    app.ui.activeSection = sections[0]?.id || "dashboard";
+  const allSections = availableSections(context, app.ui.activeViewMode);
+  if (!allSections.find((section) => section.id === app.ui.activeSection)) {
+    app.ui.activeSection = allSections[0]?.id || "dashboard";
   }
 
-  renderTopNav(sections);
+  const activeTopNav = findTopNavForSection(context, app.ui.activeSection);
+  const sections = scopedSectionsForTopNav(context, app.ui.activeViewMode, activeTopNav);
+  if (!sections.find((section) => section.id === app.ui.activeSection)) {
+    app.ui.activeSection = sections[0]?.id || allSections[0]?.id || "dashboard";
+  }
+
+  renderTopNav(context);
+
+  if (dom.navGroupTitle) {
+    dom.navGroupTitle.textContent = activeTopNav?.groupTitle || "Workspace";
+  }
+  if (dom.navGroupCopy) {
+    dom.navGroupCopy.textContent = activeTopNav?.groupDescription || "Use the sections below to move through this part of the workspace.";
+  }
 
   dom.sectionNav.innerHTML = sections
     .map((section) => {
@@ -3262,36 +3959,60 @@ function renderNavigation(context) {
       syncHashWithSection(app.ui.activeSection);
       renderAll();
     });
-  });
+    });
 }
 
-function renderTopNav(sections) {
+function renderTopNav(context) {
   if (!dom.topNavLinks) return;
-  const context = getActiveContext();
-
-  dom.topNavLinks.innerHTML = TOP_NAV_ITEMS.map((item) => {
+  const navItems = visibleTopNavItems(context);
+  const renderButton = (item) => {
     const allItemSections = [item.primarySection, ...(item.fallbackSections || [])];
-    const active = allItemSections.includes(app.ui.activeSection);
+    const activeSections = Array.isArray(item.activeSections) && item.activeSections.length
+      ? item.activeSections
+      : [item.primarySection];
+    const active = activeSections.includes(app.ui.activeSection);
     const firstAvailableSection = allItemSections.find((sectionId) => findModeForSection(context, sectionId, item.preferredModes));
     const disabled = !firstAvailableSection;
     return `
       <button
         type="button"
-        class="top-nav-link nav-link ${active ? "active" : ""}"
+        class="top-nav-link nav-link ${active ? "active" : ""} ${item.ownerOnly ? "is-secondary" : "is-primary"}"
         data-topnav-id="${item.id}"
         aria-label="Open ${escapeHtml(item.label)}"
+        aria-current="${active ? "page" : "false"}"
         ${disabled ? "disabled" : ""}
       >
         ${renderIcon(item.icon || "home", "top-nav-icon")}
         <span>${escapeHtml(item.label)}</span>
       </button>
     `;
-  }).join("");
+  };
+
+  const primaryItems = navItems.filter((item) => !item.ownerOnly);
+  const secondaryItems = navItems.filter((item) => item.ownerOnly);
+
+  dom.topNavLinks.innerHTML = `
+    <div class="top-nav-cluster top-nav-cluster-primary">
+      <div class="top-nav-group-label">Core workspace</div>
+      <div class="top-nav-button-row">
+        ${primaryItems.map(renderButton).join("")}
+      </div>
+    </div>
+    ${secondaryItems.length ? `
+      <div class="top-nav-divider" aria-hidden="true"></div>
+      <div class="top-nav-cluster top-nav-cluster-secondary">
+        <div class="top-nav-group-label">Owner tools</div>
+        <div class="top-nav-button-row">
+          ${secondaryItems.map(renderButton).join("")}
+        </div>
+      </div>
+    ` : ""}
+  `;
 
   dom.topNavLinks.querySelectorAll("[data-topnav-id]").forEach((button) => {
     button.addEventListener("click", () => {
       const navId = button.dataset.topnavId || "";
-      const item = TOP_NAV_ITEMS.find((entry) => entry.id === navId);
+      const item = navItems.find((entry) => entry.id === navId);
       if (!item) return;
       navigateToSection(item.primarySection, {
         preferredModes: item.preferredModes,
@@ -3304,9 +4025,13 @@ function renderTopNav(sections) {
 
 function renderMobileNav(context) {
   if (!dom.mobileNav) return;
-  dom.mobileNav.innerHTML = MOBILE_TABS.map((tab) => {
-    const allTabSections = [tab.primarySection, ...(tab.fallbackSections || [])];
-    const active = allTabSections.includes(app.ui.activeSection);
+  const mobileTabs = MOBILE_TABS.filter((tab) => !(tab.ownerOnly && context.readOnly));
+  dom.mobileNav.hidden = mobileTabs.length === 0;
+  dom.mobileNav.innerHTML = mobileTabs.map((tab) => {
+    const activeSections = Array.isArray(tab.activeSections) && tab.activeSections.length
+      ? tab.activeSections
+      : [tab.primarySection];
+    const active = activeSections.includes(app.ui.activeSection);
     const enabled = Boolean(findModeForSection(context, tab.primarySection, tab.preferredModes) || (tab.fallbackSections || []).some((sectionId) => findModeForSection(context, sectionId, tab.preferredModes)));
     return `
       <button
@@ -3314,6 +4039,7 @@ function renderMobileNav(context) {
         class="${active ? "active" : ""}"
         data-mobile-tab="${tab.id}"
         aria-label="${escapeHtml(tab.label)}"
+        aria-current="${active ? "page" : "false"}"
         ${enabled ? "" : "disabled"}
       >
         ${renderIcon(tab.icon || "home", "mobile-icon")}
@@ -3325,7 +4051,7 @@ function renderMobileNav(context) {
   dom.mobileNav.querySelectorAll("[data-mobile-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       const tabId = button.dataset.mobileTab || "";
-      const tab = MOBILE_TABS.find((entry) => entry.id === tabId);
+      const tab = mobileTabs.find((entry) => entry.id === tabId);
       if (!tab) return;
       navigateToSection(tab.primarySection, {
         preferredModes: tab.preferredModes,
@@ -3337,10 +4063,15 @@ function renderMobileNav(context) {
 }
 
 function renderUtilityPanel(context, data) {
-  if (!dom.utilityPanel) return;
+  if (!dom.utilityPanel) {
+    dom.layoutShell?.classList.remove("layout--with-utility");
+    return;
+  }
+  const consultFocused = app.ui.activeSection === "consult";
   const utilityVisible = typeof window !== "undefined"
-    ? Boolean(window.matchMedia?.(`(min-width: ${UTILITY_PANEL_MIN_WIDTH}px)`)?.matches)
+    ? Boolean(window.matchMedia?.(`(min-width: ${UTILITY_PANEL_MIN_WIDTH}px)`)?.matches) && !consultFocused
     : false;
+  dom.layoutShell?.classList.toggle("layout--with-utility", utilityVisible);
   if (!utilityVisible) {
     dom.utilityPanel.innerHTML = "";
     return;
@@ -3431,8 +4162,22 @@ function renderUtilityPanel(context, data) {
 
 function renderSectionMeta(context) {
   const meta = SECTION_META.find((section) => section.id === app.ui.activeSection) || SECTION_META[0];
+  const activeTopNav = findTopNavForSection(context, app.ui.activeSection);
   dom.sectionTitle.textContent = meta.title;
   dom.sectionSubtitle.textContent = meta.subtitle;
+  if (dom.sectionEyebrow) {
+    dom.sectionEyebrow.textContent = activeTopNav?.groupTitle || "Workspace";
+  }
+  if (dom.sectionMetaPills) {
+    const pills = [
+      `<span class="section-meta-pill">${escapeHtml(VIEW_MODE_META[app.ui.activeViewMode]?.label || "Workspace")}</span>`,
+      `<span class="section-meta-pill ${context.readOnly ? "is-readonly" : "is-owner"}">${escapeHtml(context.readOnly ? "Read-only access" : "Owner workspace")}</span>`
+    ];
+    if (activeTopNav?.ownerOnly && !context.readOnly) {
+      pills.push(`<span class="section-meta-pill is-owner-tools">Owner tools</span>`);
+    }
+    dom.sectionMetaPills.innerHTML = pills.join("");
+  }
   if (typeof document !== "undefined" && document.body) {
     document.body.classList.toggle("viewer-mode", Boolean(context.readOnly));
     document.body.classList.toggle("owner-mode", !context.readOnly);
@@ -3440,7 +4185,7 @@ function renderSectionMeta(context) {
   }
   if (dom.quickCheckinButton) {
     dom.quickCheckinButton.disabled = Boolean(context.readOnly);
-    dom.quickCheckinButton.title = context.readOnly ? "Quick check-in is disabled in read-only mode." : "Open quick check-in";
+    dom.quickCheckinButton.title = context.readOnly ? "Quick check-in is disabled in read-only access." : "Open quick check-in";
   }
   if (dom.addToConsultButton) {
     dom.addToConsultButton.disabled = Boolean(context.readOnly);
@@ -3448,17 +4193,16 @@ function renderSectionMeta(context) {
   }
   updateInstallButtonVisibility();
   if (dom.roleBadge) {
+    dom.roleBadge.hidden = false;
     const roleLabel = context.readOnly
       ? context.type === "share"
-        ? "Psychiatrist View (Shared)"
+        ? "Shared View"
         : context.type === "authenticated_viewer"
           ? `Read-only (${(app.syncConfig.authRole || "viewer").replace(/^./, (ch) => ch.toUpperCase())})`
-          : app.ui.viewerMode === "clinician"
-            ? "Psychiatrist View"
-            : app.ui.viewerMode === "family"
+          : app.ui.viewerMode === "family"
               ? "Viewer (Family)"
               : "Read-only"
-      : "My View";
+      : "Owner";
     dom.roleBadge.textContent = roleLabel;
     dom.roleBadge.className = `role-badge ${context.readOnly ? "is-viewer" : "is-owner"}`;
   }
@@ -3512,7 +4256,7 @@ function renderSections(context, visibleData) {
 
   if (app.ui.activeSection === "notes") {
     dom.sections.notes.classList.remove("hidden");
-    renderNotes(dom.sections.notes, visibleData);
+    renderNotes(dom.sections.notes, visibleData, context);
   }
 
   if (app.ui.activeSection === "consult") {
@@ -3893,6 +4637,73 @@ function renderIcon(name, className = "mini-icon", label = "") {
   `;
 }
 
+function renderSectionSpotlight({
+  tone = "ocean",
+  icon = "home",
+  eyebrow = "",
+  title = "",
+  description = "",
+  chips = [],
+  stats = [],
+  asideLabel = "",
+  asideTitle = "",
+  asideBody = ""
+} = {}) {
+  const chipMarkup = Array.isArray(chips) && chips.length
+    ? `
+      <div class="section-spotlight-chip-row">
+        ${chips.map((chip) => `<span class="section-spotlight-chip">${escapeHtml(chip)}</span>`).join("")}
+      </div>
+    `
+    : "";
+
+  const statsMarkup = Array.isArray(stats) && stats.length
+    ? `
+      <div class="section-spotlight-stats">
+        ${stats.map((stat) => `
+          <article class="section-spotlight-stat">
+            <span class="section-spotlight-stat-label">${escapeHtml(stat.label || "")}</span>
+            <strong>${escapeHtml(stat.value || "")}</strong>
+            ${stat.detail ? `<small>${escapeHtml(stat.detail)}</small>` : ""}
+          </article>
+        `).join("")}
+      </div>
+    `
+    : "";
+
+  const asideMarkup = asideTitle || asideBody
+    ? `
+      <aside class="section-spotlight-aside">
+        ${asideLabel ? `<span class="section-spotlight-aside-label">${escapeHtml(asideLabel)}</span>` : ""}
+        ${asideTitle ? `<strong>${escapeHtml(asideTitle)}</strong>` : ""}
+        ${asideBody ? `<p>${escapeHtml(asideBody)}</p>` : ""}
+      </aside>
+    `
+    : "";
+
+  return `
+    <article class="card section-spotlight section-spotlight-${escapeHtml(tone)}">
+      <div class="section-spotlight-main">
+        <div class="section-spotlight-icon-wrap">
+          ${renderIcon(icon, "section-spotlight-icon", title)}
+        </div>
+        <div class="section-spotlight-copy">
+          ${eyebrow ? `<p class="section-spotlight-eyebrow">${escapeHtml(eyebrow)}</p>` : ""}
+          <h3>${escapeHtml(title)}</h3>
+          <p class="section-spotlight-description">${escapeHtml(description)}</p>
+          ${chipMarkup}
+        </div>
+      </div>
+      ${(statsMarkup || asideMarkup) ? `
+        <div class="section-spotlight-footer">
+          ${statsMarkup}
+          ${asideMarkup}
+        </div>
+      ` : ""}
+    </article>
+  `;
+}
+
 function safeDateFromKey(dateKey) {
   const parsed = new Date(`${dateKey}T12:00:00`);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
@@ -3956,13 +4767,6 @@ function riskToneClass(level) {
   return "risk-low";
 }
 
-function renderActionPlanSteps(actionPlans, level) {
-  const normalizedPlans = normalizeActionPlans(actionPlans || []);
-  return normalizedPlans
-    .filter((entry) => entry.enabled && entry.triggerLevel === level)
-    .sort((left, right) => left.stepOrder - right.stepOrder);
-}
-
 function riskLevelRank(level) {
   const normalized = String(level || "low").toLowerCase();
   if (normalized === "high") return 3;
@@ -3979,36 +4783,6 @@ function renderRiskHistoryDots(history = []) {
       ${rows.map((entry) => `<span class="risk-dot ${escapeHtml(riskToneClass(entry.level))}" title="${escapeHtml(`${entry.date}: ${(RISK_LEVEL_META[entry.level] || RISK_LEVEL_META.low).label}`)}"></span>`).join("")}
     </div>
   `;
-}
-
-function actionPlanLinesByLevel(actionPlans, level) {
-  return renderActionPlanSteps(actionPlans, level)
-    .map((step) => {
-      const rolePrefix = step.notifyRole ? `[${step.notifyRole}] ` : "";
-      return `${rolePrefix}${step.stepText}`;
-    })
-    .join("\n");
-}
-
-function parseActionPlanLines(lines, level) {
-  return String(lines || "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line, index) => {
-      const match = line.match(/^\[(self|family|clinician|gp|psychiatrist|other)\]\s*/i);
-      const notifyRole = match ? String(match[1] || "").toLowerCase() : "";
-      const stepText = match ? line.replace(match[0], "").trim() : line;
-      return {
-        id: uid(),
-        triggerLevel: level,
-        stepOrder: index + 1,
-        stepText,
-        notifyRole,
-        enabled: true
-      };
-    })
-    .filter((entry) => entry.stepText);
 }
 
 function isOverdueDose(item) {
@@ -4283,8 +5057,7 @@ function renderDashboard(root, data, context) {
       summary: false,
       alerts: false,
       changes: false,
-      medications: false,
-      actionPlan: false
+      medications: false
     };
   }
   app.ui.dashboardEdits = {
@@ -4292,7 +5065,6 @@ function renderDashboard(root, data, context) {
     alerts: false,
     changes: false,
     medications: false,
-    actionPlan: false,
     ...(app.ui.dashboardEdits || {})
   };
   if (!app.ui.dashboardCollapsedPanels || typeof app.ui.dashboardCollapsedPanels !== "object") {
@@ -4317,16 +5089,19 @@ function renderDashboard(root, data, context) {
       summary: false,
       alerts: false,
       changes: false,
-      medications: false,
-      actionPlan: false
+      medications: false
     };
   }
   const collapsedPanels = app.ui.dashboardCollapsedPanels;
   const isCollapsed = (panelKey) => Boolean(collapsedPanels?.[panelKey]);
   const collapseLabel = (panelKey) => (isCollapsed(panelKey) ? "Expand" : "Collapse");
 
-  const dashboardConfig = normalizeDashboardConfig(app.ownerData.dashboardConfig || data.dashboardConfig);
-  const summaryNote = dashboardConfig.summaryNote;
+  const dashboardConfig = normalizeDashboardConfig(
+    context.readOnly ? data.dashboardConfig : app.ownerData.dashboardConfig || data.dashboardConfig
+  );
+  const consultConfig = normalizeConsultConfig(
+    context.readOnly ? data.consultConfig : app.ownerData.consultConfig
+  );
 
   const resolvedMeds = resolveCurrentMedications(data);
   const activeMeds = resolvedMeds.filter((med) => med.isCurrent);
@@ -4350,6 +5125,14 @@ function renderDashboard(root, data, context) {
   const riskHistory = computeRecentRiskHistory(data, 14, new Date());
   const riskTone = riskToneClass(riskAssessment.level);
   const alerts = buildAlerts(data);
+  const openQuestions = sortConsultQuestions(data.consultQuestions || [])
+    .filter((entry) => String(entry.status || "").toLowerCase() === "open")
+    .slice(0, 3);
+  const appointments = (data.appointmentEvents || [])
+    .map((entry) => normalizeAppointmentEvent(entry))
+    .slice()
+    .sort((a, b) => parseSortableDate(b.appointmentDate) - parseSortableDate(a.appointmentDate));
+  const latestAppointment = appointments[0] || null;
   const pendingItems = [...dueState.dueNow, ...dueState.next].sort((left, right) => left.time.localeCompare(right.time));
   const nextDose = pendingItems[0] || null;
   const overdueCount = dueState.dueNow.filter((item) => String(item.statusLabel).toLowerCase().includes("overdue")).length;
@@ -4360,10 +5143,6 @@ function renderDashboard(root, data, context) {
     ])
   ).slice(0, 8);
   const topChanges = recentChanges.slice(0, 6);
-  const consultQuestions = sortConsultQuestions(data.consultQuestions || []);
-  const openConsultQuestions = consultQuestions.filter((entry) => String(entry.status || "").toLowerCase() === "open");
-  const consultFocusText = String(normalizeConsultConfig(data.consultConfig).discussToday || "").trim();
-  const topConsultQuestions = openConsultQuestions.slice(0, 3);
   const profile = normalizeOwnerProfile(app.ownerData.profile);
   const greetingLabel = dashboardGreetingLabel(context, profile);
   const consistencyMessage = dashboardConsistencyMessage(data, dueState, today, profile);
@@ -4380,12 +5159,42 @@ function renderDashboard(root, data, context) {
     : 100;
   const checkinSleepHours = toNumber(todayCheckin?.sleepHours);
   const undoActive = Boolean(app.lastDoseUndo && Number(app.lastDoseUndo.expiresAt) > Date.now());
-  const actionPlans = normalizeActionPlans(data.actionPlans || []);
-  const activeActionPlanSteps = renderActionPlanSteps(actionPlans, riskAssessment.level);
-  const showActionPlanCard = ownerEditable || riskLevelRank(riskAssessment.level) >= riskLevelRank("watch");
+  const reviewFocusText = String(consultConfig.discussToday || "").trim();
+  const watchItems = Array.from(new Set([
+    ...dashboardAlerts,
+    ...riskAssessment.triggeredSigns.map((entry) => `${entry.label} flagged`)
+  ])).slice(0, 4);
+  const dashboardSpotlight = renderSectionSpotlight({
+    tone: context.readOnly ? "teal" : "ocean",
+    icon: "home",
+    eyebrow: context.readOnly ? "Review dashboard" : "Owner dashboard",
+    title: context.readOnly ? "Daily context, prepared for quick review" : "Daily tracking with a clearer next step",
+    description: context.readOnly
+      ? "The day view now separates immediate status, regimen, and appointment-ready context so a reviewer can scan quickly without owner controls taking over."
+      : "Today is organised around what is due, what changed recently, and what should be carried into the next appointment.",
+    chips: [
+      VIEW_MODE_META[app.ui.activeViewMode]?.label || "Daily View",
+      context.readOnly ? "Read-only access" : "Owner workspace",
+      nextDose ? `Next: ${nextDose.time}` : "No doses remaining"
+    ],
+    stats: [
+      { label: "Active meds", value: String(activeMeds.length), detail: "Current regimen" },
+      { label: "Remaining doses", value: String(dueState.counts.remaining), detail: `${dueState.counts.taken} taken` },
+      { label: "Risk", value: riskAssessment.label, detail: riskAssessment.reasons[0] || "No active triggers" },
+      { label: "Review items", value: String(openQuestions.length + topChanges.length), detail: "Questions + recent changes" }
+    ],
+    asideLabel: context.readOnly ? "Reviewer note" : "Owner focus",
+    asideTitle: context.readOnly ? "Editing is muted in this view" : "Track first, review second",
+    asideBody: context.readOnly
+      ? "This screen stays focused on status, regimen, and review context."
+      : "Quick actions stay available, but the page now gives more weight to what needs attention."
+  });
 
   root.innerHTML = `
-    <div class="grid dashboard-flow">
+    <div class="section-scene">
+      ${dashboardSpotlight}
+    </div>
+    <div class="grid dashboard-flow dashboard-flow-clean">
       <article class="card card-accent card-accent-ocean dashboard-summary-strip">
         <div class="card-head-row">
           <div>
@@ -4443,11 +5252,11 @@ function renderDashboard(root, data, context) {
         </div>
       </article>
 
-      <article class="card card-accent card-accent-sky card-doses dashboard-priority-card">
+      <article class="card dashboard-panel dashboard-priority-card">
         <div class="card-head-row">
           <div>
-            <h3>Today’s Doses</h3>
-            <div class="subtle">${escapeHtml(greetingLabel)} · ${escapeHtml(niceDate(today))}</div>
+            <h3>Today’s doses</h3>
+            <div class="subtle">${escapeHtml(nextDueLabel)}</div>
           </div>
           <div class="dashboard-readonly-wrap">
             ${context.readOnly ? `<span class="readonly-badge">Read-only</span>` : ""}
@@ -4488,30 +5297,19 @@ function renderDashboard(root, data, context) {
             <button class="btn btn-ghost small" type="button" data-dose-undo="1">Undo</button>
           </div>
         ` : ""}
-        <div class="dose-action-help" aria-label="Dose action guide">
-          <div class="dose-action-help-head">
-            ${renderIcon("bell", "mini-icon soft", "Dose action guide")}
-            <strong>Dose actions</strong>
-          </div>
-          <ul class="dose-action-help-list">
-            <li><span class="pill-badge status-open">Taken</span><span>confirms and adds a timestamp</span></li>
-            <li><span class="pill-badge status-discussed">Skip</span><span>logs as not taken</span></li>
-            <li><span class="pill-badge urgency-medium">Snooze</span><span>delays reminders by ${DOSE_SNOOZE_MINUTES} minutes</span></li>
-          </ul>
-        </div>
         ${renderDashboardDoseQueue(dueState, context, activeMeds)}
       </article>
 
-      <article class="card card-accent card-accent-teal card-quick-checkin">
+      <article class="card dashboard-panel dashboard-checkin-card">
         <div class="card-head-row">
           <div>
             <h3>Quick check-in</h3>
-            <div class="subtle">${todayCheckin ? `Today’s check-in completed.${todayCheckin.entryMode === "quick_30s" ? " (30-second mode)" : ""}` : "No check-in recorded yet today."}</div>
+            <div class="subtle">${todayCheckin ? `Today’s check-in completed.${todayCheckin.entryMode === "quick_30s" ? " (30-second check-in)" : ""}` : "No check-in recorded yet today."}</div>
           </div>
           ${ownerEditable ? `
             <div class="inline-row">
               <button class="btn btn-secondary small" type="button" data-dashboard-checkin="1">${todayCheckin ? "Update" : "Start"}</button>
-              <button class="btn btn-ghost small" type="button" data-dashboard-checkin-fast="1">30-second mode</button>
+              <button class="btn btn-ghost small" type="button" data-dashboard-checkin-fast="1">30-second check-in</button>
             </div>
           ` : ""}
         </div>
@@ -4534,263 +5332,82 @@ function renderDashboard(root, data, context) {
               <strong class="snapshot-value">${Number.isFinite(checkinSleepHours) ? `${roundNumber(checkinSleepHours, 1)}h` : "-"}</strong>
             </article>
           </div>
-        ` : `<div class="empty">Complete your quick check-in to generate daily trend signals.${ownerEditable ? ` <button class="btn btn-secondary small" type="button" data-dashboard-checkin-fast="1">Use 30-second mode</button>` : ""}</div>`}
-        <div class="dashboard-summary-note">
-          <div class="card-head-row">
-            <div class="label">Summary note</div>
-            ${ownerEditable ? `<button class="btn btn-ghost small" type="button" data-dashboard-edit="summary">${app.ui.dashboardEdits.summary ? "Editing" : "Edit"}</button>` : ""}
-          </div>
-          ${ownerEditable && app.ui.dashboardEdits.summary ? `
-            <form id="dashboardSummaryForm" class="edit-inline-form">
-              <label for="dashboardSummaryNote">Owner summary note</label>
-              <textarea id="dashboardSummaryNote" name="summaryNote" maxlength="420" placeholder="Add a short summary for this dashboard view.">${escapeHtml(summaryNote)}</textarea>
-              <div class="inline-row">
-                <button class="btn btn-primary small" type="submit">Save</button>
-                <button class="btn btn-ghost small" type="button" data-dashboard-edit-cancel="summary">Cancel</button>
-              </div>
-            </form>
-          ` : `<div class="subtle">${summaryNote ? escapeHtml(summaryNote) : "No summary note set."}</div>`}
-        </div>
+        ` : `<div class="empty">Complete your quick check-in to keep the review view meaningful.${ownerEditable ? ` <button class="btn btn-secondary small" type="button" data-dashboard-checkin-fast="1">Use 30-second check-in</button>` : ""}</div>`}
+        ${todayCheckin ? `<div class="subtle" style="margin-top:10px;">Mood ${escapeHtml(String(todayCheckin.mood))} · Anxiety ${escapeHtml(String(todayCheckin.anxiety))} · Focus ${escapeHtml(String(todayCheckin.focus))}${Number.isFinite(checkinSleepHours) ? ` · Sleep ${escapeHtml(String(roundNumber(checkinSleepHours, 1)))}h` : ""}</div>` : ""}
+        ${dashboardConfig.summaryNote ? `<div class="dashboard-inline-note"><strong>Today note:</strong> ${escapeHtml(dashboardConfig.summaryNote)}</div>` : ""}
       </article>
 
-      <article class="card card-accent card-accent-rose card-alerts">
+      <article class="card dashboard-panel dashboard-regimen-card">
         <div class="card-head-row">
           <div>
-            <h3>Alerts / monitoring reminders</h3>
-            <div class="subtle">Prioritised alerts from notes, recent changes, and custom reminders.</div>
+            <h3>Current regimen</h3>
+            <div class="subtle">A simpler view of what is active and when it is usually taken.</div>
           </div>
           <div class="inline-row">
-            <button class="btn btn-ghost small" type="button" data-dashboard-collapse="alerts" aria-expanded="${isCollapsed("alerts") ? "false" : "true"}">${collapseLabel("alerts")}</button>
-            ${ownerEditable ? `<button class="btn btn-ghost small" type="button" data-dashboard-edit="alerts">${app.ui.dashboardEdits.alerts ? "Editing" : "Edit"}</button>` : ""}
+            <span class="kpi-badge">${activeMeds.length} active</span>
+            <span class="kpi-badge">Updated ${escapeHtml(niceDate(currentMedsLastUpdated))}</span>
           </div>
         </div>
-        ${isCollapsed("alerts")
-          ? `<div class="subtle">Collapsed. Expand to review alerts and reminders.</div>`
-          : ownerEditable && app.ui.dashboardEdits.alerts ? `
-          <form id="dashboardAlertsForm" class="edit-inline-form">
-            <label for="dashboardMonitoringReminders">Monitoring reminders (one per line)</label>
-            <textarea id="dashboardMonitoringReminders" name="monitoringReminders" placeholder="Example: Check BP before evening clonidine dose.">${escapeHtml(dashboardConfig.monitoringReminders.join("\n"))}</textarea>
-            <div class="inline-row">
-              <button class="btn btn-primary small" type="submit">Save</button>
-              <button class="btn btn-ghost small" type="button" data-dashboard-edit-cancel="alerts">Cancel</button>
-            </div>
-          </form>
-        ` : (
-          dashboardAlerts.length
-            ? `<ul class="alert-list">${dashboardAlerts.map((item) => `<li class="alert-list-item">${renderIcon("bell", "mini-icon soft", "Alert")}<span>${escapeHtml(item)}</span></li>`).join("")}</ul>`
-            : `<div class="empty">No active monitoring alerts right now.</div>`
-        )}
+        ${activeMeds.length ? `
+          <div class="inline-row" style="margin-bottom:10px;">
+            ${activeMeds.map((med) => `<span class="kpi-badge">${escapeHtml(med.name)}</span>`).join("")}
+          </div>
+        ` : ""}
+        ${activeMeds.length
+          ? renderCurrentMedicationScheduleGroups(activeMeds, { emptyMessage: "No active medications yet." })
+          : `<div class="empty">No active medications yet.${ownerEditable ? ` <button class="btn btn-secondary small" type="button" data-dashboard-add-med="1">Add medication</button>` : ""}</div>`}
+        <div class="inline-row" style="margin-top:10px;">
+          <button class="btn btn-secondary small" type="button" data-dashboard-open-meds="1">Medication details</button>
+          <button class="btn btn-ghost small" type="button" data-dashboard-open-review="1">Open review</button>
+        </div>
       </article>
 
-      <article class="card card-accent card-accent-violet card-changes">
+      <article class="card dashboard-panel dashboard-review-card dashboard-card-wide">
         <div class="card-head-row">
           <div>
-            <h3>Recent medication changes (14 days)</h3>
-            <div class="subtle">Timeline shown in reverse chronological order.</div>
+            <h3>Appointment readiness</h3>
+            <div class="subtle">The shortest path into a cleaner psychiatrist review.</div>
           </div>
           <div class="inline-row">
-            <button class="btn btn-ghost small" type="button" data-dashboard-collapse="changes" aria-expanded="${isCollapsed("changes") ? "false" : "true"}">${collapseLabel("changes")}</button>
-            ${ownerEditable ? `<button class="btn btn-ghost small" type="button" data-dashboard-edit="changes">${app.ui.dashboardEdits.changes ? "Editing" : "Edit"}</button>` : ""}
+            <button class="btn btn-primary small" type="button" data-dashboard-open-review="1">Open review</button>
+            ${ownerEditable ? `<button class="btn btn-ghost small" type="button" data-dashboard-new-change="1">Log change</button>` : ""}
           </div>
         </div>
-        ${isCollapsed("changes")
-          ? `<div class="subtle">Collapsed. Expand to review recent medication changes.</div>`
-          : ownerEditable && app.ui.dashboardEdits.changes ? `
-          ${topChanges.length ? `
-            <form id="dashboardChangesForm" class="edit-inline-form">
-              ${topChanges.map((entry) => `
-                <fieldset class="inline-edit-change">
-                  <legend>${escapeHtml(niceDate(entry.date))} · ${escapeHtml(entry.medicationName || "Medication")}</legend>
-                  <div class="field-grid dashboard-edit-grid">
-                    <div><label>Date</label><input name="date__${entry.id}" type="date" value="${escapeHtml(entry.date)}" required></div>
-                    <div><label>Medication</label><input name="medicationName__${entry.id}" value="${escapeHtml(entry.medicationName || "")}" required></div>
-                    <div><label>Old dose</label><input name="oldDose__${entry.id}" value="${escapeHtml(entry.oldDose || "")}" required></div>
-                    <div><label>New dose</label><input name="newDose__${entry.id}" value="${escapeHtml(entry.newDose || "")}" required></div>
-                    <div><label>Route (optional)</label><input name="route__${entry.id}" value="${escapeHtml(entry.route || "")}"></div>
-                    <div>
-                      <label>Changed by</label>
-                      <select name="changedBy__${entry.id}">
-                        ${["self", "psychiatrist", "gp", "clinician", "other"].map((role) => `<option value="${role}" ${String(entry.changedBy || "self") === role ? "selected" : ""}>${escapeHtml(role)}</option>`).join("")}
-                      </select>
-                    </div>
-                    <div><label>Review date</label><input name="reviewDate__${entry.id}" type="date" value="${escapeHtml(entry.reviewDate || "")}"></div>
-                    <div style="grid-column: 1 / -1;"><label>Reason for change</label><textarea name="reasonForChange__${entry.id}" required>${escapeHtml(entry.reasonForChange || entry.reason || "")}</textarea></div>
-                    <div style="grid-column: 1 / -1;"><label>Expected effects</label><textarea name="expectedEffects__${entry.id}">${escapeHtml(entry.expectedEffects || "")}</textarea></div>
-                    <div style="grid-column: 1 / -1;"><label>Monitor for</label><textarea name="monitorFor__${entry.id}">${escapeHtml(entry.monitorFor || "")}</textarea></div>
-                    <div style="grid-column: 1 / -1;"><label>Notes</label><textarea name="notes__${entry.id}">${escapeHtml(entry.notes || "")}</textarea></div>
-                  </div>
-                </fieldset>
-              `).join("")}
-              <div class="inline-row">
-                <button class="btn btn-primary small" type="submit">Save</button>
-                <button class="btn btn-ghost small" type="button" data-dashboard-edit-cancel="changes">Cancel</button>
-              </div>
-            </form>
-          ` : `<div class="empty">No medication changes in the last 14 days.</div>`}
-        ` : (
-          topChanges.length
-            ? `<ul class="timeline-list">${topChanges.map((entry) => `<li><strong>${escapeHtml(niceDate(entry.date))}</strong> · ${escapeHtml(entry.medicationName || "Medication")}: ${escapeHtml(entry.oldDose || "-")} → ${escapeHtml(entry.newDose || "-")}<br><span class="subtle">${escapeHtml(entry.reasonForChange || entry.reason || "-")}${entry.changedBy ? ` · changed by ${escapeHtml(entry.changedBy)}` : ""}${entry.reviewDate ? ` · review ${escapeHtml(niceDate(entry.reviewDate))}` : ""}</span></li>`).join("")}</ul>`
-            : `<div class="empty">No medication changes logged in the last 14 days.${ownerEditable ? ` <button class="btn btn-secondary small" type="button" data-dashboard-new-change="1">Log a change</button>` : ""}</div>`
-        )}
+        <div class="inline-row" style="margin-bottom:12px;">
+          <span class="kpi-badge">${openQuestions.length} open question${openQuestions.length === 1 ? "" : "s"}</span>
+          <span class="kpi-badge">${topChanges.length} recent change${topChanges.length === 1 ? "" : "s"}</span>
+          <span class="kpi-badge">${latestAppointment ? `Last appointment ${niceDate(latestAppointment.appointmentDate)}` : "No appointment logged"}</span>
+        </div>
+        <div class="dashboard-review-grid">
+          <section class="dashboard-review-block">
+            <h4>Open questions</h4>
+            ${openQuestions.length
+              ? `<ul class="timeline-list dashboard-compact-list">${openQuestions.map((entry) => `<li><strong>${escapeHtml(entry.text)}</strong><br><span class="subtle">${escapeHtml(entry.category)}${entry.linkedMedication ? ` · ${escapeHtml(entry.linkedMedication)}` : ""}</span></li>`).join("")}</ul>`
+              : `<div class="subtle">No questions are queued right now.</div>`}
+          </section>
+          <section class="dashboard-review-block">
+            <h4>Recent medication changes</h4>
+            ${topChanges.length
+              ? `<ul class="timeline-list dashboard-compact-list">${topChanges.slice(0, 3).map((entry) => `<li><strong>${escapeHtml(niceDate(entry.date))}</strong> · ${escapeHtml(entry.medicationName || "Medication")}<br><span class="subtle">${escapeHtml(entry.oldDose || "-")} -> ${escapeHtml(entry.newDose || "-")} · ${escapeHtml(entry.reasonForChange || entry.reason || "-")}</span></li>`).join("")}</ul>`
+              : `<div class="subtle">No medication changes logged in the last 14 days.</div>`}
+          </section>
+          <section class="dashboard-review-block">
+            <h4>Watch today</h4>
+            ${watchItems.length
+              ? `<ul class="timeline-list dashboard-compact-list">${watchItems.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+              : `<div class="subtle">Nothing urgent is flagged right now.</div>`}
+          </section>
+        </div>
+        ${reviewFocusText ? `<div class="dashboard-inline-note"><strong>Planned discussion:</strong> ${escapeHtml(reviewFocusText)}</div>` : ""}
       </article>
-
-      <article class="card card-accent card-accent-sky card-medication-details">
-        <div class="card-head-row">
-          <div>
-            <h3>Medication details</h3>
-            <div class="subtle">Current medications, doses, and schedules.</div>
-          </div>
-          <div class="inline-row">
-            <button class="btn btn-ghost small" type="button" data-dashboard-collapse="medicationDetails" aria-expanded="${isCollapsed("medicationDetails") ? "false" : "true"}">${collapseLabel("medicationDetails")}</button>
-            ${ownerEditable ? `<button class="btn btn-ghost small" type="button" data-dashboard-edit="medications">${app.ui.dashboardEdits.medications ? "Editing" : "Edit"}</button>` : ""}
-            <button class="btn btn-ghost small" type="button" data-dashboard-open-meds="1">Open full medications</button>
-          </div>
-        </div>
-        ${isCollapsed("medicationDetails")
-          ? `<div class="subtle">Collapsed. Expand to review current medication details.</div>`
-          : activeMeds.length ? (
-          ownerEditable && app.ui.dashboardEdits.medications
-            ? `
-              <form id="dashboardMedicationForm" class="dashboard-med-edit-grid">
-                ${activeMeds.map((med) => `
-                  <article class="dashboard-med-edit-row">
-                    <h4>${escapeHtml(med.name)}</h4>
-                    <div class="field-grid">
-                      <div><label>Dose</label><input name="currentDose__${med.id}" value="${escapeHtml(med.currentDose || "")}" required></div>
-                      <div><label>Route</label><input name="route__${med.id}" value="${escapeHtml(med.route || "")}" required></div>
-                      <div><label>Schedule times</label><input name="scheduleTimes__${med.id}" value="${escapeHtml((med.scheduleTimes || []).join(", "))}" placeholder="08:00, 20:00"></div>
-                      <div><label>Start date</label><input name="startDate__${med.id}" type="date" value="${escapeHtml(med.startDate || "")}" required></div>
-                      <div style="grid-column: 1 / -1;"><label>Indication</label><textarea name="indication__${med.id}">${escapeHtml(med.indication || "")}</textarea></div>
-                      <div style="grid-column: 1 / -1;"><label>Monitor</label><textarea name="monitor__${med.id}">${escapeHtml(med.monitor || "")}</textarea></div>
-                    </div>
-                  </article>
-                `).join("")}
-                <div class="inline-row" style="grid-column: 1 / -1;">
-                  <button class="btn btn-primary small" type="submit">Save</button>
-                  <button class="btn btn-ghost small" type="button" data-dashboard-edit-cancel="medications">Cancel</button>
-                </div>
-              </form>
-            `
-            : `
-          <div class="subtle" style="margin-bottom:8px;">Grouped by time: Morning, 2:00 pm, 8:00 pm, PRN.</div>
-          ${renderCurrentMedicationScheduleGroups(activeMeds, { emptyMessage: "No active medications yet." })}
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Medication</th>
-                  <th>Dose</th>
-                  <th>Schedule</th>
-                  <th>Route</th>
-                  <th>Details</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${activeMeds.map((med) => `
-                  <tr>
-                    <td><span class="table-wrap-text">${escapeHtml(med.name)}</span></td>
-                    <td><span class="table-wrap-text">${escapeHtml(formatMedicationDoseLabel(med))}</span></td>
-                    <td><span class="table-wrap-text">${escapeHtml(formatSchedule(med))}</span></td>
-                    <td><span class="table-wrap-text">${escapeHtml(med.route || "-")}</span></td>
-                    <td><button class="btn btn-secondary small" type="button" data-med-detail="${escapeHtml(med.id)}">View</button></td>
-                  </tr>
-                `).join("")}
-              </tbody>
-            </table>
-          </div>
-        `
-        ) : `<div class="empty">No active medications yet.${ownerEditable ? ` <button class="btn btn-secondary small" type="button" data-dashboard-add-med="1">Add medication</button>` : ""}</div>`}
-      </article>
-
-      <article class="card card-accent card-accent-teal card-consult-prep">
-        <div class="card-head-row">
-          <div>
-            <h3>Consult prep / open questions</h3>
-            <div class="subtle">Keep appointment priorities concise and review-ready.</div>
-          </div>
-          <div class="inline-row">
-            <button class="btn btn-ghost small" type="button" data-dashboard-collapse="consultPrep" aria-expanded="${isCollapsed("consultPrep") ? "false" : "true"}">${collapseLabel("consultPrep")}</button>
-            <span class="kpi-badge">${openConsultQuestions.length} open</span>
-            <button class="btn btn-ghost small" type="button" data-dashboard-open-consult="1">Open consult</button>
-          </div>
-        </div>
-        ${isCollapsed("consultPrep")
-          ? `<div class="subtle">Collapsed. Expand to view consult questions and focus notes.</div>`
-          : topConsultQuestions.length ? `
-          <ul class="timeline-list">
-            ${topConsultQuestions.map((entry) => `<li><strong>${escapeHtml(entry.text)}</strong><div class="subtle">${escapeHtml(entry.urgency)} urgency${entry.linkedMedication ? ` · ${escapeHtml(entry.linkedMedication)}` : ""}</div></li>`).join("")}
-          </ul>
-        ` : `<div class="empty">No open consult questions.${ownerEditable ? ` <button class="btn btn-secondary small" type="button" data-dashboard-new-question="1">Add question</button>` : ""}</div>`}
-        ${isCollapsed("consultPrep") ? "" : `<div class="subtle" style="margin-top:8px;">${consultFocusText ? `Focus: ${escapeHtml(consultFocusText)}` : "No consult focus text set yet."}</div>`}
-      </article>
-
-      ${showActionPlanCard ? `
-        <article class="card card-accent card-accent-teal action-plan-card">
-          <div class="card-head-row">
-            <div>
-              <h3>Action plan ${riskLevelRank(riskAssessment.level) >= riskLevelRank("elevated") ? `(for ${escapeHtml(riskAssessment.label)} risk)` : ""}</h3>
-              <div class="subtle">Pre-agreed response steps for Watch / Elevated / High risk levels.</div>
-            </div>
-            ${ownerEditable ? `<button class="btn btn-ghost small" type="button" data-dashboard-edit="actionPlan">${app.ui.dashboardEdits.actionPlan ? "Editing" : "Edit"}</button>` : ""}
-          </div>
-          ${ownerEditable && app.ui.dashboardEdits.actionPlan ? `
-            <form id="dashboardActionPlanForm" class="edit-inline-form">
-              <div>
-                <label for="actionPlanWatch">Watch steps (one per line, optional prefix: [family] or [clinician])</label>
-                <textarea id="actionPlanWatch" name="watch">${escapeHtml(actionPlanLinesByLevel(actionPlans, "watch"))}</textarea>
-              </div>
-              <div>
-                <label for="actionPlanElevated">Elevated steps (one per line)</label>
-                <textarea id="actionPlanElevated" name="elevated">${escapeHtml(actionPlanLinesByLevel(actionPlans, "elevated"))}</textarea>
-              </div>
-              <div>
-                <label for="actionPlanHigh">High steps (one per line)</label>
-                <textarea id="actionPlanHigh" name="high">${escapeHtml(actionPlanLinesByLevel(actionPlans, "high"))}</textarea>
-              </div>
-              <p class="inline-note">Tip: prefix a line with [family], [clinician], [gp], [psychiatrist], or [self] to set a notify role.</p>
-              <div class="inline-row">
-                <button class="btn btn-primary small" type="submit">Save</button>
-                <button class="btn btn-ghost small" type="button" data-dashboard-edit-cancel="actionPlan">Cancel</button>
-              </div>
-            </form>
-          ` : (
-            activeActionPlanSteps.length
-              ? `<ol class="action-plan-list">${activeActionPlanSteps.map((step) => `<li class="action-plan-item"><div>${escapeHtml(step.stepText)}</div>${step.notifyRole ? `<div class="action-plan-meta">Notify: ${escapeHtml(step.notifyRole)}</div>` : ""}</li>`).join("")}</ol>`
-              : `<div class="action-plan-empty">No steps configured for ${escapeHtml(riskAssessment.label)} risk.</div>`
-          )}
-          <p class="safety-footnote">Action plan steps are informational support prompts and should align with your prescriber plan.</p>
-        </article>
-      ` : ""}
-
-      <article class="card card-accent card-accent-ocean dashboard-trend-preview">
-      <div class="dashboard-trend-head">
-        <div>
-          <h3>Wellbeing trends preview</h3>
-          <div class="subtle">Use simple stats or visual chart view for quick pattern spotting.</div>
-        </div>
-        <div class="dashboard-trend-controls">
-          <div class="chip-group">
-            <button type="button" class="chip ${app.ui.dashboardTrendView === "simple" ? "active" : ""}" data-dashboard-trend-view="simple">Simple</button>
-            <button type="button" class="chip ${app.ui.dashboardTrendView === "visual" ? "active" : ""}" data-dashboard-trend-view="visual">Visual</button>
-          </div>
-          <div class="chip-group">
-            <button type="button" class="chip ${app.ui.dashboardTrendRangeDays === "7" ? "active" : ""}" data-dashboard-trend-range="7">7d</button>
-            <button type="button" class="chip ${app.ui.dashboardTrendRangeDays === "30" ? "active" : ""}" data-dashboard-trend-range="30">30d</button>
-          </div>
-        </div>
-      </div>
-      ${renderDashboardTrendPreview(data, recentChanges, context)}
-      <div class="inline-row" style="margin-top:10px;">
-        <button class="btn btn-ghost small" type="button" data-dashboard-open-trends="1">Open full trends</button>
-      </div>
-    </article>
+    </div>
   `;
 
   root.querySelectorAll("[data-dashboard-edit]").forEach((button) => {
     button.addEventListener("click", () => {
       if (!ownerEditable) return;
       const section = button.dataset.dashboardEdit || "";
-      if (!["summary", "alerts", "changes", "medications", "actionPlan"].includes(section)) return;
+      if (!["summary", "alerts", "changes", "medications"].includes(section)) return;
       app.ui.dashboardEdits = { ...app.ui.dashboardEdits, [section]: true };
       renderAll();
     });
@@ -4799,7 +5416,7 @@ function renderDashboard(root, data, context) {
   root.querySelectorAll("[data-dashboard-edit-cancel]").forEach((button) => {
     button.addEventListener("click", () => {
       const section = button.dataset.dashboardEditCancel || "";
-      if (!["summary", "alerts", "changes", "medications", "actionPlan"].includes(section)) return;
+      if (!["summary", "alerts", "changes", "medications"].includes(section)) return;
       app.ui.dashboardEdits = { ...app.ui.dashboardEdits, [section]: false };
       renderAll();
     });
@@ -4870,9 +5487,11 @@ function renderDashboard(root, data, context) {
       const medicationName = String(form.elements[`medicationName__${entry.id}`]?.value || "").trim();
       const oldDose = String(form.elements[`oldDose__${entry.id}`]?.value || "").trim();
       const newDose = String(form.elements[`newDose__${entry.id}`]?.value || "").trim();
-      const reasonForChange = String(form.elements[`reasonForChange__${entry.id}`]?.value || "").trim();
+      const reasonForChange = normalizeLegacyRoleCopy(
+        String(form.elements[`reasonForChange__${entry.id}`]?.value || "").trim()
+      );
       const route = String(form.elements[`route__${entry.id}`]?.value || "").trim();
-      const changedBy = String(form.elements[`changedBy__${entry.id}`]?.value || "self").trim();
+      const changedBy = normalizeChangedByValue(form.elements[`changedBy__${entry.id}`]?.value || "self");
       const expectedEffects = String(form.elements[`expectedEffects__${entry.id}`]?.value || "").trim();
       const monitorFor = String(form.elements[`monitorFor__${entry.id}`]?.value || "").trim();
       const reviewDate = String(form.elements[`reviewDate__${entry.id}`]?.value || "").trim();
@@ -4917,7 +5536,7 @@ function renderDashboard(root, data, context) {
         oldDose: updated.oldDose,
         newDose: updated.newDose,
         route: updated.route || "",
-        changedBy: updated.changedBy || "self",
+        changedBy: normalizeChangedByValue(updated.changedBy),
         reasonForChange: updated.reasonForChange || updated.reason || "",
         expectedBenefit: updated.expectedEffects || "",
         whatToMonitor: updated.monitorFor || "",
@@ -4977,25 +5596,6 @@ function renderDashboard(root, data, context) {
     renderAll();
   });
 
-  root.querySelector("#dashboardActionPlanForm")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    if (!ownerEditable) return;
-    const form = event.currentTarget;
-    const watchPlans = parseActionPlanLines(form.elements.watch?.value || "", "watch");
-    const elevatedPlans = parseActionPlanLines(form.elements.elevated?.value || "", "elevated");
-    const highPlans = parseActionPlanLines(form.elements.high?.value || "", "high");
-    const combined = normalizeActionPlans([...watchPlans, ...elevatedPlans, ...highPlans]);
-    if (!combined.length) {
-      setStatus("Add at least one action-plan step before saving.", "error");
-      return;
-    }
-    app.ownerData.actionPlans = combined;
-    saveOwnerData(app.ownerData);
-    app.ui.dashboardEdits = { ...app.ui.dashboardEdits, actionPlan: false };
-    setStatus("Action plan updated.");
-    renderAll();
-  });
-
   root.querySelectorAll("[data-dashboard-dose-filter]").forEach((button) => {
     button.addEventListener("click", () => {
       app.ui.dashboardDoseFilter = button.dataset.dashboardDoseFilter || "all";
@@ -5024,30 +5624,6 @@ function renderDashboard(root, data, context) {
     input.addEventListener("input", () => {
       app.ui.dashboardDoseSearch = String(input.value || "");
       app.ui.dashboardDosePage = 1;
-      renderAll();
-    });
-  });
-
-  root.querySelectorAll("[data-dashboard-trend-view]").forEach((button) => {
-    button.addEventListener("click", () => {
-      app.ui.dashboardTrendView = button.dataset.dashboardTrendView === "visual" ? "visual" : "simple";
-      renderAll();
-    });
-  });
-
-  root.querySelectorAll("[data-dashboard-trend-range]").forEach((button) => {
-    button.addEventListener("click", () => {
-      app.ui.dashboardTrendRangeDays = button.dataset.dashboardTrendRange === "30" ? "30" : "7";
-      renderAll();
-    });
-  });
-
-  root.querySelectorAll("[data-dashboard-open-trends]").forEach((button) => {
-    button.addEventListener("click", () => {
-      navigateToSection("timeline", {
-        preferredModes: ["clinical", "personal"],
-        fallbackSections: ["changes"]
-      });
       renderAll();
     });
   });
@@ -5123,34 +5699,23 @@ function renderDashboard(root, data, context) {
     });
   });
 
-  root.querySelectorAll("[data-dashboard-open-consult]").forEach((button) => {
+  root.querySelectorAll("[data-dashboard-open-meds]").forEach((button) => {
     button.addEventListener("click", () => {
-      navigateToSection("consult", {
-        preferredModes: ["clinical", "personal"],
-        fallbackSections: ["timeline"]
+      navigateToSection("medications", {
+        preferredModes: ["daily", "clinical", "personal"],
+        fallbackSections: ["dashboard"]
       });
       renderAll();
     });
   });
 
-  root.querySelectorAll("[data-dashboard-new-question]").forEach((button) => {
+  root.querySelectorAll("[data-dashboard-open-review]").forEach((button) => {
     button.addEventListener("click", () => {
-      if (context.readOnly) return;
-      app.ui.activeSection = "consult";
-      app.ui.consultWorkflowStep = "prepare";
-      app.ui.consultActivePane = "questions";
-      persistUiDraftPreferences();
-      renderAll();
-      window.setTimeout(() => {
-        dom.sections.consult?.querySelector("#consultQuestionForm input[name='text']")?.focus();
-      }, 0);
-    });
-  });
-
-  root.querySelectorAll("[data-dashboard-open-meds]").forEach((button) => {
-    button.addEventListener("click", () => {
-      if (context.readOnly) return;
-      app.ui.activeSection = "medications";
+      navigateToSection("consult", {
+        preferredModes: ["clinical", "personal"],
+        fallbackSections: ["dashboard"]
+      });
+      app.ui.consultWorkflowStep = "review";
       renderAll();
     });
   });
@@ -5258,8 +5823,35 @@ function renderMedicationEducationSection(root, data, context) {
   ).trim();
   const activeMeds = resolveCurrentMedications(data).filter((medication) => medication.isCurrent);
   const currentMedsLastUpdated = resolveCurrentMedsLastUpdatedDate(data);
+  const referenceCount = activeMeds.reduce((count, medication) => {
+    const entry = resolveMedicationEducationEntry(medication);
+    return count + (Array.isArray(entry?.references) ? entry.references.length : 0);
+  }, 0);
+  const educationSpotlight = renderSectionSpotlight({
+    tone: "sky",
+    icon: "book",
+    eyebrow: "Medication education",
+    title: "Plain-language medication reference, kept close to the regimen",
+    description: "Education cards now sit closer to the review workflow so descriptors, monitoring points, and owner notes feel like part of the product, not a detached appendix.",
+    chips: [
+      ownerEditable ? "Owner notes editable" : "Read-only reference",
+      "Trusted external references",
+      `Updated ${niceDate(currentMedsLastUpdated)}`
+    ],
+    stats: [
+      { label: "Current meds", value: String(activeMeds.length), detail: "Shown below" },
+      { label: "Reference links", value: String(referenceCount), detail: "Trusted sources" },
+      { label: "Owner notes", value: ownerNotes ? "Saved" : "Blank", detail: "Context for consults" }
+    ],
+    asideLabel: "Use case",
+    asideTitle: "Keep explanations beside the medication list",
+    asideBody: "This page is meant to make appointment discussion easier, not to replace prescribing advice."
+  });
 
   root.innerHTML = `
+    <div class="section-scene">
+      ${educationSpotlight}
+    </div>
     <article class="card card-accent card-accent-ocean">
       <div class="card-head-row">
         <div>
@@ -5363,9 +5955,33 @@ function renderMedications(root, data, context) {
       }
       return result * sortFactor;
     });
+  const medicationSpotlight = renderSectionSpotlight({
+    tone: "violet",
+    icon: "capsule",
+    eyebrow: "Regimen workspace",
+    title: "Current medications arranged for scan speed and detail",
+    description: "The medication area now acts like a product-level regimen workspace, with clearer filtering, stronger emphasis on current records, and less visual noise around historical data.",
+    chips: [
+      context.readOnly ? "Read-only list" : "Owner-editable",
+      `${recordCount} stored record${recordCount === 1 ? "" : "s"}`,
+      `Resolved ${current.length} current`
+    ],
+    stats: [
+      { label: "Current", value: String(current.length), detail: "Active records" },
+      { label: "Historical", value: String(historical.length), detail: "Preserved history" },
+      { label: "Visible rows", value: String(rows.length), detail: statusFilter === "all" ? "All statuses" : statusFilter },
+      { label: "Last update", value: niceDate(currentMedsLastUpdated), detail: "Current regimen timestamp" }
+    ],
+    asideLabel: "Resolution",
+    asideTitle: "Conflicts stay visible, but organised",
+    asideBody: "The current list favours the latest active record while preserving supporting history."
+  });
 
   root.innerHTML = resolved.length
     ? `
+      <div class="section-scene">
+        ${medicationSpotlight}
+      </div>
       <div class="card" style="margin-bottom:12px;">
         <h3>Current medications (resolved from stored data)</h3>
         <div class="subtle">
@@ -5405,7 +6021,7 @@ function renderMedications(root, data, context) {
         <div class="subtle" style="margin-top:8px;">Showing ${rows.length} of ${resolved.length} medication rows.</div>
       </div>
       <div class="table-wrap">
-        <table>
+        <table class="medication-list-table">
           <caption class="sr-only">Medication list with current and historical entries</caption>
           <thead>
             <tr>
@@ -5446,7 +6062,12 @@ function renderMedications(root, data, context) {
       ${rows.length ? "" : `<div class="empty" style="margin-top:12px;">No medications match this filter.</div>`}
       <div class="subtle" style="margin-top:8px;">Underlying medication records stored: ${recordCount}. Current list rows: ${current.length}.</div>
     `
-    : `<div class="empty">No medications added yet.</div>`;
+    : `
+      <div class="section-scene">
+        ${medicationSpotlight}
+      </div>
+      <div class="empty">No medications added yet.</div>
+    `;
 
   root.querySelector("#medicationsSearchInput")?.addEventListener("input", (event) => {
     app.ui.medicationsFilterSearch = String(event.target.value || "");
@@ -5564,7 +6185,7 @@ function openMedicationModal(medicationId, context) {
         <textarea id="modalMedInteractions" ${editable ? "" : "disabled"}>${escapeHtml(med.interactionsNotes || "")}</textarea>
         <label style="margin-top:10px;">Contraindications notes</label>
         <textarea id="modalMedContraindications" ${editable ? "" : "disabled"}>${escapeHtml(med.contraindicationsNotes || "")}</textarea>
-        <label style="margin-top:10px;">Notes / questions for psychiatrist or GP</label>
+        <label style="margin-top:10px;">Notes / questions for clinician or GP</label>
         <textarea id="modalMedQuestions" ${editable ? "" : "disabled"}>${escapeHtml(med.questions || "")}</textarea>
         <p class="safety-footnote">Clinical interpretation may vary. Discuss with prescriber.</p>
       </article>
@@ -5888,8 +6509,32 @@ function renderChanges(root, data, context) {
       if (changeSortBy === "reason") return String(left.reasonForChange || left.reason || "").localeCompare(String(right.reasonForChange || right.reason || ""));
       return String(right.date || "").localeCompare(String(left.date || ""));
     });
+  const historySpotlight = renderSectionSpotlight({
+    tone: "teal",
+    icon: "syringe",
+    eyebrow: "History and changes",
+    title: "Medication history rebuilt for faster review",
+    description: "This page now gives medication changes and timeline history a clearer frame so the date window, event filters, and interpretation details feel easier to follow.",
+    chips: [
+      historyWindow.label,
+      historyFilters.eventType === "all" ? "All event types" : HISTORY_EVENT_TYPE_OPTIONS.find((option) => option.value === historyFilters.eventType)?.label || historyFilters.eventType,
+      context.readOnly ? "Read-only review" : "Owner review tools"
+    ],
+    stats: [
+      { label: "Timeline events", value: String(timelineEvents.length), detail: "Current window" },
+      { label: "Change log rows", value: String(rows.length), detail: `${(data.changes || []).length} stored` },
+      { label: "Medications", value: String(medicationOptions.length), detail: "Filter targets" },
+      { label: "Grouped days", value: String(groupedEntries.length), detail: "Date buckets" }
+    ],
+    asideLabel: "Review note",
+    asideTitle: "Scan dates first, then interpretation",
+    asideBody: "The timeline keeps chronology visible while interpretation cards stay available when needed."
+  });
 
   root.innerHTML = `
+    <div class="section-scene">
+      ${historySpotlight}
+    </div>
     <div class="card history-controls-card">
       <div class="card-head-row">
         <div>
@@ -5940,7 +6585,7 @@ function renderChanges(root, data, context) {
 
     <article class="card history-timeline-card">
       <h3>Chronological timeline</h3>
-      <div class="subtle">Grouped by date for faster psychiatrist review.</div>
+      <div class="subtle">Grouped by date for faster clinician review.</div>
       ${groupedEntries.length ? `
         <div class="history-day-groups">
           ${groupedEntries.map(([date, events]) => `
@@ -6186,8 +6831,32 @@ function renderCheckins(root, data, context) {
   const today = getLocalDateKey(new Date());
   const todayCheckin = data.checkins.find((entry) => entry.date === today);
   const sorted = data.checkins.slice().sort((a, b) => b.date.localeCompare(a.date));
+  const latestLogged = sorted[0] || null;
+  const checkinSpotlight = renderSectionSpotlight({
+    tone: "rose",
+    icon: "heart",
+    eyebrow: "Wellbeing history",
+    title: "Check-ins presented as a clearer symptom timeline",
+    description: "Daily wellbeing entries now sit inside a stronger visual frame so today’s status, recent entries, and longer patterns are easier to scan on both desktop and mobile.",
+    chips: [
+      todayCheckin ? "Today logged" : "Today pending",
+      context.readOnly ? "Read-only review" : "Owner capture",
+      `${sorted.length} total entr${sorted.length === 1 ? "y" : "ies"}`
+    ],
+    stats: [
+      { label: "Today", value: todayCheckin ? `${todayCheckin.mood}/10 mood` : "Pending", detail: todayCheckin ? `${todayCheckin.anxiety}/10 anxiety` : "Quick check-in not done" },
+      { label: "Latest", value: latestLogged ? niceDate(latestLogged.date) : "None", detail: latestLogged ? `${latestLogged.entryMode === "quick_30s" ? "30-second" : "Full"} entry` : "No check-ins yet" },
+      { label: "Total entries", value: String(sorted.length), detail: "Saved check-ins" }
+    ],
+    asideLabel: "Why it matters",
+    asideTitle: "A small daily habit supports cleaner consult review",
+    asideBody: "Structured check-ins make mood, anxiety, focus, and sleep easier to compare over time."
+  });
 
   root.innerHTML = `
+    <div class="section-scene">
+      ${checkinSpotlight}
+    </div>
     <div class="card">
       <h3>Today’s check-in summary</h3>
       ${todayCheckin ? `
@@ -6258,7 +6927,7 @@ function renderCheckins(root, data, context) {
   });
 }
 
-function renderNotes(root, data) {
+function renderNotes(root, data, context) {
   const grouped = {
     effect: [],
     side_effect: [],
@@ -6290,8 +6959,35 @@ function renderNotes(root, data) {
     })
     .filter(Boolean)
     .join("");
+  const totalNotes = Object.values(grouped).reduce((count, items) => count + items.length, 0);
+  const visibleCategories = Object.values(grouped).filter((items) => items.length).length;
+  const notesSpotlight = renderSectionSpotlight({
+    tone: context?.readOnly ? "teal" : "ocean",
+    icon: "note",
+    eyebrow: "Effects notes",
+    title: context?.readOnly ? "Notes arranged for cleaner review" : "Personal notes organised into clearer clinical categories",
+    description: "Effects, side effects, journal-style notes, and other observations are grouped more deliberately so they feel easier to scan and less like a raw dump of text.",
+    chips: [
+      context?.readOnly ? "Sensitive detail may be hidden" : "Full owner detail",
+      `${visibleCategories} visible categor${visibleCategories === 1 ? "y" : "ies"}`,
+      `${totalNotes} note${totalNotes === 1 ? "" : "s"}`
+    ],
+    stats: [
+      { label: "Effect notes", value: String(grouped.effect.length), detail: "Positive or neutral effects" },
+      { label: "Side effects", value: String(grouped.side_effect.length), detail: "Logged reactions" },
+      { label: "Private notes", value: String(grouped.journal.length + grouped.libido.length + grouped.substance.length), detail: context?.readOnly ? "Filtered by permissions" : "Owner-only detail" }
+    ],
+    asideLabel: "Review use",
+    asideTitle: "Grouped note types reduce noise",
+    asideBody: "Clinician review can move through note types more quickly when personal observations are clustered."
+  });
 
-  root.innerHTML = blocks || `<div class="empty">No notes available for this view.${getActiveContext().readOnly ? "" : ` <button class="btn btn-secondary small" type="button" data-empty-action="note">Add effects note</button>`}</div>`;
+  root.innerHTML = `
+    <div class="section-scene">
+      ${notesSpotlight}
+    </div>
+    ${blocks || `<div class="empty">No notes available for this view.${getActiveContext().readOnly ? "" : ` <button class="btn btn-secondary small" type="button" data-empty-action="note">Add effects note</button>`}</div>`}
+  `;
 
   root.querySelectorAll("[data-empty-action='note']").forEach((button) => {
     button.addEventListener("click", () => {
@@ -6502,7 +7198,7 @@ function buildConsultClipboardSummary({
   focusText = ""
 }) {
   const lines = [];
-  lines.push("Medication Tracker - Consult Summary");
+  lines.push("CarePanel - Consult Summary");
   lines.push(`Window: ${windowLabel}`);
   lines.push("");
   lines.push("Current medications");
@@ -6658,7 +7354,7 @@ function renderConsult(root, data, context) {
       id: "prepare",
       label: "1. Prepare",
       title: "Prepare",
-      hint: "Set your review window, confirm open questions, and define what to discuss."
+      hint: "Set your review window, confirm the agenda, and check open questions."
     },
     {
       id: "review",
@@ -6669,8 +7365,8 @@ function renderConsult(root, data, context) {
     {
       id: "decide",
       label: "3. Decide",
-      title: "Decide",
-      hint: "Capture decisions, plan next steps, and save appointment markers."
+      title: "Plan",
+      hint: "Capture decisions, next steps, and appointment markers."
     },
     {
       id: "export",
@@ -6806,13 +7502,37 @@ function renderConsult(root, data, context) {
     focusText
   });
   const appointmentPackSummary = buildAppointmentPackSummary(data);
+  const consultSpotlight = renderSectionSpotlight({
+    tone: context.readOnly ? "teal" : "sky",
+    icon: "stethoscope",
+    eyebrow: "Clinician review workspace",
+    title: "A calmer review surface for appointments and shared reading",
+    description: "The review tab now carries its own stronger identity so medication context, changes, questions, and decision-making feel like part of one professional workflow.",
+    chips: [
+      currentStepMeta.title,
+      windowRange.label,
+      context.readOnly ? "Read-only review" : "Owner review mode"
+    ],
+    stats: [
+      { label: "Current step", value: `${activeStepIndex + 1}/${consultWorkflowSteps.length}`, detail: currentStepMeta.title },
+      { label: "Current meds", value: String(meds.length), detail: "Review table" },
+      { label: "Open questions", value: String(questions.filter((entry) => String(entry.status || "").toLowerCase() === "open").length), detail: "For consult" },
+      { label: "Logged adherence", value: adherencePct === null ? "-" : `${adherencePct}%`, detail: `${takenCount} taken / ${skippedCount} skipped` }
+    ],
+    asideLabel: "Design goal",
+    asideTitle: context.readOnly ? "Owner controls stay subdued here" : "Review is intentionally cleaner than daily entry",
+    asideBody: "The page is structured so a psychiatrist or clinician can scan quickly without searching through owner-only admin clutter."
+  });
 
   root.innerHTML = `
+    <div class="section-scene">
+      ${consultSpotlight}
+    </div>
     <article class="card consult-workflow">
       <div class="card-head-row">
         <div>
-          <h3>Consult workflow</h3>
-          <div class="subtle">Follow each step in order for a cleaner appointment flow.</div>
+          <h3>Review workflow</h3>
+          <div class="subtle">Move from context to review to plan without hunting across the app.</div>
         </div>
         <div class="pill-badge status-upcoming">Step ${activeStepIndex + 1} of ${consultWorkflowSteps.length}: ${escapeHtml(currentStepMeta.title)}</div>
       </div>
@@ -6835,7 +7555,7 @@ function renderConsult(root, data, context) {
     <article class="card consult-toolbar">
       <div class="card-head-row">
         <div>
-          <h3>Consult controls</h3>
+        <h3>Review filters</h3>
           <div class="subtle">${escapeHtml(windowRange.label)} · tune the window before reviewing each step.</div>
         </div>
       </div>
@@ -6873,7 +7593,7 @@ function renderConsult(root, data, context) {
     <div class="consult-grid">
       ${stepVisible("prepare", "review", "decide") ? confidenceBanner : ""}
       <article class="card consult-section consult-kpi-overview consult-section-full consult-pane ${stepClass("prepare", "review", "decide")}" id="consult-snapshot" ${stepAttrs("prepare", "review", "decide")}>
-        <h3>Consult snapshot</h3>
+        <h3>Review snapshot</h3>
         <div class="summary-strip-grid consult-summary-strip">
           <div class="summary-strip-item">
             <div class="summary-strip-label">Current medications</div>
@@ -7052,8 +7772,8 @@ function renderConsult(root, data, context) {
       <article class="card consult-section consult-section-side consult-pane ${stepClass("prepare", "decide", "export")}" id="consult-questions" ${stepAttrs("prepare", "decide", "export")}>
         <div class="card-head-row">
           <div>
-            <h3>Question queue</h3>
-            <div class="subtle">Open topics for psychiatrist review during consult.</div>
+            <h3>Questions to discuss</h3>
+            <div class="subtle">Open topics to bring into the appointment.</div>
           </div>
           ${ownerEditable ? `<button class="btn btn-secondary small" type="button" data-consult-focus-questions="1">Add question</button>` : ""}
         </div>
@@ -7179,15 +7899,15 @@ function renderConsult(root, data, context) {
       <article class="card consult-section consult-section-side consult-pane ${stepClass("prepare", "decide", "export")}" id="consult-focus" ${stepAttrs("prepare", "decide", "export")}>
         <div class="card-head-row">
           <div>
-            <h3>What I want to discuss today</h3>
-            <div class="subtle">Owner editable consult agenda for appointment focus.</div>
+            <h3>Appointment agenda</h3>
+            <div class="subtle">Owner-editable summary of the main things to cover.</div>
           </div>
         </div>
         ${ownerEditable ? `
           <details class="consult-editor" id="consultFocusEditor">
-            <summary>${focusText ? "Edit consult focus" : "Add consult focus"}</summary>
+            <summary>${focusText ? "Edit appointment agenda" : "Add appointment agenda"}</summary>
           <form id="consultFocusForm" class="edit-inline-form consult-form consult-form-noborder">
-            <label for="consultDiscussToday">Consult focus text</label>
+            <label for="consultDiscussToday">Agenda text</label>
             <textarea id="consultDiscussToday" name="discussToday" maxlength="500" placeholder="Key goals, concerns, and decision points for this appointment.">${escapeHtml(focusText)}</textarea>
             <div class="inline-row"><button class="btn btn-primary small" type="submit">Save</button><button class="btn btn-ghost small" type="reset">Cancel</button></div>
           </form>
@@ -7220,7 +7940,7 @@ function renderConsult(root, data, context) {
             <input type="hidden" name="editingId" value="${escapeHtml(editingAppointment?.id || "")}">
             <div class="field-grid">
               <div><label>Date</label><input name="appointmentDate" type="date" value="${escapeHtml(editingAppointment?.appointmentDate || isoDate(new Date()))}" required></div>
-              <div><label>Type</label><select name="appointmentType">${["psychiatrist", "gp", "other"].map((entry) => `<option value="${entry}" ${String(editingAppointment?.appointmentType || "psychiatrist") === entry ? "selected" : ""}>${entry}</option>`).join("")}</select></div>
+              <div><label>Type</label><select name="appointmentType">${["clinician", "gp", "other"].map((entry) => `<option value="${entry}" ${String(editingAppointment?.appointmentType || "clinician") === entry ? "selected" : ""}>${entry}</option>`).join("")}</select></div>
               <div style="grid-column: 1 / -1;"><label>Summary note (optional)</label><textarea name="summaryNote">${escapeHtml(editingAppointment?.summaryNote || "")}</textarea></div>
             </div>
             <div class="inline-row">
@@ -7244,7 +7964,7 @@ function renderConsult(root, data, context) {
               <div><label>Medication</label><input name="medicationName" list="commonMedicationNames" value="${escapeHtml(editingExperiment?.medicationName || "")}" required></div>
               <div><label>Old dose</label><input name="oldDose" value="${escapeHtml(editingExperiment?.oldDose || "")}" required></div>
               <div><label>New dose</label><input name="newDose" value="${escapeHtml(editingExperiment?.newDose || "")}" required></div>
-              <div><label>Changed by</label><select name="changedBy">${["self", "psychiatrist", "gp", "other"].map((role) => `<option value="${role}" ${String(editingExperiment?.changedBy || "self") === role ? "selected" : ""}>${role}</option>`).join("")}</select></div>
+              <div><label>Changed by</label><select name="changedBy">${["self", "clinician", "gp", "other"].map((role) => `<option value="${role}" ${String(editingExperiment?.changedBy || "self") === role ? "selected" : ""}>${role}</option>`).join("")}</select></div>
               <div><label>Route (optional)</label><input name="route" value="${escapeHtml(editingExperiment?.route || "")}"></div>
               <div><label>Schedule change (optional)</label><input name="scheduleChange" value="${escapeHtml(editingExperiment?.scheduleChange || "")}" placeholder="e.g. moved PM dose to 14:00"></div>
               <div style="grid-column: 1 / -1;"><label>Reason for change</label><textarea name="reasonForChange" required>${escapeHtml(editingExperiment?.reasonForChange || "")}</textarea></div>
@@ -7262,7 +7982,7 @@ function renderConsult(root, data, context) {
             </div>
           </form>
           </details>
-        ` : `<div class="subtle">Experiment log is editable in owner mode only.</div>`}
+        ` : `<div class="subtle">Experiment log is editable with owner access only.</div>`}
       </article>
       <article class="card consult-section consult-section-full consult-pane consult-export-pane ${stepClass("export")}" id="consult-export" ${stepAttrs("export")}>
         <div class="card-head-row">
@@ -7749,8 +8469,31 @@ function renderTimeline(root, data) {
   if (!app.ui.comparisonChangeId && filtered.changes[0]) {
     app.ui.comparisonChangeId = filtered.changes[0].id;
   }
+  const timelineSpotlight = renderSectionSpotlight({
+    tone: "sky",
+    icon: "chart",
+    eyebrow: "Charts and timeline",
+    title: "Trends, comparisons, and change markers in one analysis surface",
+    description: "The timeline now reads more like an analysis workspace, with clearer date windows, faster chart loading, and a stronger before/after comparison area.",
+    chips: [
+      showAdvancedTimeline ? "Personal depth" : "Clinical focus",
+      app.ui.timelineFilters.medicationId === "all" ? "All medications" : "Single medication filter",
+      `${checkins.length} check-in point${checkins.length === 1 ? "" : "s"}`
+    ],
+    stats: [
+      { label: "Changes", value: String(filtered.changes.length), detail: "In view" },
+      { label: "Adherence rows", value: String(filtered.adherence.length), detail: "Timeline window" },
+      { label: "Data confidence", value: resolveDataConfidence(quality).label, detail: "Trend quality" }
+    ],
+    asideLabel: "Use case",
+    asideTitle: "Start broad, then narrow to one medication",
+    asideBody: "The comparison area is built to make dose changes easier to interpret without over-reading sparse data."
+  });
 
   root.innerHTML = `
+    <div class="section-scene">
+      ${timelineSpotlight}
+    </div>
     <div class="grid" style="grid-template-columns: 1fr; gap: 12px;">
       <article class="card">
         <h3>Timeline filters</h3>
@@ -8163,7 +8906,7 @@ function renderBeforeAfterComparison(data) {
 
 function renderEntryWorkflows(root, data, context) {
   if (context.readOnly) {
-    root.innerHTML = `<div class="empty">Entry workflows are disabled in read-only mode.</div>`;
+    root.innerHTML = `<div class="empty">Entry workflows are disabled in read-only access.</div>`;
     return;
   }
 
@@ -8173,8 +8916,32 @@ function renderEntryWorkflows(root, data, context) {
     { id: "note", label: "Log Effects / Side Effects Note" },
     { id: "checkin", label: "Daily Wellbeing Check-in" }
   ];
+  const activeWorkflowLabel = workflowTabs.find((workflow) => workflow.id === app.ui.entryWorkflow)?.label || "Record";
+  const entrySpotlight = renderSectionSpotlight({
+    tone: "ocean",
+    icon: "plus",
+    eyebrow: "Owner actions",
+    title: "Structured recording designed to feel calmer and clearer",
+    description: "Record workflows now sit inside a more deliberate section frame so medications, changes, notes, and check-ins feel like one coherent entry system.",
+    chips: [
+      activeWorkflowLabel,
+      app.ui.checkinQuickMode ? "30-second mode" : "Standard mode",
+      renderDraftSaveLabel()
+    ],
+    stats: [
+      { label: "Current workflow", value: activeWorkflowLabel, detail: "Selected tab" },
+      { label: "Quick entry", value: app.ui.checkinQuickMode ? "On" : "Off", detail: "For check-ins" },
+      { label: "Drafts", value: "Autosave", detail: app.ui.lastDraftSavedAt ? "Recent draft saved" : "Ready" }
+    ],
+    asideLabel: "Why it changed",
+    asideTitle: "Capture should feel organised, not heavy",
+    asideBody: "This area is intentionally more guided so common entry tasks are easier to start and finish."
+  });
 
   root.innerHTML = `
+    <div class="section-scene">
+      ${entrySpotlight}
+    </div>
     <div class="chip-group">
       ${workflowTabs.map((workflow) => `<button class="chip ${app.ui.entryWorkflow === workflow.id ? "active" : ""}" type="button" data-workflow="${workflow.id}">${workflow.label}</button>`).join("")}
     </div>
@@ -8521,7 +9288,7 @@ function renderWorkflowForm(data) {
           <div>
             <label>Changed by</label>
             <select name="changedBy">
-              ${["self", "psychiatrist", "gp", "clinician", "other"].map((role) => `<option value="${role}" ${String(draft.changedBy || "self") === role ? "selected" : ""}>${escapeHtml(role)}</option>`).join("")}
+              ${["self", "gp", "clinician", "other"].map((role) => `<option value="${role}" ${String(draft.changedBy || "self") === role ? "selected" : ""}>${escapeHtml(role)}</option>`).join("")}
             </select>
           </div>
           <div>
@@ -8668,7 +9435,7 @@ function renderWorkflowForm(data) {
       <h3>Daily Wellbeing Check-in</h3>
       <div class="checkin-mode-switch">
         <button class="btn btn-primary small" type="button" data-checkin-mode="full">Full check-in</button>
-        <button class="btn btn-ghost small" type="button" data-checkin-mode="quick">30-second mode</button>
+        <button class="btn btn-ghost small" type="button" data-checkin-mode="quick">30-second check-in</button>
       </div>
       <div class="inline-row">
         <button class="btn btn-ghost small" type="button" id="applyLastCheckinDefaults">Use last check-in values</button>
@@ -8789,11 +9556,11 @@ function renderQuickCheckin30sForm() {
 
   return `
     <form id="formCheckinQuick" class="card quick30-card">
-      <h3>Daily Wellbeing Check-in (30-second mode)</h3>
+      <h3>Daily Wellbeing Check-in (30-second check-in)</h3>
       <p class="helper-text">Three taps only: mood, anxiety, sleep. The check-in saves automatically when all three are selected.</p>
       <div class="checkin-mode-switch">
         <button class="btn btn-ghost small" type="button" data-checkin-mode="full">Full check-in</button>
-        <button class="btn btn-primary small" type="button" data-checkin-mode="quick">30-second mode</button>
+        <button class="btn btn-primary small" type="button" data-checkin-mode="quick">30-second check-in</button>
       </div>
       <div class="field-grid">
         <div>
@@ -8974,10 +9741,10 @@ function bindWorkflowFormHandlers(root, data) {
         dateEffective: values.date,
         oldDose: values.oldDose,
         newDose: values.newDose,
-        reason: values.reason,
-        reasonForChange: values.reason,
+        reason: normalizeLegacyRoleCopy(values.reason),
+        reasonForChange: normalizeLegacyRoleCopy(values.reason),
         route: values.route || "",
-        changedBy: values.changedBy || "self",
+        changedBy: normalizeChangedByValue(values.changedBy),
         expectedEffects: values.expectedEffects || "",
         monitorFor: values.monitorFor || values.monitor || "",
         reviewDate: values.reviewDate || "",
@@ -9001,8 +9768,8 @@ function bindWorkflowFormHandlers(root, data) {
         oldDose: values.oldDose,
         newDose: values.newDose,
         route: values.route || "",
-        changedBy: values.changedBy || "self",
-        reasonForChange: values.reason,
+        changedBy: normalizeChangedByValue(values.changedBy),
+        reasonForChange: normalizeLegacyRoleCopy(values.reason),
         expectedBenefit: values.expectedEffects || "",
         expectedSideEffects: "",
         whatToMonitor: values.monitorFor || values.monitor || "",
@@ -9365,7 +10132,7 @@ function bindWorkflowFormHandlers(root, data) {
 
 function renderSharing(root, _data, context) {
   if (context.readOnly) {
-    root.innerHTML = `<div class="empty">Sharing management is available in owner mode only.</div>`;
+    root.innerHTML = `<div class="empty">Sharing management is available with owner access only.</div>`;
     return;
   }
 
@@ -9397,7 +10164,7 @@ function renderSharing(root, _data, context) {
         ? "Sign in required"
       : app.sync.status === "error"
         ? `Error: ${app.sync.lastError || "Unable to sync"}`
-        : "Local-only mode";
+        : "Local-only build";
   const signedInRole = String(app.syncConfig.authRole || "").toLowerCase();
   const signedInName = app.syncConfig.authUser?.name || app.syncConfig.authUser?.email || "";
   const signedInSummary = hasCloudSession()
@@ -9411,151 +10178,56 @@ function renderSharing(root, _data, context) {
   const cloudAudit = Array.isArray(app.cloud.audit) ? app.cloud.audit : [];
   const cloudNotifications = Array.isArray(app.cloud.notifications) ? app.cloud.notifications : [];
   const isOwnerSession = signedInRole === "owner";
+  const sharingSpotlight = renderSectionSpotlight({
+    tone: "teal",
+    icon: "share",
+    eyebrow: "Sharing and review access",
+    title: "Controlled read-only sharing with a cleaner owner handoff",
+    description: "Sharing now reads more like an access-control workspace, with preview, visibility, and recipient setup framed more clearly than before.",
+    chips: [
+      siteVisibilityLabel,
+      signedInSummary,
+      shareLinksForPreview.length ? "Preview available" : "Create first link"
+    ],
+    stats: [
+      { label: "Share links", value: String(shareLinksForPreview.length), detail: "Configured recipients" },
+      { label: "Sync", value: syncStatus, detail: "Cloud state" },
+      { label: "Risk alerts", value: reminderSettings.riskAlertsEnabled ? "On" : "Off", detail: `Threshold ${reminderSettings.riskAlertsMinLevel}` }
+    ],
+    asideLabel: "Owner note",
+    asideTitle: "Preview before sending",
+    asideBody: "The preview path is designed to keep recipient access understandable before any link is shared."
+  });
 
   root.innerHTML = `
-    <div id="cloudAccountCard" class="card">
-      <h3>Cloud account and invites</h3>
-      ${LOCAL_ONLY_MODE
-        ? `<div class="context-block">
-            Local-only mode is active in this build, so cloud registration, sign-in, and invites are disabled here.
-            To enable cloud account + invites, set <code>LOCAL_ONLY_MODE = false</code> in <code>app.js</code> and connect the API endpoint.
-          </div>`
-        : ""}
-      <div class="${LOCAL_ONLY_MODE ? "hidden" : ""}">
-      <div class="subtle">${escapeHtml(signedInSummary)}</div>
-      <div class="inline-row" style="margin-top:10px;">
-        <button class="btn btn-ghost" type="button" id="refreshCloudMetaButton" ${syncDisabledAttr}>Refresh cloud status</button>
-        ${hasCloudSession() ? `<button class="btn btn-secondary" type="button" id="cloudLogoutButton" ${syncDisabledAttr}>Sign out</button>` : ""}
-      </div>
-
-      ${hasCloudSession() ? `
-        <div class="field-grid" style="margin-top:12px;">
-          <div>
-            <label>Cloud account role</label>
-            <div class="subtle">${escapeHtml(signedInRole || "viewer")}</div>
-          </div>
-          <div>
-            <label>Account ID</label>
-            <div class="subtle">${escapeHtml(app.syncConfig.accountId || "default")}</div>
-          </div>
-        </div>
-      ` : `
-        <div class="field-grid" style="margin-top:12px;">
-          <form id="cloudRegisterForm">
-            <h4>Create owner account</h4>
-            <label>Email</label>
-            <input name="email" type="email" required placeholder="owner@example.com" ${syncDisabledAttr}>
-            <label>Password</label>
-            <input name="password" type="password" minlength="8" required ${syncDisabledAttr}>
-            <label>Name</label>
-            <input name="name" placeholder="Owner name" ${syncDisabledAttr}>
-            <label>Account ID</label>
-            <input name="accountId" value="${escapeHtml(app.syncConfig.accountId || "default")}" ${syncDisabledAttr}>
-            <button class="btn btn-secondary" type="submit" style="margin-top:8px;" ${syncDisabledAttr}>Register owner</button>
-          </form>
-          <form id="cloudLoginForm">
-            <h4>Sign in</h4>
-            <label>Email</label>
-            <input name="email" type="email" required placeholder="you@example.com" ${syncDisabledAttr}>
-            <label>Password</label>
-            <input name="password" type="password" required ${syncDisabledAttr}>
-            <label>Account ID (optional)</label>
-            <input name="accountId" value="${escapeHtml(app.syncConfig.accountId || "default")}" ${syncDisabledAttr}>
-            <button class="btn btn-primary" type="submit" style="margin-top:8px;" ${syncDisabledAttr}>Sign in</button>
-          </form>
-        </div>
-        <form id="cloudAcceptInviteForm" style="margin-top:12px;">
-          <h4>Accept invite</h4>
-          <div class="field-grid">
-            <div>
-              <label>Invite token</label>
-              <input name="token" value="${escapeHtml(app.drafts.cloudInviteToken || "")}" placeholder="Paste invite token" ${syncDisabledAttr}>
-            </div>
-            <div>
-              <label>Password</label>
-              <input name="password" type="password" minlength="8" placeholder="Required (new user or existing account check)" ${syncDisabledAttr}>
-            </div>
-            <div>
-              <label>Name (for first-time account)</label>
-              <input name="name" placeholder="Optional display name" ${syncDisabledAttr}>
-            </div>
-          </div>
-          <button class="btn btn-secondary" type="submit" style="margin-top:8px;" ${syncDisabledAttr}>Accept invite</button>
-        </form>
-      `}
-
-      ${hasCloudSession() && isOwnerSession ? `
-        <form id="cloudCreateInviteForm" style="margin-top:12px;">
-          <h4>Invite collaborator</h4>
-          <div class="field-grid">
-            <div>
-              <label>Email</label>
-              <input name="email" type="email" required placeholder="clinician@example.com">
-            </div>
-            <div>
-              <label>Name</label>
-              <input name="name" placeholder="Recipient name">
-            </div>
-            <div>
-              <label>Role</label>
-              <select name="role">
-                <option value="viewer">Viewer</option>
-                <option value="family">Family</option>
-                <option value="clinician">Clinician</option>
-              </select>
-            </div>
-            <div>
-              <label>Expiry</label>
-              <input name="expiresAt" type="date" value="${escapeHtml(defaultExpiry)}">
-            </div>
-          </div>
-          <button class="btn btn-secondary" type="submit" style="margin-top:8px;">Create invite</button>
-        </form>
-        <div style="margin-top:12px;">
-          <h4>Pending and recent invites</h4>
-          ${cloudInvites.length ? `
-            <div class="timeline-list">
-              ${cloudInvites.slice(0, 20).map((invite) => {
-                const status = invite.revokedAt ? "revoked" : invite.acceptedAt ? "accepted" : (invite.expiresAt && new Date(invite.expiresAt).getTime() < Date.now() ? "expired" : "pending");
-                return `
-                  <div class="timeline-item">
-                    <div><strong>${escapeHtml(invite.email || "Invite")}</strong> · ${escapeHtml(invite.role || "viewer")} · ${escapeHtml(status)}</div>
-                    <div class="subtle">Created ${escapeHtml(niceDateTime(invite.createdAt || ""))}${invite.acceptedAt ? ` · accepted ${escapeHtml(niceDateTime(invite.acceptedAt))}` : ""}</div>
-                    ${status === "pending" ? `<button class="btn btn-ghost small" type="button" data-cloud-revoke-invite="${escapeHtml(invite.id)}">Revoke</button>` : ""}
-                  </div>
-                `;
-              }).join("")}
-            </div>
-          ` : `<div class="subtle">No cloud invites yet.</div>`}
-        </div>
-      ` : ""}
-
-      ${hasCloudSession() ? `
-        <div style="margin-top:12px;">
-          <h4>Recent cloud notifications</h4>
-          ${cloudNotifications.length
-            ? `<ul class="timeline-list">${cloudNotifications.slice(0, 8).map((item) => `<li>${escapeHtml(item.message || item.type || "Notification")} · ${escapeHtml(niceDateTime(item.createdAt || ""))}</li>`).join("")}</ul>`
-            : `<div class="subtle">No cloud notifications yet.</div>`}
-        </div>
-      ` : ""}
-
-      ${hasCloudSession() && isOwnerSession ? `
-        <div style="margin-top:12px;">
-          <h4>Recent audit events</h4>
-          ${cloudAudit.length
-            ? `<ul class="timeline-list">${cloudAudit.slice(0, 8).map((item) => `<li>${escapeHtml(item.action || "event")} · ${escapeHtml(niceDateTime(item.at || ""))}</li>`).join("")}</ul>`
-            : `<div class="subtle">No audit events yet.</div>`}
-        </div>
-      ` : ""}
-      </div>
+    <div class="section-scene">
+      ${sharingSpotlight}
     </div>
+    <article class="card card-accent card-accent-ocean share-overview-card">
+      <div class="card-head-row">
+        <div>
+          <h3>Share clean review links</h3>
+          <div class="subtle">Keep this page focused on recipients, access, and preview. Owner preferences and risk settings now live in Settings.</div>
+        </div>
+        <button class="btn btn-ghost small" type="button" id="openSettingsFromShare">Open settings</button>
+      </div>
+      <div class="inline-row">
+        <span class="kpi-badge">${shareLinksForPreview.length} link${shareLinksForPreview.length === 1 ? "" : "s"}</span>
+        <span class="kpi-badge">${escapeHtml(siteVisibilityLabel)}</span>
+        <span class="kpi-badge">${escapeHtml(signedInSummary)}</span>
+      </div>
+      <div class="share-includes-summary">
+        <strong>Shared reviewers see:</strong>
+        <span>current medications, recent medication changes, check-in trends, consult questions, and decision summaries.</span>
+      </div>
+    </article>
 
     <div class="card">
-      <h3>Preview shared link</h3>
-      <p class="subtle">Open a recipient-safe read-only preview from here.</p>
-      <div class="share-includes-summary">
-        <strong>This shared view includes:</strong>
-        <span>current medications, recent medication changes, check-in trends, consult questions, and decision summaries.</span>
+      <div class="card-head-row">
+        <div>
+          <h3>Preview shared link</h3>
+          <div class="subtle">Open the recipient-safe review exactly as someone else would see it.</div>
+        </div>
       </div>
       ${shareLinksForPreview.length ? `
         <div class="field-grid">
@@ -9578,222 +10250,12 @@ function renderSharing(root, _data, context) {
     </div>
 
     <div class="card">
-      <h3>Settings, sync + reminders</h3>
-      <div class="field-grid">
+      <div class="card-head-row">
         <div>
-          <label for="ownerDisplayName">Display name (optional)</label>
-          <input id="ownerDisplayName" value="${escapeHtml(ownerProfile.displayName)}" placeholder="How you want the greeting to appear">
-          <p class="helper-text">Used for dashboard greeting only on this device.</p>
-        </div>
-        <div>
-          <label class="check-item">
-            <input type="checkbox" id="personalizationEnabled" ${ownerProfile.personalizationEnabled ? "checked" : ""}>
-            <span>Enable personalized greeting and consistency feedback</span>
-          </label>
-        </div>
-        <div>
-          <label for="themePreference">Theme</label>
-          <select id="themePreference">
-            <option value="light" ${ownerProfile.themePreference === "light" ? "selected" : ""}>Light</option>
-            <option value="dark" ${ownerProfile.themePreference === "dark" ? "selected" : ""}>Dark</option>
-            <option value="system" ${ownerProfile.themePreference === "system" ? "selected" : ""}>System</option>
-          </select>
-          <p class="helper-text">Applies instantly and stays saved on this device.</p>
+          <h3>Create read-only link</h3>
+          <div class="subtle">Choose who the link is for, where it should land, and what private detail should stay hidden.</div>
         </div>
       </div>
-      <div class="inline-row" style="margin-top:10px;">
-        <button class="btn btn-secondary" type="button" id="saveProfileSettingsButton">Save personalization</button>
-      </div>
-      <p class="helper-text" style="margin-top:8px;">Search visibility: ${escapeHtml(siteVisibilityLabel)}</p>
-      ${LOCAL_ONLY_MODE
-        ? `<p class="helper-text" style="margin-top:10px;">Local-only mode is active. No login or cloud account setup is required.</p>`
-        : ""}
-
-      <div id="syncSettingsBlock" class="${LOCAL_ONLY_MODE ? "hidden" : ""}">
-        <hr class="soft">
-
-        <div class="field-grid">
-          <div>
-            <label>Enable cloud sync</label>
-            <label class="check-item">
-              <input type="checkbox" id="syncEnabled" ${app.syncConfig.enabled ? "checked" : ""} ${syncDisabledAttr}>
-              <span>Use backend persistence for multi-device access</span>
-            </label>
-          </div>
-          <div>
-            <label>Sync status</label>
-            <div class="subtle">${escapeHtml(syncStatus)}</div>
-          </div>
-          <div>
-            <label for="syncEndpoint">API endpoint</label>
-            <input id="syncEndpoint" value="${escapeHtml(app.syncConfig.endpoint || "")}" placeholder="https://your-api.example.com" ${syncDisabledAttr}>
-            <p class="helper-text">${escapeHtml(syncHelperText)}</p>
-          </div>
-          <div>
-            <label for="syncAccountId">Account ID</label>
-            <input id="syncAccountId" value="${escapeHtml(app.syncConfig.accountId || "default")}" ${syncDisabledAttr}>
-          </div>
-          <div style="grid-column: 1 / -1;">
-            <label for="syncOwnerKey">Owner API key</label>
-            <input id="syncOwnerKey" type="password" value="${escapeHtml(app.syncConfig.ownerKey || "")}" placeholder="Owner key for write access" ${syncDisabledAttr}>
-          </div>
-        </div>
-        <div class="inline-row" style="margin-top:10px;">
-          <button class="btn btn-secondary" type="button" id="saveSyncConfigButton" ${syncDisabledAttr}>Save sync settings</button>
-          <button class="btn btn-ghost" type="button" id="syncNowButton" ${syncDisabledAttr}>Sync now</button>
-        </div>
-      </div>
-
-      <hr class="soft">
-
-      <div class="field-grid">
-        <div>
-          <label class="check-item">
-            <input type="checkbox" id="remindersEnabled" ${reminderSettings.enabled ? "checked" : ""}>
-            <span>Enable dose reminders</span>
-          </label>
-        </div>
-        <div>
-          <label for="reminderLeadMinutes">Reminder lead time</label>
-          <select id="reminderLeadMinutes">
-            ${[0, 5, 10, 15, 30, 45, 60].map((mins) => `<option value="${mins}" ${Number(reminderSettings.leadMinutes) === mins ? "selected" : ""}>${mins === 0 ? "At scheduled time" : `${mins} minutes before`}</option>`).join("")}
-          </select>
-        </div>
-        <div>
-          <label class="check-item">
-            <input type="checkbox" id="desktopNotificationsEnabled" ${reminderSettings.desktopNotifications ? "checked" : ""}>
-            <span>Desktop notifications</span>
-          </label>
-        </div>
-        <div>
-          <label class="check-item">
-            <input type="checkbox" id="quietUntilOverdueEnabled" ${reminderSettings.quietUntilOverdue ? "checked" : ""}>
-            <span>Quiet reminders until overdue</span>
-          </label>
-        </div>
-        <div>
-          <label for="overdueEscalationMinutes">Escalate when overdue by</label>
-          <select id="overdueEscalationMinutes">
-            ${[0, 5, 10, 15, 30, 45, 60].map((mins) => `<option value="${mins}" ${Number(reminderSettings.overdueEscalationMinutes) === mins ? "selected" : ""}>${mins === 0 ? "Immediately at due time" : `${mins} minutes`}</option>`).join("")}
-          </select>
-        </div>
-        <div>
-          <label class="check-item">
-            <input type="checkbox" id="riskAlertsEnabled" ${reminderSettings.riskAlertsEnabled ? "checked" : ""}>
-            <span>Risk threshold alerts</span>
-          </label>
-        </div>
-        <div>
-          <label for="riskAlertsMinLevel">Alert from risk level</label>
-          <select id="riskAlertsMinLevel">
-            ${["watch", "elevated", "high"].map((level) => `<option value="${level}" ${reminderSettings.riskAlertsMinLevel === level ? "selected" : ""}>${escapeHtml(level)}</option>`).join("")}
-          </select>
-        </div>
-        <div>
-          <label>Notification permission</label>
-          <div class="subtle">${"Notification" in window ? Notification.permission : "Not supported in this browser"}</div>
-        </div>
-      </div>
-      <div class="inline-row" style="margin-top:10px;">
-        <button class="btn btn-secondary" type="button" id="saveReminderSettingsButton">Save reminder settings</button>
-        <button class="btn btn-ghost" type="button" id="requestReminderPermissionButton">Request notification permission</button>
-      </div>
-    </div>
-
-    <div class="card" style="margin-top:12px;">
-      <h3>Warning signs + explainable risk thresholds</h3>
-      <form id="riskConfigForm">
-        <div class="field-grid">
-          <div>
-            <label for="riskMissedDoseWatch">Missed doses (Watch)</label>
-            <input id="riskMissedDoseWatch" name="missedDoseWatch" type="number" min="0" max="10" value="${escapeHtml(String(riskConfig.missedDoseWatch))}">
-          </div>
-          <div>
-            <label for="riskMissedDoseElevated">Missed doses (Elevated)</label>
-            <input id="riskMissedDoseElevated" name="missedDoseElevated" type="number" min="0" max="10" value="${escapeHtml(String(riskConfig.missedDoseElevated))}">
-          </div>
-          <div>
-            <label for="riskMissedDoseHigh">Missed doses (High)</label>
-            <input id="riskMissedDoseHigh" name="missedDoseHigh" type="number" min="0" max="10" value="${escapeHtml(String(riskConfig.missedDoseHigh))}">
-          </div>
-          <div>
-            <label for="riskAnxietyWatch">Anxiety threshold (Watch)</label>
-            <input id="riskAnxietyWatch" name="anxietyWatch" type="number" min="1" max="10" value="${escapeHtml(String(riskConfig.anxietyWatch))}">
-          </div>
-          <div>
-            <label for="riskAnxietyHigh">Anxiety threshold (High)</label>
-            <input id="riskAnxietyHigh" name="anxietyHigh" type="number" min="1" max="10" value="${escapeHtml(String(riskConfig.anxietyHigh))}">
-          </div>
-          <div>
-            <label for="riskLowSleepHours">Low-sleep threshold (hours)</label>
-            <input id="riskLowSleepHours" name="lowSleepHours" type="number" min="0" max="24" step="0.1" value="${escapeHtml(String(riskConfig.lowSleepHours))}">
-          </div>
-          <div>
-            <label for="riskNoCheckinHours">No check-in threshold (hours)</label>
-            <input id="riskNoCheckinHours" name="noCheckinHours" type="number" min="1" max="168" value="${escapeHtml(String(riskConfig.noCheckinHours))}">
-          </div>
-          <div>
-            <label for="riskSideEffectsWindowDays">Side effects window (days)</label>
-            <input id="riskSideEffectsWindowDays" name="sideEffectsWindowDays" type="number" min="1" max="30" value="${escapeHtml(String(riskConfig.sideEffectsWindowDays))}">
-          </div>
-          <div>
-            <label for="riskSideEffectsTriggerCount">Side effects trigger count</label>
-            <input id="riskSideEffectsTriggerCount" name="sideEffectsTriggerCount" type="number" min="1" max="50" value="${escapeHtml(String(riskConfig.sideEffectsTriggerCount))}">
-          </div>
-          <div>
-            <label for="riskWatchScore">Watch score threshold</label>
-            <input id="riskWatchScore" name="watchScore" type="number" min="1" max="100" value="${escapeHtml(String(riskConfig.watchScore))}">
-          </div>
-          <div>
-            <label for="riskElevatedScore">Elevated score threshold</label>
-            <input id="riskElevatedScore" name="elevatedScore" type="number" min="1" max="100" value="${escapeHtml(String(riskConfig.elevatedScore))}">
-          </div>
-          <div>
-            <label for="riskHighScore">High score threshold</label>
-            <input id="riskHighScore" name="highScore" type="number" min="1" max="100" value="${escapeHtml(String(riskConfig.highScore))}">
-          </div>
-        </div>
-
-        <h4 style="margin-top:12px;">Personal warning signs</h4>
-        <div class="settings-warning-grid">
-          ${warningSigns.map((sign) => `
-            <article class="settings-warning-row">
-              <div class="field-grid">
-                <div>
-                  <label>Label</label>
-                  <input name="warningLabel__${sign.id}" value="${escapeHtml(sign.label)}" required>
-                </div>
-                <div>
-                  <label>Category</label>
-                  <select name="warningCategory__${sign.id}">
-                    ${["sleep", "mood", "meds", "behaviour", "social", "custom"].map((category) => `<option value="${category}" ${sign.category === category ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}
-                  </select>
-                </div>
-                <div>
-                  <label>Weight (1-5)</label>
-                  <input name="warningWeight__${sign.id}" type="number" min="1" max="5" value="${escapeHtml(String(sign.severityWeight))}">
-                </div>
-                <div>
-                  <label class="check-item">
-                    <input type="checkbox" name="warningActive__${sign.id}" ${sign.active ? "checked" : ""}>
-                    <span>Active</span>
-                  </label>
-                </div>
-              </div>
-            </article>
-          `).join("")}
-        </div>
-
-        <div class="inline-row" style="margin-top:10px;">
-          <button class="btn btn-secondary" type="button" id="addWarningSignButton">Add warning sign</button>
-          <button class="btn btn-primary" type="submit">Save warning signs + thresholds</button>
-        </div>
-        <p class="helper-text">Risk status remains rule-based and explainable. No opaque AI predictions are used.</p>
-      </form>
-    </div>
-
-    <div class="card">
-      <h3>Create read-only link</h3>
       <form id="shareForm">
         <div class="field-grid">
           <div><label>Person name</label><input name="name" value="${escapeHtml(draftShare.name || "")}" required></div>
@@ -9807,15 +10269,15 @@ function renderSharing(root, _data, context) {
           <div>
             <label>Landing section</label>
             <select name="startSection">
-              <option value="dashboard" ${String(draftShare.startSection || "dashboard") === "dashboard" ? "selected" : ""}>Dashboard</option>
-              <option value="consult" ${String(draftShare.startSection || "") === "consult" ? "selected" : ""}>Consult</option>
+              <option value="dashboard" ${String(draftShare.startSection || "dashboard") === "dashboard" ? "selected" : ""}>Today</option>
+              <option value="consult" ${String(draftShare.startSection || "") === "consult" ? "selected" : ""}>Review</option>
             </select>
           </div>
           <div><label>Link expiry</label><input name="expiresAt" type="date" value="${escapeHtml(defaultExpiry)}"><p class="helper-text">Secure default is 30 days from today.</p></div>
         </div>
 
         <div class="card" style="margin-top:10px;">
-          <h4>Per-link visibility toggles</h4>
+          <h4>Privacy and visibility</h4>
           <div class="field-grid">
             ${renderPermissionToggle("showSensitiveNotes", "Show sensitive notes", toggles.showSensitiveNotes)}
             ${renderPermissionToggle("showSensitiveTags", "Show sensitive tags", toggles.showSensitiveTags)}
@@ -9825,15 +10287,15 @@ function renderSharing(root, _data, context) {
             ${renderPermissionToggle("showFreeText", "Show free-text notes", toggles.showFreeText)}
           </div>
 
-          <label style="margin-top:10px;">Allowed views</label>
+          <label style="margin-top:10px;">Allowed review views</label>
           <div class="inline-row">
-              ${["daily", "clinical", "personal"].map((mode) => {
-                const checked = Array.isArray(draftShare.allowedModes)
-                  ? draftShare.allowedModes.includes(mode)
-                  : selectedPreset.defaultModes.includes(mode);
-                return `<label class="check-item"><input type="checkbox" name="allowedModes" value="${mode}" ${checked ? "checked" : ""}><span>${escapeHtml(VIEW_MODE_META[mode].label)}</span></label>`;
-              }).join("")}
-            </div>
+            ${["daily", "clinical", "personal"].map((mode) => {
+              const checked = Array.isArray(draftShare.allowedModes)
+                ? draftShare.allowedModes.includes(mode)
+                : selectedPreset.defaultModes.includes(mode);
+              return `<label class="check-item"><input type="checkbox" name="allowedModes" value="${mode}" ${checked ? "checked" : ""}><span>${escapeHtml(VIEW_MODE_META[mode].label)}</span></label>`;
+            }).join("")}
+          </div>
         </div>
 
         <div class="inline-row" style="margin-top:10px;">
@@ -9843,9 +10305,144 @@ function renderSharing(root, _data, context) {
     </div>
 
     <div class="card" style="margin-top:12px;">
-      <h3>Existing shared links</h3>
+      <div class="card-head-row">
+        <div>
+          <h3>Existing shared links</h3>
+          <div class="subtle">Track what is active, expired, revoked, or already opened.</div>
+        </div>
+      </div>
       ${renderShareList()}
     </div>
+
+    <details class="card settings-section share-advanced-card" id="shareAdvancedDetails">
+      <summary>Advanced cloud access</summary>
+      ${LOCAL_ONLY_MODE
+        ? `<div class="subtle" style="margin-top:10px;">Local-only build is active in this build, so cloud registration, sign-in, and invites are disabled here. To enable cloud account + invites, set <code>LOCAL_ONLY_MODE = false</code> in <code>app.js</code> and connect the API endpoint.</div>`
+        : `
+          <div class="subtle" style="margin-top:10px;">${escapeHtml(signedInSummary)}</div>
+          <div class="inline-row" style="margin-top:10px;">
+            <button class="btn btn-ghost" type="button" id="refreshCloudMetaButton" ${syncDisabledAttr}>Refresh cloud status</button>
+            ${hasCloudSession() ? `<button class="btn btn-secondary" type="button" id="cloudLogoutButton" ${syncDisabledAttr}>Sign out</button>` : ""}
+          </div>
+
+          ${hasCloudSession() ? `
+            <div class="field-grid" style="margin-top:12px;">
+              <div>
+                <label>Cloud account role</label>
+                <div class="subtle">${escapeHtml(signedInRole || "viewer")}</div>
+              </div>
+              <div>
+                <label>Account ID</label>
+                <div class="subtle">${escapeHtml(app.syncConfig.accountId || "default")}</div>
+              </div>
+            </div>
+          ` : `
+            <div class="field-grid" style="margin-top:12px;">
+              <form id="cloudRegisterForm">
+                <h4>Create owner account</h4>
+                <label>Email</label>
+                <input name="email" type="email" required placeholder="owner@example.com" ${syncDisabledAttr}>
+                <label>Password</label>
+                <input name="password" type="password" minlength="8" required ${syncDisabledAttr}>
+                <label>Name</label>
+                <input name="name" placeholder="Owner name" ${syncDisabledAttr}>
+                <button class="btn btn-secondary" type="submit" style="margin-top:8px;" ${syncDisabledAttr}>Register owner</button>
+              </form>
+              <form id="cloudLoginForm">
+                <h4>Sign in</h4>
+                <label>Email</label>
+                <input name="email" type="email" required placeholder="you@example.com" ${syncDisabledAttr}>
+                <label>Password</label>
+                <input name="password" type="password" required ${syncDisabledAttr}>
+                <label>Account ID (optional)</label>
+                <input name="accountId" value="${escapeHtml(app.syncConfig.accountId || "default")}" ${syncDisabledAttr}>
+                <button class="btn btn-primary" type="submit" style="margin-top:8px;" ${syncDisabledAttr}>Sign in</button>
+              </form>
+            </div>
+            <form id="cloudAcceptInviteForm" style="margin-top:12px;">
+              <h4>Accept invite</h4>
+              <div class="field-grid">
+                <div>
+                  <label>Invite token</label>
+                  <input name="token" value="${escapeHtml(app.drafts.cloudInviteToken || "")}" placeholder="Paste invite token" ${syncDisabledAttr}>
+                </div>
+                <div>
+                  <label>Password</label>
+                  <input name="password" type="password" minlength="8" placeholder="Required (new user or existing account check)" ${syncDisabledAttr}>
+                </div>
+                <div>
+                  <label>Name (for first-time account)</label>
+                  <input name="name" placeholder="Optional display name" ${syncDisabledAttr}>
+                </div>
+              </div>
+              <button class="btn btn-secondary" type="submit" style="margin-top:8px;" ${syncDisabledAttr}>Accept invite</button>
+            </form>
+          `}
+
+          ${hasCloudSession() && isOwnerSession ? `
+            <form id="cloudCreateInviteForm" style="margin-top:12px;">
+              <h4>Invite collaborator</h4>
+              <div class="field-grid">
+                <div>
+                  <label>Email</label>
+                  <input name="email" type="email" required placeholder="viewer@example.com">
+                </div>
+                <div>
+                  <label>Name</label>
+                  <input name="name" placeholder="Recipient name">
+                </div>
+                <div>
+                  <label>Role</label>
+                  <select name="role">
+                    <option value="viewer">Viewer</option>
+                    <option value="family">Family</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Expiry</label>
+                  <input name="expiresAt" type="date" value="${escapeHtml(defaultExpiry)}">
+                </div>
+              </div>
+              <button class="btn btn-secondary" type="submit" style="margin-top:8px;">Create invite</button>
+            </form>
+            <div style="margin-top:12px;">
+              <h4>Pending and recent invites</h4>
+              ${cloudInvites.length ? `
+                <div class="timeline-list">
+                  ${cloudInvites.slice(0, 20).map((invite) => {
+                    const status = invite.revokedAt ? "revoked" : invite.acceptedAt ? "accepted" : (invite.expiresAt && new Date(invite.expiresAt).getTime() < Date.now() ? "expired" : "pending");
+                    return `
+                      <div class="timeline-item">
+                        <div><strong>${escapeHtml(invite.email || "Invite")}</strong> · ${escapeHtml(invite.role || "viewer")} · ${escapeHtml(status)}</div>
+                        <div class="subtle">Created ${escapeHtml(niceDateTime(invite.createdAt || ""))}${invite.acceptedAt ? ` · accepted ${escapeHtml(niceDateTime(invite.acceptedAt))}` : ""}</div>
+                        ${status === "pending" ? `<button class="btn btn-ghost small" type="button" data-cloud-revoke-invite="${escapeHtml(invite.id)}">Revoke</button>` : ""}
+                      </div>
+                    `;
+                  }).join("")}
+                </div>
+              ` : `<div class="subtle">No cloud invites yet.</div>`}
+            </div>
+          ` : ""}
+
+          ${hasCloudSession() ? `
+            <div style="margin-top:12px;">
+              <h4>Recent cloud notifications</h4>
+              ${cloudNotifications.length
+                ? `<ul class="timeline-list">${cloudNotifications.slice(0, 8).map((item) => `<li>${escapeHtml(item.message || item.type || "Notification")} · ${escapeHtml(niceDateTime(item.createdAt || ""))}</li>`).join("")}</ul>`
+                : `<div class="subtle">No cloud notifications yet.</div>`}
+            </div>
+          ` : ""}
+
+          ${hasCloudSession() && isOwnerSession ? `
+            <div style="margin-top:12px;">
+              <h4>Recent audit events</h4>
+              ${cloudAudit.length
+                ? `<ul class="timeline-list">${cloudAudit.slice(0, 8).map((item) => `<li>${escapeHtml(item.action || "event")} · ${escapeHtml(niceDateTime(item.at || ""))}</li>`).join("")}</ul>`
+                : `<div class="subtle">No audit events yet.</div>`}
+            </div>
+          ` : ""}
+        `}
+    </details>
   `;
 
   const shareForm = root.querySelector("#shareForm");
@@ -9857,11 +10454,11 @@ function renderSharing(root, _data, context) {
   const refreshCloudMetaButton = root.querySelector("#refreshCloudMetaButton");
   const sharePreviewSelect = root.querySelector("#sharePreviewSelect");
   const openSharePreviewButton = root.querySelector("#openSharePreviewButton");
+  const openSettingsFromShareButton = root.querySelector("#openSettingsFromShare");
   const presetSelect = root.querySelector("#sharePresetSelect");
   const syncEnabled = root.querySelector("#syncEnabled");
   const syncEndpoint = root.querySelector("#syncEndpoint");
   const syncAccountId = root.querySelector("#syncAccountId");
-  const syncOwnerKey = root.querySelector("#syncOwnerKey");
   const ownerDisplayName = root.querySelector("#ownerDisplayName");
   const personalizationEnabled = root.querySelector("#personalizationEnabled");
   const themePreference = root.querySelector("#themePreference");
@@ -9883,6 +10480,14 @@ function renderSharing(root, _data, context) {
     setStatus("Set your API endpoint first: Share -> Settings, then save sync settings.", "error");
     return false;
   };
+
+  openSettingsFromShareButton?.addEventListener("click", () => {
+    navigateToSection("exports", {
+      preferredModes: ["clinical", "personal"],
+      fallbackSections: ["sharing"]
+    });
+    renderAll();
+  });
 
   openSharePreviewButton?.addEventListener("click", () => {
     const id = String(sharePreviewSelect?.value || "");
@@ -9940,8 +10545,7 @@ function renderSharing(root, _data, context) {
         const payload = await cloudRegisterOwner({
           email: values.email,
           password: values.password,
-          name: values.name,
-          accountId: values.accountId || app.syncConfig.accountId || "default"
+          name: values.name
         });
         app.sync.status = "connected";
         app.sync.lastError = "";
@@ -9951,8 +10555,19 @@ function renderSharing(root, _data, context) {
         await refreshCloudSideData();
         renderAll();
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Could not register owner account.";
-        setStatus(message, "error");
+        if (shouldRecoverSignupLocally(error)) {
+          activateLocalOwnerWorkspace(
+            values,
+            "Cloud account service is unavailable. Opened a local workspace in this browser instead."
+          );
+          app.sync.status = "local-only";
+          app.sync.lastSyncedAt = "";
+          setStatus("Cloud account service is unavailable. Opened a local workspace in this browser instead.");
+          renderAll();
+        } else {
+          const message = error instanceof Error ? error.message : "Could not register owner account.";
+          setStatus(message, "error");
+        }
       } finally {
         setFormBusy(cloudRegisterForm, false);
       }
@@ -10097,7 +10712,7 @@ function renderSharing(root, _data, context) {
       saveSyncConfig();
       app.sync.status = "local-only";
       app.sync.lastError = "";
-      setStatus("Cloud sync is disabled. Local-only mode is active.");
+      setStatus("Cloud sync is disabled. Local-only build is active.");
       renderAll();
       return;
     }
@@ -10105,15 +10720,14 @@ function renderSharing(root, _data, context) {
       ...app.syncConfig,
       enabled: Boolean(syncEnabled?.checked),
       endpoint: String(syncEndpoint?.value || "").trim(),
-      accountId: String(syncAccountId?.value || "default").trim() || "default",
-      ownerKey: String(syncOwnerKey?.value || "")
+      accountId: String(syncAccountId?.value || "default").trim() || "default"
     };
     saveSyncConfig();
     app.sync.status = canUseRemoteSync()
-      ? (hasCloudSession() || app.syncConfig.ownerKey ? "syncing" : "auth-required")
+      ? (hasCloudSession() ? "syncing" : "auth-required")
       : "local-only";
     app.sync.lastError = "";
-    if (canUseRemoteSync() && (hasCloudSession() || app.syncConfig.ownerKey)) {
+    if (canUseRemoteSync() && hasCloudSession()) {
       void pullRemoteStateOnBoot();
     }
     setStatus("Sync settings saved.");
@@ -10122,15 +10736,15 @@ function renderSharing(root, _data, context) {
 
   root.querySelector("#syncNowButton")?.addEventListener("click", () => {
     if (LOCAL_ONLY_MODE) {
-      setStatus("Cloud sync is disabled. Local-only mode is active.");
+      setStatus("Cloud sync is disabled. Local-only build is active.");
       return;
     }
     if (!canUseRemoteSync()) {
       setStatus("Enable sync and set API endpoint first.", "error");
       return;
     }
-    if (!hasCloudSession() && !app.syncConfig.ownerKey) {
-      setStatus("Sign in to cloud (or provide legacy owner key) before syncing.", "error");
+    if (!hasCloudSession()) {
+      setStatus("Sign in to cloud before syncing.", "error");
       return;
     }
     void flushRemoteSync();
@@ -10226,7 +10840,7 @@ function renderSharing(root, _data, context) {
 
   presetSelect.addEventListener("change", () => {
     const preset = PRESETS[presetSelect.value] || PRESETS.family;
-    const preferredSection = presetSelect.value === "clinician" ? "consult" : "dashboard";
+    const preferredSection = "dashboard";
     app.drafts.sharePermissions = normalizePermissions(preset.permissions);
     app.drafts.share = {
       ...formToObject(shareForm),
@@ -10260,7 +10874,7 @@ function renderSharing(root, _data, context) {
     const expiresAt = requestedExpiry || shiftDateKey(getLocalDateKey(new Date()), 30);
 
     if (!allowedModes.length) {
-      return setStatus("Select at least one allowed view mode.", "error");
+      return setStatus("Select at least one allowed view.", "error");
     }
 
     if (expiresAt && expiresAt < getLocalDateKey(new Date())) {
@@ -10275,63 +10889,46 @@ function renderSharing(root, _data, context) {
       showSubstance: shareForm.elements.showSubstance.checked,
       showFreeText: shareForm.elements.showFreeText.checked
     });
-
-    const token = createSecureShareToken();
-    const linkId = uid();
-    const createdAt = isoDateTime(new Date());
-
-    const snapshot = filterDataForShare(app.ownerData, permissions);
-
-    const payload = {
-      version: 2,
-      linkId,
-      token,
-      recipient: {
-        name: values.name,
-        email: values.email || ""
-      },
-      preset: values.preset || "family",
-      permissions,
-      allowedModes,
-      startSection: String(values.startSection || "dashboard") === "consult" ? "consult" : "dashboard",
-      expiresAt,
-      createdAt,
-      snapshot
-    };
-
-    const encoded = encodeSharePayload(payload);
-    const url = `${window.location.origin}${window.location.pathname}#share=${encodeURIComponent(encoded)}`;
-
-    app.ownerData.shareLinks.push({
-      id: linkId,
-      name: values.name,
-      email: values.email || "",
-      preset: values.preset || "family",
-      permissions,
-      allowedModes,
-      startSection: String(values.startSection || "dashboard") === "consult" ? "consult" : "dashboard",
-      expiresAt,
-      revoked: false,
-      createdAt,
-      token,
-      url,
-      lastOpenedAt: "",
-      totalOpens: 0
-    });
-
-    saveOwnerData(app.ownerData);
-    app.drafts.share = {};
-    app.drafts.sharePermissions = null;
-    saveDrafts();
-    setStatus("Read-only link created.");
-    renderAll();
+    void (async () => {
+      setFormBusy(shareForm, true, "Creating...");
+      try {
+        const createdShare = await cloudCreateShare({
+          name: values.name,
+          email: values.email || "",
+          role: values.preset === "family" ? "family" : "viewer",
+          preset: values.preset || "family",
+          permissions,
+          allowedModes,
+          startSection: String(values.startSection || "dashboard") === "consult" ? "consult" : "dashboard",
+          expiresAt
+        });
+        await refreshCloudSideData();
+        app.drafts.share = {};
+        app.drafts.sharePermissions = null;
+        saveDrafts();
+        if (createdShare?.url && navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(createdShare.url);
+          setStatus("Read-only link created and copied.");
+        } else {
+          setStatus("Read-only link created.");
+        }
+        renderAll();
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Could not create share link.", "error");
+      } finally {
+        setFormBusy(shareForm, false);
+      }
+    })();
   });
 
   root.querySelectorAll("[data-copy-link]").forEach((button) => {
     button.addEventListener("click", async () => {
       const id = button.dataset.copyLink;
       const link = app.ownerData.shareLinks.find((entry) => entry.id === id);
-      if (!link) return;
+      if (!link?.url) {
+        setStatus("This older link URL is no longer stored. Create a new link if you need to copy it again.", "error");
+        return;
+      }
       await navigator.clipboard.writeText(link.url);
       setStatus(`Copied link for ${link.name}.`);
     });
@@ -10342,10 +10939,16 @@ function renderSharing(root, _data, context) {
       const id = button.dataset.revokeLink;
       const link = app.ownerData.shareLinks.find((entry) => entry.id === id);
       if (!link) return;
-      link.revoked = !link.revoked;
-      saveOwnerData(app.ownerData);
-      setStatus(link.revoked ? "Link revoked." : "Link re-enabled.");
-      renderAll();
+      void (async () => {
+        try {
+          await cloudRevokeShare(link.id);
+          await refreshCloudSideData();
+          setStatus("Link revoked.");
+          renderAll();
+        } catch (error) {
+          setStatus(error instanceof Error ? error.message : "Could not revoke link.", "error");
+        }
+      })();
     });
   });
 
@@ -10363,14 +10966,6 @@ function renderSharing(root, _data, context) {
     });
   });
 
-  root.querySelectorAll("[data-delete-link]").forEach((button) => {
-    button.addEventListener("click", () => {
-      app.ownerData.shareLinks = app.ownerData.shareLinks.filter((entry) => entry.id !== button.dataset.deleteLink);
-      saveOwnerData(app.ownerData);
-      setStatus("Link deleted.");
-      renderAll();
-    });
-  });
 }
 
 function renderShareList() {
@@ -10382,9 +10977,10 @@ function renderShareList() {
 
   return links
     .map((link) => {
-      const access = app.accessLogs[link.token] || { totalOpens: link.totalOpens || 0, lastOpenedAt: link.lastOpenedAt || "" };
+      const access = { totalOpens: link.totalOpens || 0, lastOpenedAt: link.lastOpenedAt || "" };
+      const revoked = Boolean(link.revoked || link.revokedAt);
       const expired = link.expiresAt && new Date(link.expiresAt).getTime() < Date.now();
-      const status = link.revoked ? "Revoked" : expired ? "Expired" : "Active";
+      const status = revoked ? "Revoked" : expired ? "Expired" : "Active";
 
       return `
         <article class="share-card">
@@ -10394,12 +10990,11 @@ function renderShareList() {
           <div class="subtle">Landing: ${escapeHtml(link.startSection === "consult" ? "Consult summary" : "Dashboard")}</div>
           <div class="subtle">Status: ${status}${link.expiresAt ? ` · Expires ${escapeHtml(niceDate(link.expiresAt))}` : ""}</div>
           <div class="subtle">Access log: opens ${access.totalOpens || 0}${access.lastOpenedAt ? ` · last opened ${escapeHtml(niceDateTime(access.lastOpenedAt))}` : ""}</div>
-          <textarea class="share-url" readonly>${escapeHtml(link.url)}</textarea>
+          <textarea class="share-url" readonly>${escapeHtml(link.url || "Link URL is only shown when first created. Recreate the link if you need a fresh copy.")}</textarea>
           <div class="inline-row" style="margin-top:8px;">
-            <button class="btn btn-secondary" type="button" data-copy-link="${link.id}">Copy</button>
+            <button class="btn btn-secondary" type="button" data-copy-link="${link.id}" ${link.url ? "" : "disabled"}>Copy</button>
             <button class="btn btn-secondary" type="button" data-preview-link="${link.id}">Preview as recipient</button>
-            <button class="btn btn-danger" type="button" data-revoke-link="${link.id}">${link.revoked ? "Unrevoke" : "Revoke"}</button>
-            <button class="btn btn-secondary" type="button" data-delete-link="${link.id}">Delete</button>
+            ${revoked ? "" : `<button class="btn btn-danger" type="button" data-revoke-link="${link.id}">Revoke</button>`}
           </div>
         </article>
       `;
@@ -10492,6 +11087,8 @@ function renderExports(root, data, context) {
   const ownerProfile = normalizeOwnerProfile(app.ownerData.profile);
   const reminderSettings = normalizeReminderSettings(app.ownerData.reminderSettings);
   const dashboardConfig = normalizeDashboardConfig(app.ownerData.dashboardConfig || data.dashboardConfig);
+  const warningSigns = normalizeWarningSigns(app.ownerData.warningSigns);
+  const riskConfig = normalizeRiskConfig(app.ownerData.riskConfig);
   const robotsMeta = String(document.querySelector("meta[name='robots']")?.getAttribute("content") || "index, follow").toLowerCase();
   const siteVisibilityLabel = robotsMeta.includes("noindex") ? "Private (search engines blocked)" : "Public (indexable)";
   const syncStatus = app.sync.status === "connected"
@@ -10502,14 +11099,39 @@ function renderExports(root, data, context) {
         ? "Sign in required"
         : app.sync.status === "error"
           ? `Error: ${app.sync.lastError || "Unable to sync"}`
-          : "Local-only mode";
+          : "Local-only build";
   const syncDisabledAttr = LOCAL_ONLY_MODE ? "disabled" : "";
   const controlsDisabledAttr = ownerEditable ? "" : "disabled";
+  const settingsSpotlight = renderSectionSpotlight({
+    tone: "violet",
+    icon: "download",
+    eyebrow: "Settings and exports",
+    title: "Workspace settings feel like part of the product, not an afterthought",
+    description: "Appearance, reminders, privacy behaviour, risk thresholds, sync, and exports now sit inside a stronger settings surface with clearer separation between sections.",
+    chips: [
+      `Theme ${ownerProfile.themePreference}`,
+      reminderSettings.enabled ? "Reminders on" : "Reminders off",
+      syncStatus
+    ],
+    stats: [
+      { label: "View mode", value: VIEW_MODE_META[app.ui.activeViewMode]?.label || "Daily View", detail: "Current depth" },
+      { label: "Export range", value: `${String(app.ui.exportSummaryRangeDays || "14")} days`, detail: "Summary preview" },
+      { label: "Warning signs", value: String(warningSigns.length), detail: "Risk configuration" }
+    ],
+    asideLabel: "Owner controls",
+    asideTitle: ownerEditable ? "Sensitive configuration stays here" : "Read-only access limits changes",
+    asideBody: ownerEditable
+      ? "Reminder behaviour, privacy controls, and sync settings are intentionally pulled out of review pages."
+      : "This area still shows configuration clearly, but editing stays disabled."
+  });
   root.innerHTML = `
+    <div class="section-scene">
+      ${settingsSpotlight}
+    </div>
     <div class="card settings-section">
       <h3>Appearance</h3>
       <div class="subtle">Set how this app appears and greets you on this device.</div>
-      ${ownerEditable ? "" : `<div class="subtle">Read-only mode: appearance can’t be changed here.</div>`}
+      ${ownerEditable ? "" : `<div class="subtle">Read-only access: appearance can’t be changed here.</div>`}
       <div class="field-grid" style="margin-top:10px;">
         <div>
           <label for="settingsOwnerDisplayName">Display name (optional)</label>
@@ -10635,6 +11257,99 @@ function renderExports(root, data, context) {
       </div>
     </div>
 
+    <details class="card settings-section" id="settingsRiskDetails">
+      <summary>Risk thresholds and warning signs</summary>
+      <div class="subtle" style="margin-top:8px;">Keep rule-based thresholds here so the review view stays cleaner and easier to understand.</div>
+      <form id="settingsRiskConfigForm" style="margin-top:12px;">
+        <div class="field-grid">
+          <div>
+            <label for="settingsRiskMissedDoseWatch">Missed doses (Watch)</label>
+            <input id="settingsRiskMissedDoseWatch" name="missedDoseWatch" type="number" min="0" max="10" value="${escapeHtml(String(riskConfig.missedDoseWatch))}" ${ownerEditable ? "" : "disabled"}>
+          </div>
+          <div>
+            <label for="settingsRiskMissedDoseElevated">Missed doses (Elevated)</label>
+            <input id="settingsRiskMissedDoseElevated" name="missedDoseElevated" type="number" min="0" max="10" value="${escapeHtml(String(riskConfig.missedDoseElevated))}" ${ownerEditable ? "" : "disabled"}>
+          </div>
+          <div>
+            <label for="settingsRiskMissedDoseHigh">Missed doses (High)</label>
+            <input id="settingsRiskMissedDoseHigh" name="missedDoseHigh" type="number" min="0" max="10" value="${escapeHtml(String(riskConfig.missedDoseHigh))}" ${ownerEditable ? "" : "disabled"}>
+          </div>
+          <div>
+            <label for="settingsRiskAnxietyWatch">Anxiety threshold (Watch)</label>
+            <input id="settingsRiskAnxietyWatch" name="anxietyWatch" type="number" min="1" max="10" value="${escapeHtml(String(riskConfig.anxietyWatch))}" ${ownerEditable ? "" : "disabled"}>
+          </div>
+          <div>
+            <label for="settingsRiskAnxietyHigh">Anxiety threshold (High)</label>
+            <input id="settingsRiskAnxietyHigh" name="anxietyHigh" type="number" min="1" max="10" value="${escapeHtml(String(riskConfig.anxietyHigh))}" ${ownerEditable ? "" : "disabled"}>
+          </div>
+          <div>
+            <label for="settingsRiskLowSleepHours">Low-sleep threshold (hours)</label>
+            <input id="settingsRiskLowSleepHours" name="lowSleepHours" type="number" min="0" max="24" step="0.1" value="${escapeHtml(String(riskConfig.lowSleepHours))}" ${ownerEditable ? "" : "disabled"}>
+          </div>
+          <div>
+            <label for="settingsRiskNoCheckinHours">No check-in threshold (hours)</label>
+            <input id="settingsRiskNoCheckinHours" name="noCheckinHours" type="number" min="1" max="168" value="${escapeHtml(String(riskConfig.noCheckinHours))}" ${ownerEditable ? "" : "disabled"}>
+          </div>
+          <div>
+            <label for="settingsRiskSideEffectsWindowDays">Side effects window (days)</label>
+            <input id="settingsRiskSideEffectsWindowDays" name="sideEffectsWindowDays" type="number" min="1" max="30" value="${escapeHtml(String(riskConfig.sideEffectsWindowDays))}" ${ownerEditable ? "" : "disabled"}>
+          </div>
+          <div>
+            <label for="settingsRiskSideEffectsTriggerCount">Side effects trigger count</label>
+            <input id="settingsRiskSideEffectsTriggerCount" name="sideEffectsTriggerCount" type="number" min="1" max="50" value="${escapeHtml(String(riskConfig.sideEffectsTriggerCount))}" ${ownerEditable ? "" : "disabled"}>
+          </div>
+          <div>
+            <label for="settingsRiskWatchScore">Watch score threshold</label>
+            <input id="settingsRiskWatchScore" name="watchScore" type="number" min="1" max="100" value="${escapeHtml(String(riskConfig.watchScore))}" ${ownerEditable ? "" : "disabled"}>
+          </div>
+          <div>
+            <label for="settingsRiskElevatedScore">Elevated score threshold</label>
+            <input id="settingsRiskElevatedScore" name="elevatedScore" type="number" min="1" max="100" value="${escapeHtml(String(riskConfig.elevatedScore))}" ${ownerEditable ? "" : "disabled"}>
+          </div>
+          <div>
+            <label for="settingsRiskHighScore">High score threshold</label>
+            <input id="settingsRiskHighScore" name="highScore" type="number" min="1" max="100" value="${escapeHtml(String(riskConfig.highScore))}" ${ownerEditable ? "" : "disabled"}>
+          </div>
+        </div>
+
+        <h4 style="margin-top:12px;">Personal warning signs</h4>
+        <div class="settings-warning-grid">
+          ${warningSigns.map((sign) => `
+            <article class="settings-warning-row">
+              <div class="field-grid">
+                <div>
+                  <label>Label</label>
+                  <input name="warningLabel__${sign.id}" value="${escapeHtml(sign.label)}" required ${ownerEditable ? "" : "disabled"}>
+                </div>
+                <div>
+                  <label>Category</label>
+                  <select name="warningCategory__${sign.id}" ${ownerEditable ? "" : "disabled"}>
+                    ${["sleep", "mood", "meds", "behaviour", "social", "custom"].map((category) => `<option value="${category}" ${sign.category === category ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}
+                  </select>
+                </div>
+                <div>
+                  <label>Weight (1-5)</label>
+                  <input name="warningWeight__${sign.id}" type="number" min="1" max="5" value="${escapeHtml(String(sign.severityWeight))}" ${ownerEditable ? "" : "disabled"}>
+                </div>
+                <div>
+                  <label class="check-item">
+                    <input type="checkbox" name="warningActive__${sign.id}" ${sign.active ? "checked" : ""} ${ownerEditable ? "" : "disabled"}>
+                    <span>Active</span>
+                  </label>
+                </div>
+              </div>
+            </article>
+          `).join("")}
+        </div>
+
+        <div class="inline-row" style="margin-top:10px;">
+          <button class="btn btn-secondary" type="button" id="settingsAddWarningSignButton" ${ownerEditable ? "" : "disabled"}>Add warning sign</button>
+          <button class="btn btn-primary" type="submit" ${ownerEditable ? "" : "disabled"}>Save warning signs + thresholds</button>
+        </div>
+        <p class="helper-text">Risk status remains rule-based and explainable. No opaque AI predictions are used.</p>
+      </form>
+    </details>
+
     <details class="card settings-section" id="settingsAdvancedDetails">
       <summary>Advanced</summary>
       <div class="subtle" style="margin-top:8px;">Sync status: ${escapeHtml(syncStatus)}</div>
@@ -10654,16 +11369,12 @@ function renderExports(root, data, context) {
           <label for="settingsSyncAccountId">Account ID</label>
           <input id="settingsSyncAccountId" value="${escapeHtml(app.syncConfig.accountId || "default")}" ${syncDisabledAttr}>
         </div>
-        <div>
-          <label for="settingsSyncOwnerKey">Owner API key</label>
-          <input id="settingsSyncOwnerKey" type="password" value="${escapeHtml(app.syncConfig.ownerKey || "")}" placeholder="Owner key for write access" ${syncDisabledAttr}>
-        </div>
       </div>
       <div class="inline-row" style="margin-top:10px;">
         <button class="btn btn-secondary" type="button" id="saveSettingsSyncButton" ${syncDisabledAttr}>Save sync settings</button>
         <button class="btn btn-ghost" type="button" id="syncNowFromSettings" ${syncDisabledAttr}>Sync now</button>
       </div>
-      ${LOCAL_ONLY_MODE ? `<p class="helper-text" style="margin-top:8px;">Local-only mode is active. Cloud controls are disabled in this build.</p>` : ""}
+      ${LOCAL_ONLY_MODE ? `<p class="helper-text" style="margin-top:8px;">Local-only build is active. Cloud controls are disabled in this build.</p>` : ""}
     </details>
 
     ${renderExportSummaryPreview(data, app.ui.exportSummaryRangeDays || "14")}
@@ -10745,22 +11456,90 @@ function renderExports(root, data, context) {
     renderAll();
   });
 
+  root.querySelector("#settingsAddWarningSignButton")?.addEventListener("click", () => {
+    if (!ownerEditable) return;
+    app.ownerData.warningSigns = normalizeWarningSigns([
+      ...warningSigns,
+      {
+        id: uid(),
+        label: "New warning sign",
+        category: "custom",
+        severityWeight: 2,
+        active: true,
+        thresholdConfig: {}
+      }
+    ]);
+    saveOwnerData(app.ownerData);
+    setStatus("Warning sign row added.");
+    renderAll();
+  });
+
+  root.querySelector("#settingsRiskConfigForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!ownerEditable) return;
+    const form = event.currentTarget;
+    const nextWarningSigns = warningSigns
+      .map((sign) => ({
+        id: sign.id,
+        label: String(form.elements[`warningLabel__${sign.id}`]?.value || "").trim(),
+        category: String(form.elements[`warningCategory__${sign.id}`]?.value || "custom").trim(),
+        severityWeight: Number(form.elements[`warningWeight__${sign.id}`]?.value || 2),
+        active: Boolean(form.elements[`warningActive__${sign.id}`]?.checked),
+        thresholdConfig: sign.thresholdConfig || {}
+      }))
+      .filter((sign) => sign.label);
+
+    if (!nextWarningSigns.length) {
+      setStatus("Add at least one warning sign before saving.", "error");
+      return;
+    }
+
+    const nextRiskConfig = normalizeRiskConfig({
+      missedDoseWatch: Number(form.elements.missedDoseWatch?.value || riskConfig.missedDoseWatch),
+      missedDoseElevated: Number(form.elements.missedDoseElevated?.value || riskConfig.missedDoseElevated),
+      missedDoseHigh: Number(form.elements.missedDoseHigh?.value || riskConfig.missedDoseHigh),
+      anxietyWatch: Number(form.elements.anxietyWatch?.value || riskConfig.anxietyWatch),
+      anxietyHigh: Number(form.elements.anxietyHigh?.value || riskConfig.anxietyHigh),
+      lowSleepHours: Number(form.elements.lowSleepHours?.value || riskConfig.lowSleepHours),
+      noCheckinHours: Number(form.elements.noCheckinHours?.value || riskConfig.noCheckinHours),
+      sideEffectsWindowDays: Number(form.elements.sideEffectsWindowDays?.value || riskConfig.sideEffectsWindowDays),
+      sideEffectsTriggerCount: Number(form.elements.sideEffectsTriggerCount?.value || riskConfig.sideEffectsTriggerCount),
+      watchScore: Number(form.elements.watchScore?.value || riskConfig.watchScore),
+      elevatedScore: Number(form.elements.elevatedScore?.value || riskConfig.elevatedScore),
+      highScore: Number(form.elements.highScore?.value || riskConfig.highScore)
+    });
+
+    if (nextRiskConfig.missedDoseWatch > nextRiskConfig.missedDoseElevated || nextRiskConfig.missedDoseElevated > nextRiskConfig.missedDoseHigh) {
+      setStatus("Missed-dose thresholds must be Watch <= Elevated <= High.", "error");
+      return;
+    }
+    if (nextRiskConfig.watchScore > nextRiskConfig.elevatedScore || nextRiskConfig.elevatedScore > nextRiskConfig.highScore) {
+      setStatus("Risk score thresholds must be Watch <= Elevated <= High.", "error");
+      return;
+    }
+
+    app.ownerData.warningSigns = normalizeWarningSigns(nextWarningSigns);
+    app.ownerData.riskConfig = nextRiskConfig;
+    saveOwnerData(app.ownerData);
+    setStatus("Warning signs and risk thresholds saved.");
+    renderAll();
+  });
+
   root.querySelector("#saveSettingsSyncButton")?.addEventListener("click", () => {
     if (LOCAL_ONLY_MODE) {
-      setStatus("Cloud sync is disabled. Local-only mode is active.");
+      setStatus("Cloud sync is disabled. Local-only build is active.");
       return;
     }
     app.syncConfig = {
       ...app.syncConfig,
       enabled: Boolean(root.querySelector("#settingsSyncEnabled")?.checked),
       endpoint: String(root.querySelector("#settingsSyncEndpoint")?.value || "").trim(),
-      accountId: String(root.querySelector("#settingsSyncAccountId")?.value || "").trim() || "default",
-      ownerKey: String(root.querySelector("#settingsSyncOwnerKey")?.value || "").trim()
+      accountId: String(root.querySelector("#settingsSyncAccountId")?.value || "").trim() || "default"
     };
     saveSyncConfig();
     if (!canUseRemoteSync()) {
       app.sync.status = "local-only";
-    } else if (!hasCloudSession() && !app.syncConfig.ownerKey) {
+    } else if (!hasCloudSession()) {
       app.sync.status = "auth-required";
       app.sync.lastError = "Sign in to enable cloud sync.";
     } else {
@@ -10775,15 +11554,15 @@ function renderExports(root, data, context) {
 
   root.querySelector("#syncNowFromSettings")?.addEventListener("click", () => {
     if (LOCAL_ONLY_MODE) {
-      setStatus("Cloud sync is disabled. Local-only mode is active.");
+      setStatus("Cloud sync is disabled. Local-only build is active.");
       return;
     }
     if (!app.syncConfig.enabled || !normalizedApiBase()) {
       setStatus("Enable sync and set API endpoint first.", "error");
       return;
     }
-    if (!hasCloudSession() && !app.syncConfig.ownerKey) {
-      setStatus("Sign in to cloud (or provide legacy owner key) before syncing.", "error");
+    if (!hasCloudSession()) {
+      setStatus("Sign in to cloud before syncing.", "error");
       return;
     }
     queueSyncMutation("manual_sync");
@@ -10915,7 +11694,6 @@ function buildClinicianSummaryHtml(data, rangeDays = "14") {
     },
     snapshot.days
   );
-  const actionPlan = renderActionPlanSteps(data.actionPlans, riskAssessment.level);
 
   return `
     <!doctype html>
@@ -10934,7 +11712,7 @@ function buildClinicianSummaryHtml(data, rangeDays = "14") {
         </style>
       </head>
       <body>
-        <h1>Medication Tracker · Clinician Summary</h1>
+        <h1>CarePanel · Clinician Summary</h1>
         <p>Generated: ${escapeHtml(niceDateTime(isoDateTime(new Date())))}</p>
         <p>Summary range: ${snapshot.days} days (${escapeHtml(niceDate(snapshot.startDate))} to ${escapeHtml(niceDate(snapshot.endDate))})</p>
 
@@ -10948,14 +11726,6 @@ function buildClinicianSummaryHtml(data, rangeDays = "14") {
               <td>${escapeHtml(riskAssessment.triggeredSigns.map((entry) => entry.label).join(", ") || "-")}</td>
               <td>${escapeHtml(riskHistory.map((entry) => `${entry.date}:${(RISK_LEVEL_META[entry.level] || RISK_LEVEL_META.low).label}`).join(" | ") || "-")}</td>
             </tr>
-          </tbody>
-        </table>
-
-        <h2>Action plan (${escapeHtml(riskAssessment.label)} level)</h2>
-        <table>
-          <thead><tr><th>Step</th><th>Notify</th></tr></thead>
-          <tbody>
-            ${(actionPlan.length ? actionPlan : [{ stepText: "No action-plan steps configured for this level.", notifyRole: "" }]).map((step) => `<tr><td>${escapeHtml(step.stepText || "-")}</td><td>${escapeHtml(step.notifyRole || "-")}</td></tr>`).join("")}
           </tbody>
         </table>
 
@@ -11554,16 +12324,16 @@ function renderBarChart(points, changeDates = [], options = {}) {
   `;
 }
 
-function encodeSharePayload(payload) {
-  return btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
-}
-
 function tokenFromUrl(url) {
   if (!url) return "";
-  const marker = "#share=";
-  const index = url.indexOf(marker);
-  if (index === -1) return "";
-  return url.slice(index + marker.length, index + marker.length + 36);
+  const parsed = String(url);
+  const markers = ["#share_token=", "#share="];
+  for (const marker of markers) {
+    const index = parsed.indexOf(marker);
+    if (index === -1) continue;
+    return parsed.slice(index + marker.length, index + marker.length + 64);
+  }
+  return "";
 }
 
 function formToObject(form) {

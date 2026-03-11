@@ -1,7 +1,7 @@
 # Accessibility, SEO, and Performance Sweep
 
 ## Scope
-This pass improves public discoverability and quality for `bradckennedy.org` without changing medication-tracking core behavior.
+This pass improves public discoverability and quality for `adhdagenda.com` without changing medication-tracking core behavior.
 
 ## What Changed
 

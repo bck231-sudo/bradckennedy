@@ -1,26 +1,23 @@
-# Medication Tracker (bradckennedy.org)
+# CarePanel (adhdagenda.com)
 
-This site now runs in **local-only mode** by default (no login, no backend required, no API setup).
-Cloud account registration/sign-in panels are hidden in this mode to keep the workflow simple.
+This app now uses **authenticated account workspaces**.
 
-## Run Locally (No Backend)
+- each account is a private patient workspace
+- each workspace can have members with roles such as `owner`, `clinician`, `family`, or `viewer`
+- public visitors must sign in before they can access tracker data or owner actions
 
-1. In this folder, start a static web server:
-   - `python3 -m http.server 8080`
+## Run Locally
+
+1. In this folder, start the app server:
+   - `npm run dev`
 2. Open:
    - `http://127.0.0.1:8080`
 
-All data is stored in your browser `localStorage` on that device/browser profile.
+Use the sign-in screen to create your own workspace.
 
 ## Publish Online (No Payment Required)
 
-Use any static host:
-
-1. Netlify Free
-2. Vercel Hobby
-3. GitHub Pages
-
-Deploy the contents of this folder as a static site (`index.html`, `app.js`, `styles.css`, etc).
+Use a host that can run the Node/Express server, not a static-only host.
 
 ## SEO + Privacy Crawl Controls
 
@@ -51,8 +48,7 @@ Google Search Console quick steps (manual):
 ## Optimisation Pass (App-Readiness)
 
 - Dashboard hierarchy tightened for faster scanning:
-  - summary strip -> doses -> quick check-in -> alerts -> recent changes -> medication details -> action plan.
-- Action plan now appears for `Watch`, `Elevated`, and `High` risk levels (not only elevated/high).
+  - summary strip -> doses -> quick check-in -> alerts -> medication details -> recent changes.
 - Dose action persistence hardened:
   - strict local persistence check on dose actions
   - rollback + visible error if save fails.
@@ -72,7 +68,7 @@ Google Search Console quick steps (manual):
 - Cloud UX clarification:
   - when local-only mode is enabled, the Share tab now clearly explains cloud accounts/invites are disabled (instead of showing inactive controls).
 
-## Consult-Focused Upgrade (Psychiatrist Review Mode)
+## Consult-Focused Upgrade (Clinician Review Mode)
 
 - Added a dedicated `Consult` top tab and route (`#consult`) for appointment review.
 - Added consult data entities (local persistence + migration-safe shape):
@@ -130,14 +126,14 @@ Google Search Console quick steps (manual):
   - appointment markers
 - Decision log entries can link to a specific medication-change experiment.
 - Appointment markers can be linked from decision entries.
-- Added one-click **Copy summary** in Consult for fast psychiatrist handoff notes.
+- Added one-click **Copy summary** in Consult for fast clinician handoff notes.
 - Added safe unlinking behavior:
   - deleting an experiment clears linked decision references
   - deleting an appointment marker clears linked decision appointment references
 
 ## What Changed (Phase 1)
 
-- Added API server scaffold at `/Users/brad/Documents/New project/bradckennedy/server/server.js` (kept for future optional use).
+- Added API server scaffold at `/server/server.js` (kept for future optional use).
 - Cloud sync controls are now disabled by default for no-backend operation.
 - Added reminder settings (lead time + optional desktop notifications).
 - Added secure sharing defaults:
@@ -146,15 +142,14 @@ Google Search Console quick steps (manual):
 
 ## Phase 1 Upgrade (Shared-Care Focus)
 
-- Kept existing structure and labels (`Medication Tracker`, `Dashboard / History / Settings / Share`, Viewer Context + Data View).
+- Kept existing structure and labels (`CarePanel`, `Dashboard / History / Settings / Share`, Viewer Context + Data View).
 - Added an action-first dashboard flow:
   1. Today at a glance strip (adherence, next dose, risk, last check-in)
   2. Today’s doses/actions
   3. Quick check-in
   4. Alerts / monitoring reminders
-  5. Recent medication changes (14 days)
-  6. Medication details
-  7. Contextual action plan (shown in elevated/high risk, always editable in owner mode)
+  5. Medication details
+  6. Recent medication changes (14 days)
 - Added explainable risk status (rule-based, no opaque AI):
   - `Low / Watch / Elevated / High`
   - “Why this status?” shows exact triggers
@@ -163,18 +158,17 @@ Google Search Console quick steps (manual):
   - alerts/reminders
   - recent medication changes
   - medication detail key fields
-  - action plan steps
 - Extended medication-change schema/UI:
   - `route`, `changedBy`, `reasonForChange`, `expectedEffects`, `monitorFor`, `reviewDate`, `notes`
 - Daily check-in now supports same-day edit (updates existing entry instead of failing as duplicate).
 - Added PWA support:
   - `manifest.webmanifest`
   - `sw.js` offline shell cache
-  - app icons in `/Users/brad/Documents/New project/bradckennedy/icons/`
+  - app icons in `/icons/`
   - offline banner in UI
 - Export enhancements:
   - selectable 7/14/30 day summary range
-  - print/PDF summary now includes risk status/history and action plan context.
+  - print/PDF summary now includes risk status/history context.
 
 ## Second-Round Upgrade Summary
 
@@ -211,7 +205,7 @@ Google Search Console quick steps (manual):
   - interactions + contraindications notes
   - side effects/monitoring
   - personal medication timeline
-  - notes/questions for psychiatrist/GP
+  - notes/questions for clinician/GP
 - Strengthened change interpretation cards with:
   - what changed
   - reason
@@ -243,10 +237,10 @@ Google Search Console quick steps (manual):
 
 Storage key remains unchanged: `medication_tracker_data_v1`.
 
-Migration and normalization in `/Users/brad/Documents/New project/bradckennedy/app.js` preserve existing records and read-only links:
+Migration and normalization in `/app.js` preserve existing records and convert older share metadata safely:
 
 - legacy medication/change/note/check-in rows are normalized into v2 shape
-- legacy `#share=` payloads are still supported
+- legacy saved share-link metadata is migrated to server-backed share tokens when available
 - no seeded default medications are injected
 
 Additional compatibility updates:
@@ -292,7 +286,7 @@ Per-link visibility toggles include:
 
 ## Editing MOA Templates
 
-MOA and related clinical text are editable per medication in the medication detail modal in `/Users/brad/Documents/New project/bradckennedy/app.js`.
+MOA and related clinical text are editable per medication in the medication detail modal in `/app.js`.
 
 Key fields:
 
@@ -310,7 +304,7 @@ Key fields:
 
 Default card text is generated by `generateInterpretationTemplate()` in:
 
-`/Users/brad/Documents/New project/bradckennedy/app.js`
+`/app.js`
 
 When logging a medication change:
 
@@ -335,8 +329,12 @@ Phase 2 is now implemented end-to-end with incremental updates (no rewrite).
   - audit log readable by owner/clinician
 - Secure sync backend:
   - structured account/user/session store in `server/data/store.json`
-  - optional encryption at rest for account state using `MT_ENCRYPTION_KEY`
-  - backward compatibility with legacy plain state + legacy owner key mode
+  - encrypted account state at rest when `MT_ENCRYPTION_KEY` is set
+  - production startup now refuses to run without `MT_ENCRYPTION_KEY`
+  - authenticated `httpOnly` cookie sessions only for state reads and writes
+  - share tokens are hashed at rest
+  - reset tokens and session tokens are hashed at rest
+  - rate limits protect sign-in, sign-up, invite accept, password reset, and share-link access
 - Audit log:
   - auth events, invite events, state reads/writes, risk notification events
   - API: `GET /api/audit?limit=...`
@@ -352,13 +350,35 @@ Phase 2 is now implemented end-to-end with incremental updates (no rewrite).
 ### New Server Environment Variables
 
 - `MT_ENCRYPTION_KEY`:
-  - when set, account state is encrypted at rest (AES-256-GCM)
-- `MT_ALLOW_LEGACY_OWNER_KEY`:
-  - `true` keeps old `x-owner-key` compatibility for legacy clients
+  - required in production
+  - encrypts account state at rest (AES-256-GCM)
 - `MT_SESSION_TTL_DAYS`:
-  - session token lifetime
+  - cookie session lifetime
 - `MT_INVITE_TTL_DAYS`:
   - default invite expiry window
+- `MT_SESSION_COOKIE_NAME`:
+  - optional cookie name override
+- `MT_SESSION_COOKIE_SAMESITE`:
+  - `lax` by default
+  - set `none` only when you are serving the frontend from a different site and using HTTPS
+- `CORS_ORIGIN`:
+  - comma-separated allowed origins when using a different frontend origin
+- `MT_PASSWORD_RESET_TTL_HOURS`:
+  - reset link expiry window
+- `MT_EXPOSE_RESET_LINKS=true`:
+  - development only
+  - returns reset links in the API response so you can test the flow without email
+
+### Password Reset Email Delivery
+
+- Password reset creation and completion are now server-side and one-time-use.
+- For production email delivery, add a mail transport in the password reset request path.
+- Minimum production mail settings to wire up:
+  - SMTP host
+  - SMTP port
+  - SMTP username/password
+  - sender address
+  - public app URL for reset links
 
 ### Quick Setup (Phase 2)
 

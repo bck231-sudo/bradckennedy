@@ -20,26 +20,22 @@ test("public landing page is accessible and has CTA links", async ({ page }) => 
 
   await page.goto(ROOT_URL, { waitUntil: "networkidle" });
 
-  await expect(page.getByRole("heading", { level: 1, name: /Medication Tracker/i })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: /Clear daily tracking\. Cleaner clinician review\./i })).toBeVisible();
   const primaryNav = page.getByRole("navigation", { name: /primary/i });
   await expect(primaryNav).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "Home", exact: true })).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "About", exact: true })).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "Contact", exact: true })).toBeVisible();
-  await expect(primaryNav.getByRole("link", { name: "Open App", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Open (the )?Medication Tracker app/i })).toBeVisible();
+  await expect(primaryNav.getByRole("link", { name: "Open App", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /(Open|Enter) CarePanel/i })).toBeVisible();
   await expect(page.getByRole("link", { name: /Skip to main content/i })).toHaveCount(1);
 
-  const openAppNavLink = primaryNav.getByRole("link", { name: "Open App", exact: true });
-  const openAppHref = String(await openAppNavLink.getAttribute("href") || "");
-  if (/^https?:\/\//i.test(openAppHref) && !openAppHref.startsWith(new URL(ROOT_URL).origin)) {
-    await expect(openAppNavLink).toHaveAttribute("href", /app\.bradckennedy\.org\/app/i);
-  } else {
-    await openAppNavLink.click();
-    await expect(page).toHaveURL(new RegExp(`${APP_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/?`));
-    await expect(page.locator("#mainContent")).toBeVisible();
-    await expect(page.locator("#sectionTitle")).toContainText(/Dashboard/i);
-  }
+  const openTrackerCta = page.getByRole("link", { name: /(Open|Enter) CarePanel/i });
+  await openTrackerCta.click();
+  await expect(page).toHaveURL(new RegExp(`${APP_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/?`));
+  await expect(page.locator("#mainContent")).toBeVisible();
+  await expect(page.locator("#sectionTitle")).toContainText(/Sign in|Reset password/i);
+  await expect(page.locator("#authSigninForm").getByRole("button", { name: "Sign in" })).toBeVisible();
 
   expect(consoleErrors).toEqual([]);
 });

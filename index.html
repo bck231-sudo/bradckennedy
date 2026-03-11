@@ -3,22 +3,52 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bradley Kennedy's Medication Tracker - Daily Health Management</title>
-  <meta name="description" content="A personal tool for tracking medications, doses, and wellbeing trends.">
+  <title>AdhdAgenda | Private Medication Tracking</title>
+  <meta name="description" content="AdhdAgenda is a private medication tracking workspace for daily records, appointment review, and controlled sharing.">
   <meta name="robots" content="index, follow">
-  <link rel="canonical" href="https://bradckennedy.org/">
+  <link rel="canonical" href="https://www.adhdagenda.com/">
   <link rel="icon" type="image/svg+xml" href="/site-icon.svg">
-  <link rel="stylesheet" href="/public/assets/site.css">
+  <script src="/canonical-host.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <script>
+  (() => {
+    const cacheResetVersion = "adhdagenda-public-cleanup-20260311-3";
+    try {
+      if (!("serviceWorker" in navigator) && !("caches" in window)) return;
+      if (window.localStorage?.getItem("adhdagenda_cache_reset_version") === cacheResetVersion) return;
+      window.localStorage?.setItem("adhdagenda_cache_reset_version", cacheResetVersion);
+      const tasks = [];
+      if ("serviceWorker" in navigator) {
+        tasks.push(
+          navigator.serviceWorker.getRegistrations().then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+        );
+      }
+      if ("caches" in window) {
+        tasks.push(
+          caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+        );
+      }
+      Promise.allSettled(tasks).finally(() => {
+        window.location.reload();
+      });
+    } catch (_error) {
+      // Best-effort cache reset only.
+    }
+  })();
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/site.css?v=20260311-public-cleanup-3">
 
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Bradley Kennedy's Medication Tracker - Daily Health Management">
-  <meta property="og:description" content="A personal tool for tracking medications, doses, and wellbeing trends.">
-  <meta property="og:url" content="https://bradckennedy.org/">
-  <meta property="og:image" content="https://bradckennedy.org/icons/icon-512-v2.png">
+  <meta property="og:title" content="AdhdAgenda | Private Medication Tracking">
+  <meta property="og:description" content="AdhdAgenda is a private medication tracking workspace for daily records, appointment review, and controlled sharing.">
+  <meta property="og:url" content="https://www.adhdagenda.com/">
+  <meta property="og:image" content="https://www.adhdagenda.com/icons/icon-512-v2.png">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Bradley Kennedy's Medication Tracker - Daily Health Management">
-  <meta name="twitter:description" content="A personal tool for tracking medications, doses, and wellbeing trends.">
-  <meta name="twitter:image" content="https://bradckennedy.org/icons/icon-512-v2.png">
+  <meta name="twitter:title" content="AdhdAgenda | Private Medication Tracking">
+  <meta name="twitter:description" content="AdhdAgenda is a private medication tracking workspace for daily records, appointment review, and controlled sharing.">
+  <meta name="twitter:image" content="https://www.adhdagenda.com/icons/icon-512-v2.png">
 
   <script type="application/ld+json">
   {
@@ -26,67 +56,439 @@
     "@graph": [
       {
         "@type": "WebSite",
-        "name": "Bradley Kennedy's Medication Tracker",
-        "url": "https://bradckennedy.org/",
-        "description": "A personal tool for tracking medications, doses, and wellbeing trends."
+        "name": "AdhdAgenda",
+        "url": "https://www.adhdagenda.com/",
+        "description": "AdhdAgenda is a private medication tracking workspace for daily records, appointment review, and controlled sharing."
       },
       {
-        "@type": "SoftwareApplication",
-        "name": "Medication Tracker",
-        "applicationCategory": "HealthApplication",
-        "operatingSystem": "Web",
-        "url": "/app",
-        "description": "Track medications, doses, and wellbeing trends."
+        "@type": "WebPage",
+        "name": "AdhdAgenda Home",
+        "url": "https://www.adhdagenda.com/",
+        "description": "Private medication tracking for daily continuity and cleaner appointment review."
       }
     ]
   }
   </script>
   <script src="/landing-compat.js" defer></script>
 </head>
-<body>
+<body class="public-page public-page-home">
   <a class="skip-link" href="#main-content">Skip to main content</a>
+
   <header class="site-header" role="banner">
     <div class="container site-header-inner">
-      <a class="site-logo" href="/" aria-label="Medication Tracker home">Medication Tracker</a>
-      <nav class="site-nav" aria-label="Primary">
-        <a href="/" aria-current="page">Home</a>
-        <a href="/about">About</a>
-        <a href="/contact">Contact</a>
-        <a href="/app">Open App</a>
-      </nav>
+      <a class="brand-lockup" href="/" aria-label="AdhdAgenda home">
+        <span class="brand-mark" aria-hidden="true">
+          <img src="/site-icon.svg" alt="">
+        </span>
+        <span class="brand-copy">
+          <span class="brand-title">AdhdAgenda</span>
+          <span class="brand-subtitle">Private medication tracking</span>
+        </span>
+      </a>
+
+      <div class="site-header-actions">
+        <nav class="site-nav" aria-label="Primary">
+          <a href="/" aria-current="page">Home</a>
+          <a href="/about/">About</a>
+          <a href="/contact/">Contact</a>
+        </nav>
+        <a class="button button-secondary button-compact" href="/app/">Open Workspace</a>
+      </div>
     </div>
   </header>
 
   <main id="main-content" class="site-main" tabindex="-1">
-    <section class="container content-shell">
-      <article class="hero-card" aria-labelledby="hero-title">
-        <h1 id="hero-title">Medication Tracker</h1>
-        <p class="lead">Shared-care medication tracking for personal consistency and psychiatrist review.</p>
-        <div class="cta-row">
-          <a class="button button-primary" href="/app" aria-label="Open the Medication Tracker app">Open Medication Tracker App</a>
-          <a class="button button-secondary" href="/app#consult" aria-label="Open consult summary">Go to Consult Summary</a>
+    <div class="container content-shell">
+      <section class="hero-card hero-card-premium" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">Private medication tracking</p>
+          <div class="hero-brand-panel">
+            <div class="hero-brand-lockup" aria-hidden="true">
+              <span class="hero-brand-icon">
+                <img src="/site-icon.svg" alt="">
+              </span>
+              <span class="hero-brand-wordmark">AdhdAgenda</span>
+            </div>
+            <p>Calm daily logging for you, with a cleaner appointment view when you need to share the important parts.</p>
+          </div>
+          <h1 id="hero-title" class="hero-title-stack">
+            <span><span class="hero-check" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m5 12 4.2 4.2L19 6.5"></path>
+              </svg>
+            </span><span class="hero-title-text">Clear daily tracking</span></span>
+            <span><span class="hero-check" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m5 12 4.2 4.2L19 6.5"></path>
+              </svg>
+            </span><span class="hero-title-text">Cleaner clinician review</span></span>
+          </h1>
+          <p class="lead">A calm medication tracker for two real jobs: keeping daily records neat and making psychiatrist appointments easier to review quickly, safely, and clearly.</p>
+          <div class="cta-row">
+            <a class="button button-primary" href="/app/" aria-label="Open CarePanel workspace">Open AdhdAgenda</a>
+            <a class="button button-secondary" href="/app/#consult" aria-label="Open clinician review">Open Clinician Review</a>
+          </div>
+          <div class="badge-row" aria-label="Key product highlights">
+            <span class="badge">Current meds and schedule</span>
+            <span class="badge">Changes and consult questions</span>
+            <span class="badge">Quick daily check-ins</span>
+            <span class="badge">Read-only sharing controls</span>
+          </div>
         </div>
-        <div class="feature-grid" aria-label="Feature highlights">
-          <article class="feature-card">
-            <h2>Dose tracking</h2>
-            <p>Log taken, skipped, and snoozed doses with timestamps.</p>
+
+        <div class="hero-preview" aria-hidden="true">
+          <div class="hero-stage">
+            <div class="preview-window preview-window-primary">
+              <div class="preview-window-header">
+                <div class="preview-window-title preview-window-title-large">
+                  <strong>Today summary</strong>
+                  <span>Your day at a glance</span>
+                </div>
+                <span class="preview-pill">Private</span>
+              </div>
+              <div class="preview-stat-grid">
+                <div class="preview-stat-card">
+                  <span>Medications today</span>
+                  <strong>3 scheduled, 2 logged</strong>
+                </div>
+                <div class="preview-stat-card">
+                  <span>Next reminder</span>
+                  <strong>Dexamphetamine at 1:30 pm</strong>
+                </div>
+              </div>
+              <div class="preview-visual-board">
+                <div class="preview-visual-card">
+                  <span class="preview-visual-label">Quick check-in</span>
+                  <strong>Focus steady</strong>
+                  <p>Short note saved after lunch.</p>
+                </div>
+                <div class="preview-visual-timeline">
+                  <div class="preview-timeline-item is-complete">
+                    <span>Morning dose</span>
+                    <strong>Logged</strong>
+                  </div>
+                  <div class="preview-timeline-item is-current">
+                    <span>Midday reminder</span>
+                    <strong>Up next</strong>
+                  </div>
+                  <div class="preview-timeline-item">
+                    <span>Question for next appointment</span>
+                    <strong>Ready</strong>
+                  </div>
+                </div>
+              </div>
+              <div class="preview-activity-list">
+                <div class="preview-activity-row">
+                  <span class="preview-activity-dot"></span>
+                  <span>Medication change log updated</span>
+                  <strong>Today</strong>
+                </div>
+                <div class="preview-activity-row">
+                  <span class="preview-activity-dot preview-activity-dot-teal"></span>
+                  <span>Sleep check-in captured</span>
+                  <strong>2 min</strong>
+                </div>
+                <div class="preview-activity-row">
+                  <span class="preview-activity-dot preview-activity-dot-gold"></span>
+                  <span>Question saved for review</span>
+                  <strong>1 item</strong>
+                </div>
+              </div>
+              <p class="preview-note">Daily notes stay simple, while the important context stays ready for your next appointment.</p>
+            </div>
+
+            <div class="hero-stage-secondary">
+              <div class="preview-window preview-window-secondary preview-window-plain-language">
+                <div class="preview-window-header">
+                  <div class="preview-window-title">
+                    <strong>Appointment review</strong>
+                    <span>Readable by a clinician in one pass</span>
+                  </div>
+                  <span class="preview-pill preview-pill-teal">Read-only</span>
+                </div>
+                <ul class="preview-check-list">
+                  <li>Current medications in one clear list</li>
+                  <li>Recent changes and side effects grouped together</li>
+                  <li>Questions ready before the appointment starts</li>
+                </ul>
+              </div>
+
+              <div class="hero-side-note">
+                <span class="hero-side-note-label">Why it helps</span>
+                <strong>Your private tracking stays separate from the cleaner appointment view.</strong>
+                <p>The daily area is for you. The review area is the simpler version another person can scan quickly.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section-block" aria-labelledby="core-uses-title">
+        <div class="section-heading">
+          <p class="section-kicker">Built around real use</p>
+          <h2 id="core-uses-title">One product, three clear benefits</h2>
+          <p class="section-copy">The site explains the product in plain language: stay on top of daily logging, prepare for appointments, and share safely when you choose to.</p>
+        </div>
+
+        <div class="feature-grid feature-grid-home">
+          <article class="feature-card feature-card-home feature-card-accent-sky">
+            <span class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M8 6.5h8"></path>
+                <path d="M8 11.5h8"></path>
+                <path d="M8 16.5h5"></path>
+                <rect x="5" y="4" width="14" height="16" rx="4"></rect>
+              </svg>
+            </span>
+            <h3>Daily tracking</h3>
+            <p>Keep medications, notes, check-ins, and follow-up items together without turning daily use into admin work.</p>
           </article>
-          <article class="feature-card">
-            <h2>Quick check-ins</h2>
-            <p>Capture mood, anxiety, focus, sleep, and side effects fast.</p>
+
+          <article class="feature-card feature-card-home feature-card-accent-teal">
+            <span class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 19h16"></path>
+                <path d="m7 14 3-3 3 2 4-5"></path>
+                <path d="M7 19V9"></path>
+              </svg>
+            </span>
+            <h3>Appointment review</h3>
+            <p>Turn the same information into a view that makes medication changes, questions, and trends easier to scan.</p>
           </article>
-          <article class="feature-card">
-            <h2>Consult-ready summaries</h2>
-            <p>Review medication changes, trends, and open questions before appointments.</p>
+
+          <article class="feature-card feature-card-home feature-card-accent-gold">
+            <span class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="4" y="10" width="16" height="10" rx="3"></rect>
+                <path d="M8 10V7a4 4 0 1 1 8 0v3"></path>
+              </svg>
+            </span>
+            <h3>Private sharing</h3>
+            <p>Use read-only sharing when helpful, while keeping sensitive details and editing tools under your control.</p>
           </article>
         </div>
-      </article>
-    </section>
+      </section>
+
+      <section class="section-card workflow-board" aria-labelledby="workflow-title">
+        <div class="workflow-intro">
+          <p class="section-kicker">How it works</p>
+          <h2 id="workflow-title">A calmer path from daily use to appointment review</h2>
+          <p class="section-copy">The same information moves through a simple sequence: capture what happened, prepare for the next appointment, and keep continuity between visits.</p>
+        </div>
+
+        <div class="workflow-steps">
+          <article class="summary-card workflow-step-card">
+            <span class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3v11"></path>
+                <path d="m8 10 4 4 4-4"></path>
+                <path d="M4 20h16"></path>
+              </svg>
+            </span>
+            <span class="workflow-step-label">Step 1</span>
+            <h3>Capture daily facts</h3>
+            <p>Keep medication timing, check-ins, and quick notes current without turning every entry into paperwork.</p>
+          </article>
+
+          <article class="summary-card workflow-step-card">
+            <span class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 20V4"></path>
+                <path d="M4 20h16"></path>
+                <path d="m7 14 3-3 3 2 4-5"></path>
+              </svg>
+            </span>
+            <span class="workflow-step-label">Step 2</span>
+            <h3>Prepare for appointments</h3>
+            <p>Turn the same data into a structured review with current meds, recent changes, side effects, and questions.</p>
+          </article>
+
+          <article class="summary-card workflow-step-card">
+            <span class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3.5" y="5" width="17" height="15" rx="2"></rect>
+                <path d="M7 3.5v3"></path>
+                <path d="M17 3.5v3"></path>
+                <path d="M3.5 9.5h17"></path>
+              </svg>
+            </span>
+            <span class="workflow-step-label">Step 3</span>
+            <h3>Keep continuity between visits</h3>
+            <p>Use the change log, questions, and decisions so the next appointment starts with context instead of memory alone.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section-block" aria-labelledby="quality-title">
+        <div class="section-heading section-heading-emphasis">
+          <p class="section-kicker">What the product includes</p>
+          <h2 id="quality-title">Designed to feel complete, private, and clinically useful</h2>
+          <p class="section-copy">Each area has a clear job, so a first-time visitor can tell which part is for daily use and which part is for appointment preparation.</p>
+        </div>
+
+        <div class="panel-grid panel-grid-home">
+          <article class="content-panel content-panel-centered">
+            <h3>Daily tracking area</h3>
+            <ul class="list-check">
+              <li><span class="inline-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4 10-10"></path></svg>
+              </span><span>Current medications with grouped schedules and dose detail.</span></li>
+              <li><span class="inline-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4 10-10"></path></svg>
+              </span><span>Quick check-ins, note capture, and medication change logging.</span></li>
+              <li><span class="inline-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4 10-10"></path></svg>
+              </span><span>A cleaner home view so the next action is easier to spot.</span></li>
+            </ul>
+          </article>
+
+          <article class="content-panel content-panel-centered">
+            <h3>Appointment review area</h3>
+            <ul class="list-check">
+              <li><span class="inline-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4 10-10"></path></svg>
+              </span><span>A review layout that separates scanning, planning, and export tasks.</span></li>
+              <li><span class="inline-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4 10-10"></path></svg>
+              </span><span>Clearer tables, labels, and summaries for clinicians.</span></li>
+              <li><span class="inline-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4 10-10"></path></svg>
+              </span><span>Read-only sharing that keeps editing tools out of the review context.</span></li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section-card about-section-home" aria-labelledby="about-title">
+        <div class="section-heading section-heading-emphasis about-heading-home">
+          <p class="section-kicker">About the product</p>
+          <h2 id="about-title">Built for two different moments: private daily use and clearer review</h2>
+          <p class="section-copy">AdhdAgenda is designed to keep everyday tracking practical, then surface the useful parts in a calmer format when a clinician or psychiatrist needs to review what has changed.</p>
+        </div>
+
+        <div class="about-focus-grid" aria-label="Product focus">
+          <article class="feature-card about-focus-card about-focus-card-owner">
+            <h3>Owner-first daily use</h3>
+            <p>Quick logging, lightweight notes, and next actions stay easy to keep up with on an ordinary day.</p>
+          </article>
+
+          <article class="feature-card about-focus-card about-focus-card-review">
+            <h3>Clinician-friendly review</h3>
+            <p>Current medications, recent changes, side effects, and questions are grouped into a simpler review flow.</p>
+          </article>
+
+          <article class="feature-card about-focus-card about-focus-card-share">
+            <h3>Read-only sharing options</h3>
+            <p>Sharing is controlled, limited, and separated from owner editing so the review context stays cleaner.</p>
+          </article>
+        </div>
+
+        <div class="about-story-grid">
+          <article class="content-panel about-story-card">
+            <p class="panel-kicker">Why it exists</p>
+            <h3>Reduce friction without losing the detail that matters later</h3>
+            <p>Daily tracking is easier to keep using when it feels lightweight. Appointment preparation still needs structure. The product is built to support both without pushing everything into one crowded screen.</p>
+          </article>
+
+          <article class="content-panel about-story-card about-story-card-accent">
+            <p class="panel-kicker">Who it helps</p>
+            <ul class="list-check">
+              <li><span class="inline-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4 10-10"></path></svg>
+              </span><span>People tracking medications, timing, and effects for their own continuity between visits.</span></li>
+              <li><span class="inline-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4 10-10"></path></svg>
+              </span><span>Appointments where a cleaner summary helps a psychiatrist or clinician scan the key points faster.</span></li>
+              <li><span class="inline-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4 10-10"></path></svg>
+              </span><span>Situations where read-only access is useful without exposing owner controls or sensitive editing screens.</span></li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section-card principles-section-home" aria-labelledby="principles-title">
+        <div class="section-heading section-heading-emphasis">
+          <p class="section-kicker">Core principles</p>
+          <h2 id="principles-title">What the product is trying to do well</h2>
+        </div>
+
+        <div class="support-grid support-grid-rich principles-grid-home">
+          <article class="support-card support-card-home">
+            <span class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m5 12 4 4 10-10"></path>
+              </svg>
+            </span>
+            <h3>Keep daily logging practical</h3>
+            <p>Track what matters without burying the owner in admin-heavy screens.</p>
+          </article>
+
+          <article class="support-card support-card-home">
+            <span class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 20V4"></path>
+                <path d="M4 20h16"></path>
+                <path d="m7 14 3-3 3 2 4-5"></path>
+              </svg>
+            </span>
+            <h3>Make reviews easier to scan</h3>
+            <p>Bring current meds, changes, trends, and questions into one clearer structure.</p>
+          </article>
+
+          <article class="support-card support-card-home">
+            <span class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="4" y="10" width="16" height="10" rx="3"></rect>
+                <path d="M8 10V7a4 4 0 1 1 8 0v3"></path>
+              </svg>
+            </span>
+            <h3>Keep sharing controlled</h3>
+            <p>Owner-only controls stay separate, and shared access can be tailored to hide sensitive detail.</p>
+          </article>
+
+          <article class="support-card support-card-home">
+            <span class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3.5" y="5" width="17" height="15" rx="2"></rect>
+                <path d="M7 3.5v3"></path>
+                <path d="M17 3.5v3"></path>
+                <path d="M3.5 9.5h17"></path>
+              </svg>
+            </span>
+            <h3>Support continuity between visits</h3>
+            <p>Questions, change history, and decision notes make it easier to pick up where the last appointment ended.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="cta-band" aria-labelledby="cta-title">
+        <div>
+          <p class="section-kicker">Next step</p>
+          <h2 id="cta-title">Open the workspace or read more about how AdhdAgenda works</h2>
+          <p class="lead">Built for practical daily use, clearer psychiatrist review, and safer sharing when needed. Not a substitute for medical advice.</p>
+        </div>
+        <div class="button-row">
+          <a class="button button-secondary" href="/app/">Open the Workspace</a>
+          <a class="button button-secondary" href="/about/">See how it works</a>
+        </div>
+      </section>
+    </div>
   </main>
 
   <footer class="site-footer" role="contentinfo">
-    <div class="container">
-      <p>This tool supports tracking and clinician discussion. It does not replace professional medical advice.</p>
+    <div class="container footer-shell">
+      <div class="footer-note">
+        <span class="footer-mark" aria-hidden="true">
+          <img src="/site-icon.svg" alt="">
+        </span>
+        <p>AdhdAgenda supports tracking for personal use and clinician discussion. It is not a substitute for professional medical advice.</p>
+      </div>
+      <nav class="footer-links" aria-label="Footer">
+        <a href="/contact/">Contact</a>
+        <a href="/privacy/">Privacy</a>
+        <a href="/terms/">Terms</a>
+      </nav>
     </div>
   </footer>
 </body>
