@@ -40,7 +40,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/site.css?v=20260311-repo-cleanup-1">
-  <link rel="stylesheet" href="/assets/homepage.css?v=20260312-hero-reference-match-3">
+  <link rel="stylesheet" href="/assets/homepage.css?v=20260312-hero-reference-match-4">
 
   <meta property="og:type" content="website">
   <meta property="og:title" content="AdhdAgenda | Private ADHD Medication Tracking">
@@ -81,10 +81,16 @@
       <div class="home-topbar">
         <a class="home-topbar-brand" href="/" aria-label="AdhdAgenda home">
           <span class="home-topbar-mark" aria-hidden="true">
-            <img src="/site-icon.svg" alt="">
+            <svg viewBox="0 0 86 46" focusable="false" aria-hidden="true">
+              <path d="M5 40 18 8h9l14 32" fill="none" stroke="currentColor" stroke-width="5.4" stroke-linecap="round" stroke-linejoin="round"></path>
+              <path d="M14.5 24h20.5" fill="none" stroke="currentColor" stroke-width="5.4" stroke-linecap="round"></path>
+              <path d="M31 40 44 8h9l14 32" fill="none" stroke="currentColor" stroke-width="5.4" stroke-linecap="round" stroke-linejoin="round"></path>
+              <path d="M40.5 24H61" fill="none" stroke="currentColor" stroke-width="5.4" stroke-linecap="round"></path>
+            </svg>
           </span>
-          <span class="home-topbar-wordmark">AdhdAgenda</span>
-          <span class="home-topbar-badge" aria-hidden="true">AA</span>
+          <span class="home-topbar-wordmark">
+            <span class="home-topbar-wordmark-main">Adhd</span><span class="home-topbar-wordmark-accent">Agenda</span>
+          </span>
         </a>
 
         <div class="home-topbar-actions">
@@ -154,9 +160,55 @@
                 </div>
 
                 <div class="home-device-objects">
-                  <span class="home-device-check" aria-hidden="true"></span>
-                  <span class="home-device-blister" aria-hidden="true"></span>
-                  <span class="home-device-capsule" aria-hidden="true"></span>
+                  <span class="home-device-check" aria-hidden="true">
+                    <svg viewBox="0 0 84 84" focusable="false" aria-hidden="true">
+                      <defs>
+                        <linearGradient id="heroCheckFill" x1="14" y1="12" x2="66" y2="70" gradientUnits="userSpaceOnUse">
+                          <stop offset="0" stop-color="#79D67E"></stop>
+                          <stop offset="1" stop-color="#2F9C67"></stop>
+                        </linearGradient>
+                      </defs>
+                      <circle cx="42" cy="42" r="37" fill="url(#heroCheckFill)"></circle>
+                      <path d="M27 43.5 37.5 54 59 31.5" fill="none" stroke="#F4FAF0" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"></path>
+                    </svg>
+                  </span>
+                  <span class="home-device-blister" aria-hidden="true">
+                    <svg viewBox="0 0 78 94" focusable="false" aria-hidden="true">
+                      <defs>
+                        <linearGradient id="heroBlisterPanel" x1="10" y1="8" x2="60" y2="90" gradientUnits="userSpaceOnUse">
+                          <stop offset="0" stop-color="#F8FBFE"></stop>
+                          <stop offset="1" stop-color="#D9E3EE"></stop>
+                        </linearGradient>
+                      </defs>
+                      <rect x="8" y="5" width="58" height="84" rx="14" fill="url(#heroBlisterPanel)"></rect>
+                      <rect x="8.8" y="5.8" width="56.4" height="82.4" rx="13.2" fill="none" stroke="rgba(105, 131, 162, 0.3)" stroke-width="1.6"></rect>
+                      <g fill="#A3B5C9">
+                        <circle cx="24" cy="22" r="6.8"></circle>
+                        <circle cx="43" cy="22" r="6.8"></circle>
+                        <circle cx="24" cy="41" r="6.8"></circle>
+                        <circle cx="43" cy="41" r="6.8"></circle>
+                        <circle cx="24" cy="60" r="6.8"></circle>
+                        <circle cx="43" cy="60" r="6.8"></circle>
+                      </g>
+                    </svg>
+                  </span>
+                  <span class="home-device-capsule" aria-hidden="true">
+                    <svg viewBox="0 0 64 30" focusable="false" aria-hidden="true">
+                      <defs>
+                        <linearGradient id="heroCapsuleLight" x1="4" y1="8" x2="32" y2="24" gradientUnits="userSpaceOnUse">
+                          <stop offset="0" stop-color="#F7FAFD"></stop>
+                          <stop offset="1" stop-color="#E6EEF8"></stop>
+                        </linearGradient>
+                        <linearGradient id="heroCapsuleWarm" x1="33" y1="6" x2="58" y2="25" gradientUnits="userSpaceOnUse">
+                          <stop offset="0" stop-color="#F5B56A"></stop>
+                          <stop offset="1" stop-color="#EB9441"></stop>
+                        </linearGradient>
+                      </defs>
+                      <path d="M17 5h18a10 10 0 0 1 0 20H17A10 10 0 0 1 17 5Z" fill="url(#heroCapsuleLight)"></path>
+                      <path d="M35 5h12a10 10 0 0 1 0 20H35Z" fill="url(#heroCapsuleWarm)"></path>
+                      <path d="M35 7v16" fill="none" stroke="rgba(160, 176, 193, 0.6)" stroke-width="1.6"></path>
+                    </svg>
+                  </span>
                 </div>
               </div>
             </div>
@@ -330,10 +382,6 @@
             <p>See the important changes in one place and share a read-only view if needed.</p>
           </article>
         </div>
-
-        <div class="home-inline-cta">
-          <a class="button button-primary" href="/app/">Open workspace</a>
-        </div>
       </div>
     </section>
 
@@ -359,20 +407,6 @@
       </div>
     </section>
 
-    <section class="home-band home-band-cta" aria-labelledby="closing-cta-title">
-      <div class="container home-band-frame home-closing">
-        <div class="home-closing-copy">
-          <p class="section-kicker">Start here</p>
-          <h2 id="closing-cta-title">Start tracking more clearly</h2>
-          <p class="home-closing-text">AdhdAgenda helps you keep treatment information organised, easier to review, and ready when you need it.</p>
-        </div>
-
-        <div class="home-closing-actions">
-          <a class="button button-primary" href="/app/">Open workspace</a>
-          <a class="button button-secondary" href="/about/">About AdhdAgenda</a>
-        </div>
-      </div>
-    </section>
   </main>
 
   <footer class="site-footer" role="contentinfo">
