@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Terms of Use | AdhdAgenda</title>
-  <meta name="description" content="Usage terms for the AdhdAgenda website and workspace.">
+  <title>AdhdAgenda | Private ADHD Medication Tracking</title>
+  <meta name="description" content="AdhdAgenda helps you keep a private ADHD medication record, then open a simple appointment summary when it is time to talk things through.">
   <meta name="robots" content="index, follow">
-  <link rel="canonical" href="https://adhdagenda.com/terms/">
+  <link rel="canonical" href="https://adhdagenda.com/">
   <link rel="icon" type="image/svg+xml" href="/site-icon.svg">
   <script>
   (() => {
@@ -38,96 +38,376 @@
   <script src="/canonical-host.js?v=20260311-host-fix-1"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/site.css?v=20260311-repo-cleanup-1">
+  <link rel="stylesheet" href="/assets/homepage.css?v=20260312-hero-reference-match-4">
+
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="AdhdAgenda | Private ADHD Medication Tracking">
+  <meta property="og:description" content="AdhdAgenda helps you keep a private ADHD medication record, then open a simple appointment summary when it is time to talk things through.">
+  <meta property="og:url" content="https://adhdagenda.com/">
+  <meta property="og:image" content="https://adhdagenda.com/icons/icon-512-v2.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="AdhdAgenda | Private ADHD Medication Tracking">
+  <meta name="twitter:description" content="AdhdAgenda helps you keep a private ADHD medication record, then open a simple appointment summary when it is time to talk things through.">
+  <meta name="twitter:image" content="https://adhdagenda.com/icons/icon-512-v2.png">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "name": "AdhdAgenda",
+        "url": "https://adhdagenda.com/",
+        "description": "AdhdAgenda helps you keep a private ADHD medication record, then open a simple appointment summary when it is time to talk things through."
+      },
+      {
+        "@type": "WebPage",
+        "name": "AdhdAgenda Home",
+        "url": "https://adhdagenda.com/",
+        "description": "Private ADHD medication tracking with a calmer daily record and a simple appointment summary."
+      }
+    ]
+  }
+  </script>
+  <script src="/landing-compat.js" defer></script>
 </head>
-<body class="public-page public-page-terms">
+<body class="public-page public-page-home">
   <a class="skip-link" href="#main-content">Skip to main content</a>
 
   <header class="site-header" role="banner">
-    <div class="container site-header-inner">
-      <a class="brand-lockup" href="/" aria-label="AdhdAgenda home">
-        <span class="brand-mark" aria-hidden="true">
-          <img src="/site-icon.svg" alt="">
-        </span>
-        <span class="brand-copy">
-          <span class="brand-title">AdhdAgenda</span>
-          <span class="brand-subtitle">Private medication tracking</span>
-        </span>
-      </a>
+    <div class="container home-site-header">
+      <div class="home-topbar">
+        <a class="home-topbar-brand" href="/" aria-label="AdhdAgenda home">
+          <span class="home-topbar-mark" aria-hidden="true">
+            <svg viewBox="0 0 86 46" focusable="false" aria-hidden="true">
+              <path d="M5 40 18 8h9l14 32" fill="none" stroke="currentColor" stroke-width="5.4" stroke-linecap="round" stroke-linejoin="round"></path>
+              <path d="M14.5 24h20.5" fill="none" stroke="currentColor" stroke-width="5.4" stroke-linecap="round"></path>
+              <path d="M31 40 44 8h9l14 32" fill="none" stroke="currentColor" stroke-width="5.4" stroke-linecap="round" stroke-linejoin="round"></path>
+              <path d="M40.5 24H61" fill="none" stroke="currentColor" stroke-width="5.4" stroke-linecap="round"></path>
+            </svg>
+          </span>
+          <span class="home-topbar-wordmark">
+            <span class="home-topbar-wordmark-main">Adhd</span><span class="home-topbar-wordmark-accent">Agenda</span>
+          </span>
+          <span class="home-topbar-badge" aria-hidden="true">AA</span>
+        </a>
 
-      <div class="site-header-actions">
-        <nav class="site-nav" aria-label="Primary">
-          <a href="/">Home</a>
-          <a href="/about/">About</a>
-          <a href="/contact/">Contact</a>
-        </nav>
-        <a class="button button-secondary button-compact" href="/app/">Open Workspace</a>
+        <div class="home-topbar-actions">
+          <nav class="home-topnav" aria-label="Primary">
+            <a href="/" aria-current="page">Features</a>
+            <a href="/about/">How It Works</a>
+            <a href="/contact/">Support</a>
+          </nav>
+          <a class="button button-secondary button-compact home-topbar-cta" href="/app/">Open workspace</a>
+        </div>
       </div>
     </div>
   </header>
 
-  <main id="main-content" class="site-main" tabindex="-1">
-    <div class="container content-shell">
-      <section class="page-hero" aria-labelledby="page-title">
-        <p class="page-kicker">Terms of use</p>
-        <h1 id="page-title">Terms for using the AdhdAgenda website</h1>
-        <p class="lead">AdhdAgenda is intended to support private medication tracking and clinician review. It is not an emergency response tool, a public medical record, or a replacement for professional healthcare advice.</p>
-      </section>
-
-      <section class="policy-grid" aria-label="Terms overview">
-        <article class="policy-card">
-          <span class="card-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 20V4"></path>
-              <path d="M4 20h16"></path>
-              <path d="m7 14 3-3 3 2 4-5"></path>
-            </svg>
-          </span>
-          <h3>Intended use</h3>
-          <p>This website is intended for private medication tracking and support for clinician review, not for diagnosis or medical instruction.</p>
-        </article>
-
-        <article class="policy-card">
-          <span class="card-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="11" width="18" height="10" rx="2"></rect>
-              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-            </svg>
-          </span>
-          <h3>Account responsibility</h3>
-          <p>Users are responsible for keeping access credentials, private data, and shared links secure.</p>
-        </article>
-      </section>
-
-      <section class="content-panel" aria-labelledby="terms-detail-title">
-        <h2 id="terms-detail-title">Key terms in plain language</h2>
-        <section>
-          <h3>Use it as a support tool</h3>
-          <p>The website is meant to help organise treatment information, not to replace a prescriber, therapist, GP, or emergency service.</p>
-        </section>
-        <section>
-          <h3>Protect your access</h3>
-          <p>If you use accounts or shared links, you are responsible for keeping them secure and for reviewing whether recipient access is still appropriate.</p>
-        </section>
-        <section>
-          <h3>No emergency service</h3>
-          <p>This website is not monitored as an emergency system. For urgent concerns, contact local emergency services or your care provider directly.</p>
-        </section>
-      </section>
-
-      <section class="cta-band" aria-labelledby="terms-cta-title">
-        <div>
-          <p class="section-kicker">Need the tracker itself?</p>
-          <h2 id="terms-cta-title">Open the workspace to track medications or prepare for review</h2>
-          <p class="lead">Use the site for practical organisation and clinician discussion support, then rely on healthcare professionals for diagnosis and treatment decisions.</p>
+  <main id="main-content" class="site-main home-main" tabindex="-1">
+    <section class="home-hero-band" aria-labelledby="hero-title">
+      <div class="container home-hero">
+        <div class="home-hero-copy">
+          <h1 id="hero-title">Track your ADHD medication with clarity and control.</h1>
         </div>
-        <div class="button-row">
-          <a class="button button-secondary" href="/app/">Open AdhdAgenda</a>
-          <a class="button button-secondary" href="/privacy/">Privacy</a>
+
+        <div class="home-hero-preview" aria-hidden="true">
+          <div class="home-device-shell">
+            <div class="home-device-screen">
+              <div class="home-device-app">
+                <div class="home-device-panel">
+                  <div class="home-device-panel-head">
+                    <div>
+                      <strong>Today's Medication</strong>
+                      <span>Tuesday, Jan 18</span>
+                    </div>
+                    <span class="home-device-menu" aria-hidden="true">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </span>
+                  </div>
+
+                  <div class="home-device-medicine">
+                    <span class="home-device-pill-icon" aria-hidden="true"></span>
+                    <div class="home-device-medicine-copy">
+                      <strong>Adderall XR</strong>
+                      <span>20 mg • Taken</span>
+                    </div>
+                    <span class="home-device-chevron" aria-hidden="true"></span>
+                  </div>
+
+                  <div class="home-device-label">Log Dose</div>
+                  <div class="home-device-toggle">
+                    <span>Missed</span>
+                    <span class="is-active">Taken</span>
+                    <span>Adjust</span>
+                  </div>
+
+                  <div class="home-device-label">Symptoms</div>
+                  <div class="home-device-scale">
+                    <span>None</span>
+                    <div class="home-device-dots" aria-hidden="true">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
+                    <span>Severe</span>
+                  </div>
+                </div>
+
+                <div class="home-device-objects">
+                  <span class="home-device-check" aria-hidden="true">
+                    <svg viewBox="0 0 84 84" focusable="false" aria-hidden="true">
+                      <defs>
+                        <linearGradient id="heroCheckFill" x1="14" y1="12" x2="66" y2="70" gradientUnits="userSpaceOnUse">
+                          <stop offset="0" stop-color="#79D67E"></stop>
+                          <stop offset="1" stop-color="#2F9C67"></stop>
+                        </linearGradient>
+                      </defs>
+                      <circle cx="42" cy="42" r="37" fill="url(#heroCheckFill)"></circle>
+                      <path d="M27 43.5 37.5 54 59 31.5" fill="none" stroke="#F4FAF0" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"></path>
+                    </svg>
+                  </span>
+                  <span class="home-device-blister" aria-hidden="true">
+                    <svg viewBox="0 0 78 94" focusable="false" aria-hidden="true">
+                      <defs>
+                        <linearGradient id="heroBlisterPanel" x1="10" y1="8" x2="60" y2="90" gradientUnits="userSpaceOnUse">
+                          <stop offset="0" stop-color="#F4F9FE"></stop>
+                          <stop offset="1" stop-color="#C8D8EC"></stop>
+                        </linearGradient>
+                      </defs>
+                      <rect x="8" y="5" width="58" height="84" rx="14" fill="url(#heroBlisterPanel)"></rect>
+                      <rect x="8.8" y="5.8" width="56.4" height="82.4" rx="13.2" fill="none" stroke="rgba(90, 120, 155, 0.28)" stroke-width="1.6"></rect>
+                      <g fill="#7aace0">
+                        <circle cx="24" cy="22" r="6.8"></circle>
+                        <circle cx="43" cy="22" r="6.8"></circle>
+                        <circle cx="24" cy="41" r="6.8"></circle>
+                        <circle cx="43" cy="41" r="6.8"></circle>
+                        <circle cx="24" cy="60" r="6.8"></circle>
+                        <circle cx="43" cy="60" r="6.8"></circle>
+                      </g>
+                    </svg>
+                  </span>
+                  <span class="home-device-capsule" aria-hidden="true">
+                    <svg viewBox="0 0 64 30" focusable="false" aria-hidden="true">
+                      <defs>
+                        <linearGradient id="heroCapsuleLight" x1="4" y1="8" x2="32" y2="24" gradientUnits="userSpaceOnUse">
+                          <stop offset="0" stop-color="#F7FAFD"></stop>
+                          <stop offset="1" stop-color="#E6EEF8"></stop>
+                        </linearGradient>
+                        <linearGradient id="heroCapsuleWarm" x1="33" y1="6" x2="58" y2="25" gradientUnits="userSpaceOnUse">
+                          <stop offset="0" stop-color="#F5B56A"></stop>
+                          <stop offset="1" stop-color="#EB9441"></stop>
+                        </linearGradient>
+                      </defs>
+                      <path d="M17 5h18a10 10 0 0 1 0 20H17A10 10 0 0 1 17 5Z" fill="url(#heroCapsuleLight)"></path>
+                      <path d="M35 5h12a10 10 0 0 1 0 20H35Z" fill="url(#heroCapsuleWarm)"></path>
+                      <path d="M35 7v16" fill="none" stroke="rgba(160, 176, 193, 0.6)" stroke-width="1.6"></path>
+                    </svg>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="home-schedule">
+            <article class="home-schedule-item">
+              <span class="home-schedule-time">8:00 AM</span>
+              <div class="home-schedule-card">
+                <span class="home-schedule-icon home-schedule-icon-pill" aria-hidden="true">
+                  <svg viewBox="0 0 32 32" focusable="false" aria-hidden="true">
+                    <rect x="5" y="10" width="22" height="12" rx="6" fill="#e9f4ff" transform="rotate(-32 16 16)"></rect>
+                    <path d="M10.2 22.1 23.8 9.9" stroke="#2e5f9f" stroke-width="2.2" stroke-linecap="round"></path>
+                  </svg>
+                </span>
+                <div>
+                  <strong>Took Medication</strong>
+                  <span>30mg Adderall</span>
+                </div>
+              </div>
+            </article>
+
+            <article class="home-schedule-item">
+              <span class="home-schedule-time">10:15 AM</span>
+              <div class="home-schedule-card">
+                <span class="home-schedule-icon home-schedule-icon-note" aria-hidden="true">
+                  <svg viewBox="0 0 32 32" focusable="false" aria-hidden="true">
+                    <rect x="7" y="6" width="18" height="20" rx="3" fill="#fff2cf"></rect>
+                    <path d="M11 12h10M11 16h10M11 20h7" stroke="#315c97" stroke-width="2" stroke-linecap="round"></path>
+                  </svg>
+                </span>
+                <div>
+                  <strong>Focus Note</strong>
+                  <span>Feeling more alert &amp; productive</span>
+                </div>
+              </div>
+            </article>
+
+            <article class="home-schedule-item">
+              <span class="home-schedule-time">12:30 PM</span>
+              <div class="home-schedule-card">
+                <span class="home-schedule-icon home-schedule-icon-check" aria-hidden="true">
+                  <svg viewBox="0 0 32 32" focusable="false" aria-hidden="true">
+                    <rect x="5" y="5" width="22" height="22" rx="4" fill="#fde7b4"></rect>
+                    <path d="M11.5 16.5 15 20l6.5-8" stroke="#2b8d67" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+                    <path d="M11 8.5h3M18 8.5h3" stroke="#d7843d" stroke-width="2" stroke-linecap="round"></path>
+                  </svg>
+                </span>
+                <div>
+                  <strong>Prepare for Appointment</strong>
+                  <span>Review questions for Dr. Lee</span>
+                </div>
+              </div>
+            </article>
+
+            <article class="home-schedule-item">
+              <span class="home-schedule-time">2:00 PM</span>
+              <div class="home-schedule-card">
+                <span class="home-schedule-icon home-schedule-icon-visit" aria-hidden="true">
+                  <svg viewBox="0 0 32 32" focusable="false" aria-hidden="true">
+                    <path d="M9 7c2.8 0 5 2.2 5 5v2c0 1.4-1.1 2.5-2.5 2.5S9 15.4 9 14v-2.5C9 9 11.2 7 14 7" stroke="#315c97" stroke-width="2.4" fill="none" stroke-linecap="round"></path>
+                    <path d="M18 7c2.8 0 5 2.2 5 5v7.5c0 3.3-2.7 6-6 6h-2" stroke="#315c97" stroke-width="2.4" fill="none" stroke-linecap="round"></path>
+                    <path d="M10 20v4.5c0 1.4 1.1 2.5 2.5 2.5S15 25.9 15 24.5V20" stroke="#315c97" stroke-width="2.4" fill="none" stroke-linecap="round"></path>
+                  </svg>
+                </span>
+                <div>
+                  <strong>Doctor's Visit</strong>
+                  <span>with Dr. Lee</span>
+                </div>
+              </div>
+            </article>
+          </div>
         </div>
-      </section>
-    </div>
+
+        <div class="home-hero-actions">
+          <a class="button button-primary" href="/app/">Get Started</a>
+          <a class="button button-secondary" href="#how-it-works">See how it works</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="home-band home-band-soft" aria-labelledby="helps-title">
+      <div class="container home-band-frame">
+        <div class="home-band-head">
+          <p class="section-kicker">What it helps with</p>
+          <h2 id="helps-title">Everything you need in one place</h2>
+          <p class="home-section-copy">Stop relying on memory, scattered notes, or old messages. Keep your treatment history organised and easy to review.</p>
+        </div>
+
+        <div class="home-feature-grid" role="list">
+          <article class="home-feature-card" role="listitem">
+            <h3>Log day to day changes</h3>
+            <p>Track medication, dose changes, effects, and notes in one timeline.</p>
+          </article>
+
+          <article class="home-feature-card" role="listitem">
+            <h3>Prepare for appointments</h3>
+            <p>See what changed, what helped, and what still needs attention before you meet with your psychiatrist.</p>
+          </article>
+
+          <article class="home-feature-card" role="listitem">
+            <h3>Share only what matters</h3>
+            <p>Use read-only views when you want someone else to review your information without giving edit access.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="home-band home-band-plain" aria-labelledby="preview-title">
+      <div class="container home-band-frame">
+        <div class="home-band-head">
+          <p class="section-kicker">Product preview</p>
+          <h2 id="preview-title">See your treatment history clearly</h2>
+          <p class="home-section-copy">Review medications, notes, check-ins, and recent changes without digging through old messages or trying to remember everything at once.</p>
+        </div>
+
+        <div class="home-showcase" aria-hidden="true">
+          <div class="home-showcase-panel home-showcase-summary">
+            <span class="home-showcase-label">Today</span>
+            <strong>Current medication details stay visible at the top, with notes and changes directly underneath.</strong>
+            <p>See the current dose first instead of piecing it together from older notes.</p>
+          </div>
+
+          <div class="home-showcase-panel">
+            <span class="home-showcase-label">Recent changes</span>
+            <div class="home-showcase-stack">
+              <span>Dose updated last week</span>
+              <span>Afternoon drop noted on Tue, Wed, and Thu</span>
+              <span>Appetite changes grouped with the same week</span>
+            </div>
+          </div>
+
+          <div class="home-showcase-panel">
+            <span class="home-showcase-label">Notes</span>
+            <p>Short notes stay attached to the timeline so the reason for a change is still easy to understand later.</p>
+          </div>
+
+          <div class="home-showcase-panel home-showcase-appointment">
+            <span class="home-showcase-label">Next appointment</span>
+            <strong>Friday, 9:00 am</strong>
+            <p>Open the review view with medication details, recent changes, and saved questions already organised.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="home-band home-band-soft" id="how-it-works" aria-labelledby="how-it-works-title">
+      <div class="container home-band-frame">
+        <div class="home-band-head">
+          <p class="section-kicker">How it works</p>
+          <h2 id="how-it-works-title">How it works</h2>
+          <p class="home-section-copy">A simple process you can keep up with between appointments.</p>
+        </div>
+
+        <div class="home-step-grid" role="list">
+          <article class="home-step-card" role="listitem">
+            <span class="home-step-number">1</span>
+            <h3>Add your medication details</h3>
+            <p>Record what you take and update it when things change.</p>
+          </article>
+
+          <article class="home-step-card" role="listitem">
+            <span class="home-step-number">2</span>
+            <h3>Keep short daily notes</h3>
+            <p>Log check-ins, side effects, patterns, or anything worth raising later.</p>
+          </article>
+
+          <article class="home-step-card" role="listitem">
+            <span class="home-step-number">3</span>
+            <h3>Review before appointments</h3>
+            <p>See the important changes in one place and share a read-only view if needed.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="home-band home-band-tint" aria-labelledby="privacy-title">
+      <div class="container home-band-frame">
+        <div class="home-band-head">
+          <p class="section-kicker">Privacy and review</p>
+          <h2 id="privacy-title">Private by default</h2>
+          <p class="home-section-copy">Your information stays under your control. Share a read-only view when you want someone else to review it without changing anything.</p>
+        </div>
+
+        <div class="home-privacy-grid">
+          <article class="home-privacy-card">
+            <h3>Keep personal tracking private</h3>
+            <p>Use the workspace for your own notes, medication history, and day-to-day tracking.</p>
+          </article>
+
+          <article class="home-privacy-card">
+            <h3>Share a cleaner review view</h3>
+            <p>Let a clinician or trusted person see what matters without giving edit access.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <footer class="site-footer" role="contentinfo">
@@ -136,12 +416,12 @@
         <span class="footer-mark" aria-hidden="true">
           <img src="/site-icon.svg" alt="">
         </span>
-        <p>This tool supports tracking and clinician discussion. It does not replace professional medical advice.</p>
+        <p>AdhdAgenda supports tracking for personal use and clinician discussion. It is not a substitute for professional medical advice.</p>
       </div>
       <nav class="footer-links" aria-label="Footer">
         <a href="/contact/">Contact</a>
         <a href="/privacy/">Privacy</a>
-        <a href="/terms/" aria-current="page">Terms</a>
+        <a href="/terms/">Terms</a>
       </nav>
     </div>
   </footer>

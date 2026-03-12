@@ -20,20 +20,21 @@ test("public landing page is accessible and has CTA links", async ({ page }) => 
 
   await page.goto(ROOT_URL, { waitUntil: "networkidle" });
 
-  await expect(page.getByRole("heading", { level: 1, name: /Track your ADHD medication with clarity and control\./i })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: /Track your ADHD medication with clarity and control\./i })).toBeAttached();
   const primaryNav = page.getByRole("navigation", { name: /primary/i });
   await expect(primaryNav).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "Features", exact: true })).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "How It Works", exact: true })).toBeVisible();
+  await expect(primaryNav.getByRole("link", { name: "Get Started", exact: true })).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "Support", exact: true })).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "Open App", exact: true })).toHaveCount(0);
-  const workspaceCtas = page.getByRole("link", { name: /Open workspace|Get Started/i });
-  await expect(workspaceCtas.first()).toBeVisible();
+  await expect(page.getByRole("navigation", { name: /homepage links/i })).toHaveCount(0);
+  const getStartedCta = page.locator(".home-hero-actions").getByRole("link", { name: "Get Started", exact: true });
+  await expect(getStartedCta).toBeVisible();
   await expect(page.getByRole("link", { name: "See how it works", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: /Skip to main content/i })).toHaveCount(1);
 
-  const openTrackerCta = workspaceCtas.first();
-  await openTrackerCta.click();
+  await getStartedCta.click();
   await expect(page).toHaveURL(new RegExp(`${APP_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/?`));
   await expect(page.locator("#mainContent")).toBeVisible();
   await expect(page.locator("#sectionTitle")).toContainText(/Sign in|Reset password/i);

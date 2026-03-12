@@ -40,7 +40,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/site.css?v=20260311-repo-cleanup-1">
-  <link rel="stylesheet" href="/assets/homepage.css?v=20260312-hero-reference-match-4">
+  <link rel="stylesheet" href="/assets/homepage.css?v=20260312-hero-reference-match-9">
 
   <meta property="og:type" content="website">
   <meta property="og:title" content="AdhdAgenda | Private ADHD Medication Tracking">
@@ -81,12 +81,7 @@
       <div class="home-topbar">
         <a class="home-topbar-brand" href="/" aria-label="AdhdAgenda home">
           <span class="home-topbar-mark" aria-hidden="true">
-            <svg viewBox="0 0 86 46" focusable="false" aria-hidden="true">
-              <path d="M5 40 18 8h9l14 32" fill="none" stroke="currentColor" stroke-width="5.4" stroke-linecap="round" stroke-linejoin="round"></path>
-              <path d="M14.5 24h20.5" fill="none" stroke="currentColor" stroke-width="5.4" stroke-linecap="round"></path>
-              <path d="M31 40 44 8h9l14 32" fill="none" stroke="currentColor" stroke-width="5.4" stroke-linecap="round" stroke-linejoin="round"></path>
-              <path d="M40.5 24H61" fill="none" stroke="currentColor" stroke-width="5.4" stroke-linecap="round"></path>
-            </svg>
+            <img src="/assets/landing/image.png?v=20260312-logo-3" alt="" loading="eager" decoding="async">
           </span>
           <span class="home-topbar-wordmark">
             <span class="home-topbar-wordmark-main">Adhd</span><span class="home-topbar-wordmark-accent">Agenda</span>
@@ -95,8 +90,9 @@
 
         <div class="home-topbar-actions">
           <nav class="home-topnav" aria-label="Primary">
-            <a href="/" aria-current="page">Features</a>
+            <a href="#features" aria-current="page">Features</a>
             <a href="/about/">How It Works</a>
+            <a href="/app/">Get Started</a>
             <a href="/contact/">Support</a>
           </nav>
           <a class="button button-secondary button-compact home-topbar-cta" href="/app/">Open workspace</a>
@@ -106,13 +102,26 @@
   </header>
 
   <main id="main-content" class="site-main home-main" tabindex="-1">
-    <section class="home-hero-band" aria-labelledby="hero-title">
+    <section class="home-hero-band" id="features" aria-labelledby="hero-title">
       <div class="container home-hero">
+        <div class="home-hero-topline" aria-hidden="true"></div>
+
+        <div class="home-hero-brandlockup">
+          <a class="home-topbar-brand home-hero-brand" href="/" aria-label="AdhdAgenda home">
+            <span class="home-topbar-mark" aria-hidden="true">
+              <img src="/assets/landing/image.png?v=20260312-logo-3" alt="" loading="eager" decoding="async">
+            </span>
+            <span class="home-topbar-wordmark">
+              <span class="home-topbar-wordmark-main">Adhd</span><span class="home-topbar-wordmark-accent">Agenda</span>
+            </span>
+          </a>
+        </div>
+
         <div class="home-hero-copy">
           <h1 id="hero-title">Track your ADHD medication with clarity and control.</h1>
         </div>
 
-        <div class="home-hero-preview" aria-hidden="true">
+        <div class="home-hero-stage" aria-hidden="true">
           <div class="home-device-shell">
             <div class="home-device-screen">
               <div class="home-device-app">
@@ -157,56 +166,106 @@
                     </div>
                     <span>Severe</span>
                   </div>
+
+                  <div class="home-device-next-dose">
+                    <div>
+                      <span class="home-device-card-kicker">Next dose</span>
+                      <strong>1:30 PM reminder</strong>
+                      <span>10 mg booster note saved for later review</span>
+                    </div>
+                    <span class="home-device-dose-chip">10 mg</span>
+                  </div>
+
+                  <div class="home-device-logbook">
+                    <div class="home-device-logbook-head">
+                      <span class="home-device-card-kicker">Tracking today</span>
+                      <span>3 updates</span>
+                    </div>
+
+                    <div class="home-device-log-row">
+                      <strong>8:00 AM</strong>
+                      <span>Dose logged · XR 20 mg</span>
+                    </div>
+                    <div class="home-device-log-row">
+                      <strong>10:15 AM</strong>
+                      <span>Focus note added · more alert</span>
+                    </div>
+                    <div class="home-device-log-row">
+                      <strong>2:00 PM</strong>
+                      <span>Doctor visit summary ready</span>
+                    </div>
+                  </div>
                 </div>
 
                 <div class="home-device-objects">
                   <span class="home-device-check" aria-hidden="true">
-                    <svg viewBox="0 0 84 84" focusable="false" aria-hidden="true">
+                    <svg viewBox="0 0 96 96" focusable="false" aria-hidden="true">
                       <defs>
-                        <linearGradient id="heroCheckFill" x1="14" y1="12" x2="66" y2="70" gradientUnits="userSpaceOnUse">
-                          <stop offset="0" stop-color="#79D67E"></stop>
-                          <stop offset="1" stop-color="#2F9C67"></stop>
+                        <linearGradient id="heroCheckFill" x1="18" y1="14" x2="72" y2="78" gradientUnits="userSpaceOnUse">
+                          <stop offset="0" stop-color="#7ED883"></stop>
+                          <stop offset="0.58" stop-color="#53B46B"></stop>
+                          <stop offset="1" stop-color="#31965D"></stop>
                         </linearGradient>
+                        <radialGradient id="heroCheckGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(36 28) rotate(45) scale(42)">
+                          <stop offset="0" stop-color="rgba(255,255,255,0.42)"></stop>
+                          <stop offset="1" stop-color="rgba(255,255,255,0)"></stop>
+                        </radialGradient>
                       </defs>
-                      <circle cx="42" cy="42" r="37" fill="url(#heroCheckFill)"></circle>
-                      <path d="M27 43.5 37.5 54 59 31.5" fill="none" stroke="#F4FAF0" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"></path>
+                      <circle cx="48" cy="48" r="38" fill="url(#heroCheckFill)"></circle>
+                      <circle cx="48" cy="48" r="38" fill="url(#heroCheckGlow)"></circle>
+                      <circle cx="48" cy="48" r="38" fill="none" stroke="rgba(255,255,255,0.16)" stroke-width="2"></circle>
+                      <path d="M32 49.5 43.5 61 67 36.5" fill="none" stroke="#F7FBF2" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"></path>
                     </svg>
                   </span>
                   <span class="home-device-blister" aria-hidden="true">
-                    <svg viewBox="0 0 78 94" focusable="false" aria-hidden="true">
+                    <svg viewBox="0 0 92 112" focusable="false" aria-hidden="true">
                       <defs>
-                        <linearGradient id="heroBlisterPanel" x1="10" y1="8" x2="60" y2="90" gradientUnits="userSpaceOnUse">
-                          <stop offset="0" stop-color="#F8FBFE"></stop>
-                          <stop offset="1" stop-color="#D9E3EE"></stop>
+                        <linearGradient id="heroBlisterPanel" x1="14" y1="10" x2="72" y2="104" gradientUnits="userSpaceOnUse">
+                          <stop offset="0" stop-color="#F6FBFF"></stop>
+                          <stop offset="1" stop-color="#D5E2F2"></stop>
+                        </linearGradient>
+                        <radialGradient id="heroBlisterBubble" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(0 0) rotate(45) scale(10 12)">
+                          <stop offset="0" stop-color="#8EB6E9"></stop>
+                          <stop offset="1" stop-color="#6B9BDA"></stop>
                         </linearGradient>
                       </defs>
-                      <rect x="8" y="5" width="58" height="84" rx="14" fill="url(#heroBlisterPanel)"></rect>
-                      <rect x="8.8" y="5.8" width="56.4" height="82.4" rx="13.2" fill="none" stroke="rgba(105, 131, 162, 0.3)" stroke-width="1.6"></rect>
-                      <g fill="#A3B5C9">
-                        <circle cx="24" cy="22" r="6.8"></circle>
-                        <circle cx="43" cy="22" r="6.8"></circle>
-                        <circle cx="24" cy="41" r="6.8"></circle>
-                        <circle cx="43" cy="41" r="6.8"></circle>
-                        <circle cx="24" cy="60" r="6.8"></circle>
-                        <circle cx="43" cy="60" r="6.8"></circle>
+                      <rect x="15" y="8" width="60" height="96" rx="18" fill="url(#heroBlisterPanel)"></rect>
+                      <rect x="16.5" y="9.5" width="57" height="93" rx="16.5" fill="none" stroke="rgba(93, 124, 162, 0.32)" stroke-width="2"></rect>
+                      <path d="M23 18 67 12" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2" stroke-linecap="round"></path>
+                      <g>
+                        <circle cx="32" cy="30" r="8.5" fill="url(#heroBlisterBubble)"></circle>
+                        <circle cx="54" cy="30" r="8.5" fill="url(#heroBlisterBubble)"></circle>
+                        <circle cx="32" cy="53" r="8.5" fill="url(#heroBlisterBubble)"></circle>
+                        <circle cx="54" cy="53" r="8.5" fill="url(#heroBlisterBubble)"></circle>
+                        <circle cx="32" cy="76" r="8.5" fill="url(#heroBlisterBubble)"></circle>
+                        <circle cx="54" cy="76" r="8.5" fill="url(#heroBlisterBubble)"></circle>
+                      </g>
+                      <g fill="rgba(255,255,255,0.32)">
+                        <circle cx="28.5" cy="27" r="2.1"></circle>
+                        <circle cx="50.5" cy="27" r="2.1"></circle>
+                        <circle cx="28.5" cy="50" r="2.1"></circle>
+                        <circle cx="50.5" cy="50" r="2.1"></circle>
+                        <circle cx="28.5" cy="73" r="2.1"></circle>
+                        <circle cx="50.5" cy="73" r="2.1"></circle>
                       </g>
                     </svg>
                   </span>
                   <span class="home-device-capsule" aria-hidden="true">
-                    <svg viewBox="0 0 64 30" focusable="false" aria-hidden="true">
+                    <svg viewBox="0 0 84 42" focusable="false" aria-hidden="true">
                       <defs>
-                        <linearGradient id="heroCapsuleLight" x1="4" y1="8" x2="32" y2="24" gradientUnits="userSpaceOnUse">
+                        <linearGradient id="heroCapsuleLight" x1="10" y1="8" x2="42" y2="30" gradientUnits="userSpaceOnUse">
                           <stop offset="0" stop-color="#F7FAFD"></stop>
-                          <stop offset="1" stop-color="#E6EEF8"></stop>
+                          <stop offset="1" stop-color="#E2EAF5"></stop>
                         </linearGradient>
-                        <linearGradient id="heroCapsuleWarm" x1="33" y1="6" x2="58" y2="25" gradientUnits="userSpaceOnUse">
-                          <stop offset="0" stop-color="#F5B56A"></stop>
-                          <stop offset="1" stop-color="#EB9441"></stop>
+                        <linearGradient id="heroCapsuleWarm" x1="43" y1="7" x2="74" y2="33" gradientUnits="userSpaceOnUse">
+                          <stop offset="0" stop-color="#F3B66D"></stop>
+                          <stop offset="1" stop-color="#E59241"></stop>
                         </linearGradient>
                       </defs>
-                      <path d="M17 5h18a10 10 0 0 1 0 20H17A10 10 0 0 1 17 5Z" fill="url(#heroCapsuleLight)"></path>
-                      <path d="M35 5h12a10 10 0 0 1 0 20H35Z" fill="url(#heroCapsuleWarm)"></path>
-                      <path d="M35 7v16" fill="none" stroke="rgba(160, 176, 193, 0.6)" stroke-width="1.6"></path>
+                      <path d="M24 7h24a14 14 0 0 1 0 28H24A14 14 0 0 1 24 7Z" fill="url(#heroCapsuleLight)"></path>
+                      <path d="M48 7h16a14 14 0 0 1 0 28H48Z" fill="url(#heroCapsuleWarm)"></path>
+                      <path d="M48 10v22" fill="none" stroke="rgba(157, 174, 192, 0.72)" stroke-width="2"></path>
+                      <path d="M18 21c0-7.7 6.3-14 14-14" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="2" stroke-linecap="round"></path>
                     </svg>
                   </span>
                 </div>
@@ -226,7 +285,7 @@
                 </span>
                 <div>
                   <strong>Took Medication</strong>
-                  <span>30mg Adderall</span>
+                  <span>50mg Vyvanse</span>
                 </div>
               </div>
             </article>
@@ -285,144 +344,10 @@
 
         <div class="home-hero-actions">
           <a class="button button-primary" href="/app/">Get Started</a>
-          <a class="button button-secondary" href="#how-it-works">See how it works</a>
+          <a class="button button-secondary home-hero-secondary" href="/about/">See how it works</a>
         </div>
       </div>
     </section>
-
-    <section class="home-band home-band-soft" aria-labelledby="helps-title">
-      <div class="container home-band-frame">
-        <div class="home-band-head">
-          <p class="section-kicker">What it helps with</p>
-          <h2 id="helps-title">Everything you need in one place</h2>
-          <p class="home-section-copy">Stop relying on memory, scattered notes, or old messages. Keep your treatment history organised and easy to review.</p>
-        </div>
-
-        <div class="home-feature-grid" role="list">
-          <article class="home-feature-card" role="listitem">
-            <h3>Log day to day changes</h3>
-            <p>Track medication, dose changes, effects, and notes in one timeline.</p>
-          </article>
-
-          <article class="home-feature-card" role="listitem">
-            <h3>Prepare for appointments</h3>
-            <p>See what changed, what helped, and what still needs attention before you meet with your psychiatrist.</p>
-          </article>
-
-          <article class="home-feature-card" role="listitem">
-            <h3>Share only what matters</h3>
-            <p>Use read-only views when you want someone else to review your information without giving edit access.</p>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section class="home-band home-band-plain" aria-labelledby="preview-title">
-      <div class="container home-band-frame">
-        <div class="home-band-head">
-          <p class="section-kicker">Product preview</p>
-          <h2 id="preview-title">See your treatment history clearly</h2>
-          <p class="home-section-copy">Review medications, notes, check-ins, and recent changes without digging through old messages or trying to remember everything at once.</p>
-        </div>
-
-        <div class="home-showcase" aria-hidden="true">
-          <div class="home-showcase-panel home-showcase-summary">
-            <span class="home-showcase-label">Today</span>
-            <strong>Current medication details stay visible at the top, with notes and changes directly underneath.</strong>
-            <p>See the current dose first instead of piecing it together from older notes.</p>
-          </div>
-
-          <div class="home-showcase-panel">
-            <span class="home-showcase-label">Recent changes</span>
-            <div class="home-showcase-stack">
-              <span>Dose updated last week</span>
-              <span>Afternoon drop noted on Tue, Wed, and Thu</span>
-              <span>Appetite changes grouped with the same week</span>
-            </div>
-          </div>
-
-          <div class="home-showcase-panel">
-            <span class="home-showcase-label">Notes</span>
-            <p>Short notes stay attached to the timeline so the reason for a change is still easy to understand later.</p>
-          </div>
-
-          <div class="home-showcase-panel home-showcase-appointment">
-            <span class="home-showcase-label">Next appointment</span>
-            <strong>Friday, 9:00 am</strong>
-            <p>Open the review view with medication details, recent changes, and saved questions already organised.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="home-band home-band-soft" id="how-it-works" aria-labelledby="how-it-works-title">
-      <div class="container home-band-frame">
-        <div class="home-band-head">
-          <p class="section-kicker">How it works</p>
-          <h2 id="how-it-works-title">How it works</h2>
-          <p class="home-section-copy">A simple process you can keep up with between appointments.</p>
-        </div>
-
-        <div class="home-step-grid" role="list">
-          <article class="home-step-card" role="listitem">
-            <span class="home-step-number">1</span>
-            <h3>Add your medication details</h3>
-            <p>Record what you take and update it when things change.</p>
-          </article>
-
-          <article class="home-step-card" role="listitem">
-            <span class="home-step-number">2</span>
-            <h3>Keep short daily notes</h3>
-            <p>Log check-ins, side effects, patterns, or anything worth raising later.</p>
-          </article>
-
-          <article class="home-step-card" role="listitem">
-            <span class="home-step-number">3</span>
-            <h3>Review before appointments</h3>
-            <p>See the important changes in one place and share a read-only view if needed.</p>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section class="home-band home-band-tint" aria-labelledby="privacy-title">
-      <div class="container home-band-frame">
-        <div class="home-band-head">
-          <p class="section-kicker">Privacy and review</p>
-          <h2 id="privacy-title">Private by default</h2>
-          <p class="home-section-copy">Your information stays under your control. Share a read-only view when you want someone else to review it without changing anything.</p>
-        </div>
-
-        <div class="home-privacy-grid">
-          <article class="home-privacy-card">
-            <h3>Keep personal tracking private</h3>
-            <p>Use the workspace for your own notes, medication history, and day-to-day tracking.</p>
-          </article>
-
-          <article class="home-privacy-card">
-            <h3>Share a cleaner review view</h3>
-            <p>Let a clinician or trusted person see what matters without giving edit access.</p>
-          </article>
-        </div>
-      </div>
-    </section>
-
   </main>
-
-  <footer class="site-footer" role="contentinfo">
-    <div class="container footer-shell">
-      <div class="footer-note">
-        <span class="footer-mark" aria-hidden="true">
-          <img src="/site-icon.svg" alt="">
-        </span>
-        <p>AdhdAgenda supports tracking for personal use and clinician discussion. It is not a substitute for professional medical advice.</p>
-      </div>
-      <nav class="footer-links" aria-label="Footer">
-        <a href="/contact/">Contact</a>
-        <a href="/privacy/">Privacy</a>
-        <a href="/terms/">Terms</a>
-      </nav>
-    </div>
-  </footer>
 </body>
 </html>
