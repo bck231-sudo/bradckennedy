@@ -40,7 +40,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/site.css?v=20260311-repo-cleanup-1">
-  <link rel="stylesheet" href="/assets/homepage.css?v=20260312-hero-reference-match-9">
+  <link rel="stylesheet" href="/assets/homepage.css?v=20260314-hero-layout-16">
 
   <meta property="og:type" content="website">
   <meta property="og:title" content="AdhdAgenda | Private ADHD Medication Tracking">
@@ -90,11 +90,11 @@
 
         <div class="home-topbar-actions">
           <nav class="home-topnav" aria-label="Primary">
-            <a href="#features" aria-current="page">Features</a>
             <a href="/about/">How It Works</a>
             <a href="/app/">Get Started</a>
             <a href="/contact/">Support</a>
           </nav>
+          <a class="home-topbar-login" href="/app/">Login</a>
           <a class="button button-secondary button-compact home-topbar-cta" href="/app/">Open workspace</a>
         </div>
       </div>
@@ -118,7 +118,11 @@
         </div>
 
         <div class="home-hero-copy">
-          <h1 id="hero-title">Track your ADHD medication with clarity and control.</h1>
+          <h1 id="hero-title">
+            <span class="home-hero-line">Track medications, symptoms,</span>
+            <span class="home-hero-line">notes, and questions</span>
+            <span class="home-hero-line">for your next appointment.</span>
+          </h1>
         </div>
 
         <div class="home-hero-stage" aria-hidden="true">
@@ -141,8 +145,8 @@
                   <div class="home-device-medicine">
                     <span class="home-device-pill-icon" aria-hidden="true"></span>
                     <div class="home-device-medicine-copy">
-                      <strong>Adderall XR</strong>
-                      <span>20 mg • Taken</span>
+                      <strong>Vyvanse</strong>
+                      <span>50 mg • Taken</span>
                     </div>
                     <span class="home-device-chevron" aria-hidden="true"></span>
                   </div>
@@ -250,6 +254,26 @@
                       </g>
                     </svg>
                   </span>
+                  <span class="home-device-bottle" aria-hidden="true">
+                    <svg viewBox="0 0 70 92" focusable="false" aria-hidden="true">
+                      <defs>
+                        <linearGradient id="heroBottleGlass" x1="16" y1="18" x2="54" y2="78" gradientUnits="userSpaceOnUse">
+                          <stop offset="0" stop-color="#f4c474"></stop>
+                          <stop offset="1" stop-color="#d88a37"></stop>
+                        </linearGradient>
+                        <linearGradient id="heroBottleLabel" x1="18" y1="34" x2="49" y2="61" gradientUnits="userSpaceOnUse">
+                          <stop offset="0" stop-color="#fff8ea"></stop>
+                          <stop offset="1" stop-color="#f3ead2"></stop>
+                        </linearGradient>
+                      </defs>
+                      <rect x="24" y="8" width="22" height="11" rx="4" fill="#f4f7fb"></rect>
+                      <rect x="20" y="16" width="30" height="12" rx="5" fill="#dde6f1"></rect>
+                      <rect x="12" y="24" width="46" height="56" rx="16" fill="url(#heroBottleGlass)"></rect>
+                      <rect x="16" y="38" width="38" height="21" rx="8" fill="url(#heroBottleLabel)"></rect>
+                      <path d="M22 44h26M22 50h20" fill="none" stroke="rgba(163, 119, 61, 0.52)" stroke-width="2.6" stroke-linecap="round"></path>
+                      <path d="M22 28c6-5 20-8 31-5" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="3" stroke-linecap="round"></path>
+                    </svg>
+                  </span>
                   <span class="home-device-capsule" aria-hidden="true">
                     <svg viewBox="0 0 84 42" focusable="false" aria-hidden="true">
                       <defs>
@@ -274,13 +298,57 @@
           </div>
 
           <div class="home-schedule">
+            <span class="home-schedule-title">TODAY'S SCHEDULE</span>
             <article class="home-schedule-item">
               <span class="home-schedule-time">8:00 AM</span>
               <div class="home-schedule-card">
                 <span class="home-schedule-icon home-schedule-icon-pill" aria-hidden="true">
-                  <svg viewBox="0 0 32 32" focusable="false" aria-hidden="true">
-                    <rect x="5" y="10" width="22" height="12" rx="6" fill="#e9f4ff" transform="rotate(-32 16 16)"></rect>
-                    <path d="M10.2 22.1 23.8 9.9" stroke="#2e5f9f" stroke-width="2.2" stroke-linecap="round"></path>
+                  <svg viewBox="0 0 48 48" focusable="false" aria-hidden="true">
+                    <defs>
+                      <radialGradient id="timelineBottleCapTop" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(23 7) scale(15 5.4)">
+                        <stop offset="0" stop-color="#f7fbff"></stop>
+                        <stop offset="1" stop-color="#cfddf1"></stop>
+                      </linearGradient>
+                      <linearGradient id="timelineBottleCapSide" x1="9" y1="9" x2="37" y2="18" gradientUnits="userSpaceOnUse">
+                        <stop offset="0" stop-color="#dfeaf8"></stop>
+                        <stop offset="1" stop-color="#b8cae7"></stop>
+                      </linearGradient>
+                      <radialGradient id="timelineBottleBodyHighlight" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(25 17) rotate(78) scale(10 17)">
+                        <stop offset="0" stop-color="#92c6ff"></stop>
+                        <stop offset="1" stop-color="#5b96fb"></stop>
+                      </linearGradient>
+                      <linearGradient id="timelineBottleBody" x1="10" y1="15" x2="38" y2="40" gradientUnits="userSpaceOnUse">
+                        <stop offset="0" stop-color="#4f93ff"></stop>
+                        <stop offset="0.45" stop-color="#2d6ce6"></stop>
+                        <stop offset="1" stop-color="#2748bc"></stop>
+                      </linearGradient>
+                      <linearGradient id="timelineBottleLabel" x1="12.5" y1="22" x2="35.5" y2="35.5" gradientUnits="userSpaceOnUse">
+                        <stop offset="0" stop-color="#ffffff"></stop>
+                        <stop offset="1" stop-color="#eef4ff"></stop>
+                      </linearGradient>
+                      <linearGradient id="timelineBottleCross" x1="19" y1="24.5" x2="28.5" y2="34" gradientUnits="userSpaceOnUse">
+                        <stop offset="0" stop-color="#5895ff"></stop>
+                        <stop offset="1" stop-color="#346fdf"></stop>
+                      </linearGradient>
+                      <linearGradient id="timelineCapsuleBlue" x1="24" y1="36" x2="37.5" y2="44.5" gradientUnits="userSpaceOnUse">
+                        <stop offset="0" stop-color="#72b0ff"></stop>
+                        <stop offset="1" stop-color="#2d69e0"></stop>
+                      </linearGradient>
+                    </defs>
+                    <ellipse cx="23" cy="7.5" rx="15" ry="4.8" fill="url(#timelineBottleCapTop)"></ellipse>
+                    <path d="M8 7.5h30v7.8c0 2.6-2.1 4.6-4.7 4.6H12.7A4.7 4.7 0 0 1 8 15.3Z" fill="url(#timelineBottleCapSide)"></path>
+                    <path d="M9.5 14.5h27v18.2c0 6.5-5.2 11.8-11.7 11.8h-3.6c-6.5 0-11.7-5.3-11.7-11.8Z" fill="url(#timelineBottleBody)"></path>
+                    <path d="M10.4 15.3h25.2c-1.2 2-3.5 3.4-6.1 3.4H16.6c-2.7 0-5-1.4-6.2-3.4Z" fill="url(#timelineBottleBodyHighlight)" opacity="0.95"></path>
+                    <rect x="12.2" y="21.6" width="21.6" height="13.2" rx="3.8" fill="url(#timelineBottleLabel)"></rect>
+                    <path d="M22.9 23.8v8.8M18.5 28.2h8.8" stroke="url(#timelineBottleCross)" stroke-width="3" stroke-linecap="round"></path>
+                    <path d="M13 8.5v8.8M17.3 9.1v8M21.6 9.4v7.6M25.9 9.4V17M30.2 9.1v8.2" stroke="rgba(103,128,172,0.42)" stroke-width="1" stroke-linecap="round"></path>
+                    <g transform="translate(22.5 30.5)">
+                      <rect x="0" y="4.6" width="19" height="9.6" rx="4.8" fill="url(#timelineCapsuleBlue)" transform="rotate(-17 9.5 9.4)"></rect>
+                      <rect x="7.8" y="7.4" width="12.8" height="7.6" rx="3.8" fill="#f6fbff" transform="rotate(-17 14.2 11.2)"></rect>
+                      <path d="M9.7 5.3v8.8" stroke="#dce9ff" stroke-width="1.3" stroke-linecap="round" transform="rotate(-17 9.7 9.7)"></path>
+                      <ellipse cx="18.8" cy="15.4" rx="5.9" ry="3.8" fill="#f8fbff" transform="rotate(-8 18.8 15.4)"></ellipse>
+                      <ellipse cx="28.6" cy="14.2" rx="5.7" ry="3.5" fill="#5e97f2" transform="rotate(11 28.6 14.2)"></ellipse>
+                    </g>
                   </svg>
                 </span>
                 <div>
@@ -294,9 +362,21 @@
               <span class="home-schedule-time">10:15 AM</span>
               <div class="home-schedule-card">
                 <span class="home-schedule-icon home-schedule-icon-note" aria-hidden="true">
-                  <svg viewBox="0 0 32 32" focusable="false" aria-hidden="true">
-                    <rect x="7" y="6" width="18" height="20" rx="3" fill="#fff2cf"></rect>
-                    <path d="M11 12h10M11 16h10M11 20h7" stroke="#315c97" stroke-width="2" stroke-linecap="round"></path>
+                  <svg viewBox="0 0 48 48" focusable="false" aria-hidden="true">
+                    <defs>
+                      <linearGradient id="timelineBrainFill" x1="15" y1="12" x2="34" y2="34" gradientUnits="userSpaceOnUse">
+                        <stop offset="0" stop-color="#9bc7ff"></stop>
+                        <stop offset="1" stop-color="#4e7ee2"></stop>
+                      </linearGradient>
+                      <linearGradient id="timelineBrainStem" x1="21" y1="30" x2="27" y2="38" gradientUnits="userSpaceOnUse">
+                        <stop offset="0" stop-color="#6da7f5"></stop>
+                        <stop offset="1" stop-color="#2e57b0"></stop>
+                      </linearGradient>
+                    </defs>
+                    <path d="M19.4 13.6c-3.2 0-5.7 2.4-5.7 5.3 0 1.4.6 2.7 1.5 3.7-1 .9-1.7 2.3-1.7 3.9 0 2.9 2.3 5.2 5.1 5.2h1.3c.7 1.9 2.4 3.2 4.4 3.2 2.3 0 4.3-1.8 4.7-4.2 2.4-.3 4.2-2.4 4.2-5 0-1.8-.8-3.4-2.1-4.4.8-1 1.2-2.2 1.2-3.5 0-3-2.5-5.4-5.6-5.4-1.8 0-3.3.8-4.3 2.2-.9-.7-2-1-3-1Z" fill="url(#timelineBrainFill)"></path>
+                    <path d="M26.8 30.7c-.2 3-1.7 5.5-4.3 6.7M22.5 37.2c-.2 1-.9 1.8-1.8 2.3" fill="none" stroke="url(#timelineBrainStem)" stroke-width="2.4" stroke-linecap="round"></path>
+                    <path d="M18.6 18.8c1.7.4 2.8 1.9 2.8 3.8 0 1.8-1 3.2-2.6 3.8M29.4 18.5c-1.7.5-2.8 2-2.8 3.9 0 1.7 1 3.1 2.5 3.7M23.8 17.6v13M21.3 28.5c.6.8 1.5 1.2 2.5 1.2 1.1 0 2-.4 2.7-1.2" fill="none" stroke="#2c57b0" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path>
+                    <path d="M17.8 31.5c.8.8 1.8 1.3 3 1.5M29 31.2c-.7.9-1.7 1.5-2.9 1.7" fill="none" stroke="#2c57b0" stroke-width="1.9" stroke-linecap="round"></path>
                   </svg>
                 </span>
                 <div>
@@ -343,11 +423,27 @@
         </div>
 
         <div class="home-hero-actions">
-          <a class="button button-primary" href="/app/">Get Started</a>
           <a class="button button-secondary home-hero-secondary" href="/about/">See how it works</a>
+          <a class="button button-primary" href="/app/">Get Started</a>
         </div>
       </div>
     </section>
   </main>
+
+  <footer class="site-footer" role="contentinfo">
+    <div class="container footer-shell">
+      <div class="footer-note">
+        <span class="footer-mark" aria-hidden="true">
+          <img src="/site-icon.svg" alt="">
+        </span>
+        <p>This tool supports tracking and clinician discussion. It does not replace professional medical advice.</p>
+      </div>
+      <nav class="footer-links" aria-label="Footer">
+        <a href="/contact/">Contact</a>
+        <a href="/privacy/">Privacy</a>
+        <a href="/terms/">Terms</a>
+      </nav>
+    </div>
+  </footer>
 </body>
 </html>

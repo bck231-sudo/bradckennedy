@@ -8623,14 +8623,53 @@ body .dashboard-summary-strip .subtle,
 body .dashboard-summary-strip .summary-strip-label,
 body .dashboard-summary-strip .summary-strip-value,
 body .dashboard-summary-strip .summary-strip-help,
-body .dashboard-summary-strip .risk-pill,
 body .dashboard-summary-strip details {
   color: #f4fbff !important;
+}
+
+body .dashboard-summary-strip .risk-pill {
+  color: inherit !important;
+}
+
+body .dashboard-summary-strip .risk-pill.risk-low {
+  color: #185f49 !important;
+  background: #def4e9 !important;
+  border-color: #9fd7be !important;
+}
+
+body .dashboard-summary-strip .risk-pill.risk-watch {
+  color: #7c4a08 !important;
+  background: #ffe9c8 !important;
+  border-color: #efc88f !important;
+}
+
+body .dashboard-summary-strip .risk-pill.risk-elevated {
+  color: #943c12 !important;
+  background: #ffdcca !important;
+  border-color: #efb18c !important;
+}
+
+body .dashboard-summary-strip .risk-pill.risk-high {
+  color: #8a2727 !important;
+  background: #ffd7d7 !important;
+  border-color: #ecaaaa !important;
 }
 
 body .dashboard-summary-strip .summary-strip-item {
   background: rgba(255, 255, 255, 0.1) !important;
   border-color: rgba(225, 239, 248, 0.14) !important;
+}
+
+body .kpi-box strong {
+  display: inline-grid !important;
+  place-items: center !important;
+  align-self: center;
+  margin-top: 0 !important;
+  width: 50px;
+  height: 50px;
+  line-height: 1 !important;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 body .dashboard-priority-card,
