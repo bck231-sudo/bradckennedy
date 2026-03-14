@@ -38,7 +38,7 @@
   <script src="/canonical-host.js?v=20260311-host-fix-1"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/site.css?v=20260311-repo-cleanup-1">
   <link rel="stylesheet" href="/assets/homepage.css?v=20260311-home-rebuild-1">
 
@@ -105,7 +105,7 @@
         <div class="home-hero-copy">
           <p class="section-kicker home-kicker">Private ADHD treatment tracking</p>
           <h1 id="hero-title">Track ADHD treatment privately. Review it clearly.</h1>
-          <p class="home-lead">AdhdAgenda gives you one calm place for medication timing, check-ins, side effects, notes, and treatment changes. When it is time for an appointment, open a cleaner review view instead of rebuilding the story from memory.</p>
+          <p class="home-lead">Forgot what changed last month? Lost the question you thought of at 2 am? AdhdAgenda gives you one calm place for medication timing, check-ins, side effects, and treatment changes so you stop rebuilding the story before every appointment.</p>
 
           <div class="home-hero-actions">
             <a class="button button-primary" href="/app/" aria-label="Open the Workspace">Open the Workspace</a>
@@ -235,32 +235,6 @@
           </article>
         </div>
 
-        <div class="home-intro-band">
-          <div class="home-intro-band-head">
-            <p class="section-kicker">Why it matters</p>
-            <h2 id="benefits-title">A clearer record for you, and a clearer conversation later.</h2>
-            <p class="home-section-copy">The product is not trying to be a generic wellness journal or a generic SaaS dashboard. It is focused on the jobs that matter around ADHD medication and treatment review.</p>
-          </div>
-
-          <div class="home-outcome-grid">
-          <article class="home-outcome-card home-outcome-card-accent">
-            <span class="home-outcome-label">Less scrambling</span>
-            <h3>Stop rebuilding the story before every appointment.</h3>
-            <p>Questions, changes, and check-ins are already connected when it is time to review treatment.</p>
-          </article>
-
-          <article class="home-outcome-card">
-            <span class="home-outcome-label">Less friction</span>
-            <h3>Daily tracking stays light enough to keep using.</h3>
-            <p>Short entries and clear sections make it easier to log what matters without turning the product into admin work.</p>
-          </article>
-
-          <article class="home-outcome-card">
-            <span class="home-outcome-label">More trust</span>
-            <h3>Keep private tracking and shared review clearly separate.</h3>
-            <p>The product is designed so you stay in control of editing, while clinicians can still get the clearer view they need.</p>
-          </article>
-        </div>
       </section>
 
       <section class="home-section home-showcase" id="product" aria-labelledby="showcase-title">
@@ -392,6 +366,60 @@
           </div>
           <a class="button button-secondary" href="/about/">See how it works</a>
         </aside>
+      </section>
+
+      <section class="home-section home-security" id="security" aria-labelledby="security-title">
+        <div class="home-section-head">
+          <p class="section-kicker">Security and data protection</p>
+          <h2 id="security-title">Your health data is protected, not monetised.</h2>
+        </div>
+
+        <div class="home-security-grid">
+          <article class="home-security-card">
+            <span class="home-security-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="10" rx="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+            </span>
+            <h3>Encrypted at rest</h3>
+            <p>Data is encrypted with AES-256-GCM before it reaches storage. Keys are derived per account.</p>
+          </article>
+
+          <article class="home-security-card">
+            <span class="home-security-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              </svg>
+            </span>
+            <h3>No third-party tracking</h3>
+            <p>No analytics scripts, no ad networks, no selling data. The product is the product.</p>
+          </article>
+
+          <article class="home-security-card">
+            <span class="home-security-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+              </svg>
+            </span>
+            <h3>Role-based access</h3>
+            <p>Sharing is opt-in and read-only. Clinicians, family, and viewers each get scoped access with audit logging.</p>
+          </article>
+
+          <article class="home-security-card">
+            <span class="home-security-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path>
+                <path d="m9 12 2 2 4-4"></path>
+              </svg>
+            </span>
+            <h3>Works offline</h3>
+            <p>The workspace loads from cache and works without a connection. Your data stays on your device until you sync.</p>
+          </article>
+        </div>
       </section>
 
       <section class="home-section home-boundaries" id="privacy" aria-labelledby="privacy-title">

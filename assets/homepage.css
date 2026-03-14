@@ -228,6 +228,7 @@
 .home-outcome-grid,
 .home-process-grid,
 .home-process-panel,
+.home-security-grid,
 .home-boundaries-grid,
 .home-boundary-foot,
 .home-faq-list,
@@ -851,6 +852,49 @@
   color: var(--home-ink-soft);
 }
 
+.home-security-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.home-security-card {
+  display: grid;
+  gap: 10px;
+  padding: 20px;
+  border: 1px solid var(--home-line);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.home-security-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: rgba(225, 238, 247, 0.94);
+  color: var(--home-blue-strong);
+}
+
+.home-security-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.home-security-card h3 {
+  margin: 0;
+  font-size: 1.18rem;
+  line-height: 1.22;
+  letter-spacing: -0.03em;
+}
+
+.home-security-card p {
+  margin: 0;
+  color: var(--home-ink-soft);
+  line-height: 1.68;
+}
+
 .home-boundary-card {
   padding: 22px;
 }
@@ -1024,7 +1068,8 @@
   .home-trust-row,
   .home-intro-grid,
   .home-outcome-grid,
-  .home-process-grid {
+  .home-process-grid,
+  .home-security-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1138,8 +1183,9 @@
   }
 
   .home-outcome-grid,
-  .home-process-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .home-process-grid,
+  .home-security-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .home-story-card,

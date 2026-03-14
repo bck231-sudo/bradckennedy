@@ -1,7 +1,5 @@
-const CACHE_NAME = "medication-tracker-shell-v34";
+const CACHE_NAME = "medication-tracker-shell-v35";
 const APP_SHELL_FILES = [
-  "./",
-  "./index.html",
   "./app/",
   "./styles.css",
   "./app.js",
