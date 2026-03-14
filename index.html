@@ -40,7 +40,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/site.css?v=20260311-repo-cleanup-1">
-  <link rel="stylesheet" href="/assets/homepage.css?v=20260311-home-rebuild-1">
+  <link rel="stylesheet" href="/assets/homepage.css?v=20260315-hero-redesign-1">
 
   <meta property="og:type" content="website">
   <meta property="og:title" content="AdhdAgenda | Private Medication Tracking">
@@ -102,101 +102,140 @@
   <main id="main-content" class="site-main" tabindex="-1">
     <div class="container home-shell">
       <section class="home-hero" aria-labelledby="hero-title">
+        <div class="home-hero-phone" aria-hidden="true">
+          <div class="hero-phone-frame">
+            <div class="hero-phone-notch"></div>
+            <div class="hero-phone-header">
+              <strong>Today's Medication</strong>
+              <span>Tuesday, Jan 18</span>
+            </div>
+
+            <div class="hero-phone-med">
+              <span class="hero-phone-med-dot"></span>
+              <div>
+                <strong>Vyvanse</strong>
+                <span>50 mg &middot; Taken</span>
+              </div>
+            </div>
+
+            <div class="hero-phone-actions-row">
+              <span class="hero-phone-label">Log Dose</span>
+              <div class="hero-phone-action-btns">
+                <span class="hero-phone-btn">Missed</span>
+                <span class="hero-phone-btn hero-phone-btn-active">Taken</span>
+                <span class="hero-phone-btn">Adjust</span>
+              </div>
+            </div>
+
+            <div class="hero-phone-symptoms">
+              <span class="hero-phone-label">Symptoms</span>
+              <div class="hero-phone-symptom-bar">
+                <span>None</span>
+                <span class="hero-phone-symptom-dots">
+                  <span class="dot active"></span>
+                  <span class="dot"></span>
+                  <span class="dot"></span>
+                  <span class="dot"></span>
+                  <span class="dot"></span>
+                </span>
+                <span>Severe</span>
+              </div>
+            </div>
+
+            <div class="hero-phone-reminder">
+              <span class="hero-phone-reminder-badge">Next Dose</span>
+              <div class="hero-phone-reminder-body">
+                <div>
+                  <strong>1:30 PM reminder</strong>
+                  <span>10 mg booster note saved for later review</span>
+                </div>
+                <span class="hero-phone-dose-tag">10 mg</span>
+              </div>
+            </div>
+
+            <div class="hero-phone-tracking">
+              <div class="hero-phone-tracking-head">
+                <span class="hero-phone-reminder-badge">Tracking Today</span>
+                <span>3 updates</span>
+              </div>
+              <div class="hero-phone-tracking-item"><strong>8:00 AM</strong><span>Dose logged &middot; XR 20 mg</span></div>
+              <div class="hero-phone-tracking-item"><strong>10:15 AM</strong><span>Focus note added &middot; more alert</span></div>
+              <div class="hero-phone-tracking-item"><strong>2:00 PM</strong><span>Doctor visit summary ready</span></div>
+            </div>
+
+            <div class="hero-phone-bar-home"></div>
+          </div>
+        </div>
+
         <div class="home-hero-copy">
-          <p class="section-kicker home-kicker">Private ADHD treatment tracking</p>
-          <h1 id="hero-title">Track ADHD treatment privately. Review it clearly.</h1>
-          <p class="home-lead">Forgot what changed last month? Lost the question you thought of at 2 am? AdhdAgenda gives you one calm place for medication timing, check-ins, side effects, and treatment changes so you stop rebuilding the story before every appointment.</p>
+          <h1 id="hero-title">Track medications, symptoms, notes, and questions for your next appointment.</h1>
 
           <div class="home-hero-actions">
-            <a class="button button-primary" href="/app/" aria-label="Open the Workspace">Open the Workspace</a>
-            <a class="button button-secondary" href="/app/#consult">Preview clinician review</a>
+            <a class="button button-outline" href="#how-it-works">See how it works</a>
+            <a class="button button-green" href="/app/">Get Started</a>
           </div>
-
         </div>
 
-        <div class="home-hero-stage" aria-hidden="true">
-          <span class="home-hero-glow home-hero-glow-one"></span>
-          <span class="home-hero-glow home-hero-glow-two"></span>
+        <div class="home-hero-timeline" aria-hidden="true">
+          <p class="hero-timeline-title">Today's Schedule</p>
 
-          <div class="home-device home-device-main">
-            <div class="home-device-bar">
-              <span class="home-device-dots">
-                <span></span>
-                <span></span>
-                <span></span>
-              </span>
-              <strong>Today</strong>
-              <span class="home-device-pill">Owner</span>
-            </div>
-
-            <div class="home-device-due">
-              <div>
-                <span class="home-device-label">Next reminder</span>
-                <strong>Dexamphetamine at 1:30 pm</strong>
+          <div class="hero-timeline-track">
+            <div class="hero-timeline-entry">
+              <span class="hero-timeline-time">8:00 AM</span>
+              <span class="hero-timeline-dot"></span>
+              <div class="hero-timeline-card">
+                <span class="hero-timeline-icon hero-timeline-icon-med">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg>
+                </span>
+                <div>
+                  <strong>Took Medication</strong>
+                  <span>50mg Vyvanse</span>
+                </div>
               </div>
-              <span class="home-device-chip">Notes ready</span>
             </div>
 
-            <div class="home-device-chip-row">
-              <span class="home-device-chip">3 active medications</span>
-              <span class="home-device-chip">Sleep check-in saved</span>
-              <span class="home-device-chip">Question queued</span>
+            <div class="hero-timeline-entry">
+              <span class="hero-timeline-time">10:15 AM</span>
+              <span class="hero-timeline-dot"></span>
+              <div class="hero-timeline-card">
+                <span class="hero-timeline-icon hero-timeline-icon-focus">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                </span>
+                <div>
+                  <strong>Focus Note</strong>
+                  <span>Feeling more alert &amp; productive</span>
+                </div>
+              </div>
             </div>
 
-            <div class="home-device-group">
-              <article class="home-device-card home-device-card-accent">
-                <span class="home-device-label">Quick check-in</span>
-                <strong>Focus steady through the morning.</strong>
-                <p>Short note saved after breakfast.</p>
-              </article>
-
-              <article class="home-device-card">
-                <span>Medication change</span>
-                <strong>Weekend timing moved 30 minutes later.</strong>
-                <p>Reason and follow-up notes stay attached.</p>
-              </article>
-
-              <article class="home-device-card home-device-card-muted">
-                <span>Next consult</span>
-                <strong>2 questions ready to discuss.</strong>
-                <p>Open the review view when you need it.</p>
-              </article>
-            </div>
-          </div>
-
-          <div class="home-hero-side-stack">
-            <div class="home-floating-review">
-              <p class="home-floating-label">Clinician review</p>
-              <strong>Read in one pass.</strong>
-              <ul class="home-floating-list">
-                <li>Current medications and schedule</li>
-                <li>Recent changes and side effects</li>
-                <li>Questions for the appointment</li>
-              </ul>
-              <span class="home-floating-pill">Read only</span>
+            <div class="hero-timeline-entry">
+              <span class="hero-timeline-time">12:30 PM</span>
+              <span class="hero-timeline-dot"></span>
+              <div class="hero-timeline-card">
+                <span class="hero-timeline-icon hero-timeline-icon-appt">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
+                </span>
+                <div>
+                  <strong>Prepare for Appointment</strong>
+                  <span>Review questions for Dr. Lee</span>
+                </div>
+              </div>
             </div>
 
-            <div class="home-floating-note">
-              <span class="home-floating-note-label">Why it feels calmer</span>
-              <strong>Your daily workspace and shared review view are separate on purpose.</strong>
-              <p>You keep the full record. The appointment view stays simpler.</p>
+            <div class="hero-timeline-entry">
+              <span class="hero-timeline-time">2:00 PM</span>
+              <span class="hero-timeline-dot"></span>
+              <div class="hero-timeline-card">
+                <span class="hero-timeline-icon hero-timeline-icon-visit">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                </span>
+                <div>
+                  <strong>Doctor's Visit</strong>
+                  <span>with Dr. Lee</span>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-
-        <div class="home-trust-row" aria-label="Key product highlights">
-          <article class="home-trust-item">
-            <strong>Daily logging</strong>
-            <p>Medication timing, notes, and check-ins stay together.</p>
-          </article>
-          <article class="home-trust-item">
-            <strong>Treatment changes</strong>
-            <p>Side effects, dose updates, and follow-up questions stay connected.</p>
-          </article>
-          <article class="home-trust-item">
-            <strong>Optional sharing</strong>
-            <p>Open a read-only review view when a clinician needs the key points.</p>
-          </article>
         </div>
       </section>
 
