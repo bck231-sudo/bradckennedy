@@ -40,7 +40,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/site.css?v=20260311-repo-cleanup-1">
-  <link rel="stylesheet" href="/assets/homepage.css?v=20260315-hero-redesign-1">
+  <link rel="stylesheet" href="/assets/homepage.css?v=20260315-hero-redesign-6">
 
   <meta property="og:type" content="website">
   <meta property="og:title" content="AdhdAgenda | Private Medication Tracking">
@@ -76,26 +76,31 @@
 <body class="public-page public-page-home">
   <a class="skip-link" href="#main-content">Skip to main content</a>
 
-  <header class="site-header" role="banner">
-    <div class="container site-header-inner">
-      <a class="brand-lockup" href="/" aria-label="AdhdAgenda home">
-        <span class="brand-mark" aria-hidden="true">
-          <img src="/site-icon.svg" alt="">
-        </span>
-        <span class="brand-copy">
-          <span class="brand-title">AdhdAgenda</span>
-          <span class="brand-subtitle">Private medication tracking</span>
-        </span>
-      </a>
+  <header class="site-header home-header" role="banner">
+    <nav class="home-nav" aria-label="Primary">
+      <a href="#how-it-works">How It Works</a>
+      <a href="/app/">Get Started</a>
+      <a href="/contact/">Support</a>
+      <a class="home-nav-login" href="/app/">Login</a>
+    </nav>
 
-      <div class="site-header-actions">
-        <nav class="site-nav" aria-label="Primary">
-          <a href="/" aria-current="page">Home</a>
-          <a href="/about/">About</a>
-          <a href="/contact/">Contact</a>
-        </nav>
-        <a class="button button-secondary button-compact" href="/app/">Open Workspace</a>
-      </div>
+    <div class="home-brand" aria-label="AdhdAgenda home">
+      <span class="home-brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M20 60L40 16L60 60" stroke="url(#brand-grad)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M28 46h24" stroke="url(#brand-grad)" stroke-width="5" stroke-linecap="round"/>
+          <path d="M44 60L58 28" stroke="#4dd8a5" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity="0.7"/>
+          <defs>
+            <linearGradient id="brand-grad" x1="20" y1="16" x2="60" y2="60" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#ffffff"/>
+              <stop offset="1" stop-color="#4dd8a5"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </span>
+      <span class="home-brand-text">
+        <span class="home-brand-adhd">Adhd</span><span class="home-brand-agenda">Agenda</span>
+      </span>
     </div>
   </header>
 

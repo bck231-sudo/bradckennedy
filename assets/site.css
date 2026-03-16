@@ -910,6 +910,30 @@ li {
   .footer-links {
     justify-content: flex-start;
   }
+
+  /* Centre footer on non-homepage public pages */
+  .public-page-about .footer-shell,
+  .public-page-contact .footer-shell,
+  .public-page-privacy .footer-shell,
+  .public-page-terms .footer-shell {
+    align-items: center;
+    text-align: center;
+  }
+
+  .public-page-about .footer-note,
+  .public-page-contact .footer-note,
+  .public-page-privacy .footer-note,
+  .public-page-terms .footer-note {
+    align-items: center;
+    text-align: center;
+  }
+
+  .public-page-about .footer-links,
+  .public-page-contact .footer-links,
+  .public-page-privacy .footer-links,
+  .public-page-terms .footer-links {
+    justify-content: center;
+  }
 }
 
 @media (max-width: 720px) {
@@ -1579,46 +1603,21 @@ body.public-page::after {
   text-align: center;
 }
 
-.public-page .support-grid-rich .support-card:nth-child(1) {
-  background:
-    linear-gradient(160deg, rgba(230, 240, 255, 0.96), rgba(255, 255, 255, 0.92)),
-    linear-gradient(150deg, rgba(45, 122, 203, 0.1), rgba(32, 165, 162, 0.06));
-}
-
-.public-page .support-grid-rich .support-card:nth-child(2) {
-  background:
-    linear-gradient(160deg, rgba(231, 248, 247, 0.96), rgba(255, 255, 255, 0.92)),
-    linear-gradient(150deg, rgba(32, 165, 162, 0.1), rgba(255, 255, 255, 0.04));
-}
-
-.public-page .support-grid-rich .support-card:nth-child(3) {
-  background:
-    linear-gradient(160deg, rgba(255, 247, 235, 0.96), rgba(255, 255, 255, 0.92)),
-    linear-gradient(150deg, rgba(184, 138, 53, 0.12), rgba(255, 255, 255, 0.04));
-}
-
+.public-page .support-grid-rich .support-card:nth-child(1),
+.public-page .support-grid-rich .support-card:nth-child(2),
+.public-page .support-grid-rich .support-card:nth-child(3),
 .public-page .support-grid-rich .support-card:nth-child(4) {
   background:
-    linear-gradient(160deg, rgba(241, 239, 255, 0.96), rgba(255, 255, 255, 0.92)),
-    linear-gradient(150deg, rgba(95, 97, 215, 0.1), rgba(255, 255, 255, 0.04));
+    linear-gradient(160deg, rgba(240, 248, 255, 0.92), rgba(255, 255, 255, 0.86)),
+    linear-gradient(150deg, rgba(43, 121, 199, 0.06), rgba(26, 168, 160, 0.04));
 }
 
-.public-page .policy-grid-rich .policy-card:nth-child(1) {
-  background:
-    linear-gradient(160deg, rgba(232, 241, 255, 0.96), rgba(255, 255, 255, 0.92)),
-    linear-gradient(150deg, rgba(45, 122, 203, 0.1), rgba(255, 255, 255, 0.04));
-}
-
-.public-page .policy-grid-rich .policy-card:nth-child(2) {
-  background:
-    linear-gradient(160deg, rgba(232, 248, 247, 0.96), rgba(255, 255, 255, 0.92)),
-    linear-gradient(150deg, rgba(32, 165, 162, 0.1), rgba(255, 255, 255, 0.04));
-}
-
+.public-page .policy-grid-rich .policy-card:nth-child(1),
+.public-page .policy-grid-rich .policy-card:nth-child(2),
 .public-page .policy-grid-rich .policy-card:nth-child(3) {
   background:
-    linear-gradient(160deg, rgba(255, 247, 236, 0.96), rgba(255, 255, 255, 0.92)),
-    linear-gradient(150deg, rgba(184, 138, 53, 0.1), rgba(255, 255, 255, 0.04));
+    linear-gradient(160deg, rgba(240, 248, 255, 0.92), rgba(255, 255, 255, 0.86)),
+    linear-gradient(150deg, rgba(43, 121, 199, 0.06), rgba(26, 168, 160, 0.04));
 }
 
 .public-page .support-card .card-icon,
@@ -1672,7 +1671,7 @@ body.public-page-terms {
   background:
     radial-gradient(circle at 12% 14%, rgba(45, 122, 203, 0.1), transparent 26%),
     radial-gradient(circle at 88% 18%, rgba(32, 165, 162, 0.08), transparent 24%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(244, 249, 252, 0.93));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(239, 247, 252, 0.84));
   box-shadow: 0 28px 68px rgba(27, 51, 75, 0.1);
 }
 
@@ -1771,6 +1770,56 @@ body.public-page-terms {
   grid-template-columns: 1fr;
   justify-items: center;
   text-align: center;
+}
+
+/* Centre all paragraph text on non-homepage public pages */
+.public-page-about p,
+.public-page-contact p,
+.public-page-privacy p,
+.public-page-terms p {
+  text-align: center;
+}
+
+.public-page-about .list-check,
+.public-page-contact .list-check,
+.public-page-privacy .list-check,
+.public-page-terms .list-check {
+  text-align: left;
+}
+
+/* Centre and style footer on non-homepage public pages */
+.public-page-about .footer-shell,
+.public-page-contact .footer-shell,
+.public-page-privacy .footer-shell,
+.public-page-terms .footer-shell {
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+}
+
+.public-page-about .footer-note,
+.public-page-contact .footer-note,
+.public-page-privacy .footer-note,
+.public-page-terms .footer-note {
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+}
+
+.public-page-about .footer-links,
+.public-page-contact .footer-links,
+.public-page-privacy .footer-links,
+.public-page-terms .footer-links {
+  justify-content: center;
+}
+
+/* Uniform subtle tint for about-page-signal cards */
+.summary-card.about-page-signal {
+  background:
+    linear-gradient(160deg, rgba(240, 248, 255, 0.92), rgba(255, 255, 255, 0.86)),
+    linear-gradient(150deg, rgba(43, 121, 199, 0.06), rgba(26, 168, 160, 0.04));
 }
 
 .public-page-home .hero-card:not(.hero-card-premium) {

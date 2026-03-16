@@ -23,6 +23,10 @@
     linear-gradient(180deg, #f8fbfd 0%, var(--home-page) 48%, var(--home-page-deep) 100%);
 }
 
+.public-page-home .site-header:not(.home-header) {
+  display: none;
+}
+
 .public-page-home::before {
   top: 72px;
   right: -80px;
@@ -48,43 +52,104 @@
   font-family: "Sora", "Avenir Next", sans-serif;
 }
 
-.public-page-home .site-header {
-  padding: 24px 0 10px;
+.home-header {
+  padding: 20px 0 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  position: relative;
+  z-index: 10;
+  background: linear-gradient(160deg, #0a3d6b 0%, #1565a8 60%, #2896c8 100%);
+  border: none;
+  box-shadow: none;
+  margin-bottom: 0;
 }
 
-.public-page-home .site-header-inner,
+.home-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(12px);
+}
+
+.home-nav a {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 20px;
+  border-radius: 999px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  text-decoration: none;
+  transition: var(--transition);
+}
+
+.home-nav a:hover,
+.home-nav a:focus-visible {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.home-nav-login {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #ffffff !important;
+  font-weight: 700 !important;
+}
+
+.home-nav-login:hover,
+.home-nav-login:focus-visible {
+  background: rgba(255, 255, 255, 0.25) !important;
+}
+
+.home-brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  text-decoration: none;
+}
+
+.home-brand-mark {
+  width: 64px;
+  height: 64px;
+  display: block;
+}
+
+.home-brand-mark svg {
+  width: 100%;
+  height: 100%;
+}
+
+.home-brand-text {
+  font-family: "Sora", "Avenir Next", sans-serif;
+  font-size: clamp(2.8rem, 8vw, 4.5rem);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.home-brand-adhd {
+  color: #ffffff;
+}
+
+.home-brand-agenda {
+  color: #4dd8a5;
+}
+
 .public-page-home .footer-shell {
   background: rgba(255, 255, 255, 0.76);
   border-color: rgba(88, 122, 154, 0.16);
   box-shadow: var(--home-shadow);
 }
 
-.public-page-home .brand-title {
-  color: var(--home-ink);
-}
-
-.public-page-home .brand-subtitle,
-.public-page-home .site-nav a,
 .public-page-home .footer-note p,
 .public-page-home .footer-links a {
   color: var(--home-ink-soft);
-}
-
-.public-page-home .site-nav {
-  background: rgba(246, 250, 252, 0.84);
-  border-color: rgba(78, 113, 146, 0.14);
-}
-
-.public-page-home .site-nav a:hover,
-.public-page-home .site-nav a:focus-visible {
-  color: var(--home-blue-strong);
-  background: rgba(228, 239, 247, 0.92);
-}
-
-.public-page-home .site-nav a[aria-current="page"] {
-  color: #ffffff;
-  background: linear-gradient(135deg, var(--home-blue) 0%, #31b9d3 100%);
-  box-shadow: 0 16px 28px rgba(31, 110, 177, 0.24);
 }
 
 .public-page-home .button {
@@ -118,7 +183,7 @@
 }
 
 .public-page-home .site-main {
-  padding: 12px 0 60px;
+  padding: 0 0 60px;
 }
 
 .public-page-home [id] {
@@ -158,18 +223,25 @@
 .home-hero {
   display: grid;
   gap: 32px;
-  padding: 40px 24px 48px;
-  background:
-    linear-gradient(160deg, #0a3d6b 0%, #1565a8 40%, #2896c8 70%, #3db8a4 100%);
+  padding: 24px 24px 48px;
   color: #f4f9ff;
   text-align: center;
   justify-items: center;
+  background:
+    radial-gradient(circle at 20% 80%, rgba(61, 184, 164, 0.25), transparent 30%),
+    radial-gradient(circle at 80% 20%, rgba(21, 101, 168, 0.35), transparent 30%),
+    linear-gradient(160deg, #0a3d6b 0%, #1565a8 40%, #2896c8 70%, #3db8a4 100%);
+  border-radius: 0 0 28px 28px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: none;
+  box-shadow: var(--home-shadow);
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
 }
 
 .home-hero::before {
-  background:
-    radial-gradient(circle at 20% 80%, rgba(61, 184, 164, 0.3), transparent 30%),
-    radial-gradient(circle at 80% 20%, rgba(21, 101, 168, 0.4), transparent 30%);
+  display: none;
 }
 
 .home-section {
