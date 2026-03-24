@@ -1,0 +1,451 @@
+/* ============================================================
+   AdhdAgenda – Shared public page styles
+   Dark blue starfield pages: get-started, how-it-works, login
+   ============================================================ */
+
+/* ---- Shared dark page shell ---- */
+.public-dark-page {
+  color: #ffffff;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+body.public-dark-page {
+  background:
+    radial-gradient(ellipse 60% 50% at 25% 18%, rgba(50, 120, 200, 0.22) 0%, transparent 100%),
+    radial-gradient(ellipse 40% 40% at 80% 75%, rgba(50, 180, 180, 0.10) 0%, transparent 100%),
+    radial-gradient(ellipse 50% 30% at 50% 95%, rgba(8, 18, 35, 0.95) 0%, transparent 100%),
+    linear-gradient(175deg, #1d4878 0%, #163c66 22%, #112e50 50%, #0c2240 75%, #081a30 100%) !important;
+}
+
+body.public-dark-page::before,
+body.public-dark-page::after {
+  display: none !important;
+}
+
+.public-dark-page h1,
+.public-dark-page h2,
+.public-dark-page h3 {
+  font-family: "Sora", "Avenir Next", sans-serif;
+}
+
+/* Kill default site header/footer */
+.public-dark-page .site-header-inner,
+.public-dark-page .site-footer {
+  display: none;
+}
+
+/* ---- Particles ---- */
+.dp-particles {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.dp-particles span {
+  position: absolute;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 0 6px 1px rgba(180, 210, 255, 0.15);
+  animation: dpPulse 4s ease-in-out infinite alternate;
+}
+
+@keyframes dpPulse {
+  0%   { opacity: 0.4; transform: scale(1); }
+  100% { opacity: 1;   transform: scale(1.3); }
+}
+
+.dp-particles .d1  { top: 8%;  left: 6%;  width: 3px; height: 3px; animation-delay: 0s; }
+.dp-particles .d2  { top: 15%; left: 22%; width: 4px; height: 4px; animation-delay: 0.6s; }
+.dp-particles .d3  { top: 35%; left: 4%;  width: 3px; height: 3px; animation-delay: 1.2s; }
+.dp-particles .d4  { top: 55%; left: 14%; width: 3px; height: 3px; animation-delay: 0.3s; }
+.dp-particles .d5  { top: 72%; left: 8%;  width: 4px; height: 4px; animation-delay: 2s; }
+.dp-particles .d6  { top: 6%;  right: 10%; width: 3px; height: 3px; animation-delay: 1.5s; }
+.dp-particles .d7  { top: 24%; right: 5%;  width: 3px; height: 3px; animation-delay: 0.8s; }
+.dp-particles .d8  { top: 44%; right: 16%; width: 4px; height: 4px; animation-delay: 2.5s; }
+.dp-particles .d9  { top: 62%; right: 7%;  width: 3px; height: 3px; animation-delay: 1s; }
+.dp-particles .d10 { top: 80%; left: 42%;  width: 3px; height: 3px; animation-delay: 1.8s; }
+
+/* ---- Nav ---- */
+.dp-header {
+  position: relative;
+  z-index: 10;
+  padding: 28px 0 0;
+}
+
+.dp-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 40px;
+  position: relative;
+}
+
+.dp-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-decoration: none;
+  position: absolute;
+  left: 0;
+}
+
+.dp-nav-brand svg {
+  width: 52px;
+  height: 40px;
+  flex-shrink: 0;
+}
+
+.dp-nav-brand-name {
+  font-family: "Sora", "Avenir Next", sans-serif;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #f5fbff;
+}
+
+.dp-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+
+.dp-nav-links a {
+  text-decoration: none;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.92rem;
+  font-weight: 600;
+  transition: color 160ms ease;
+}
+
+.dp-nav-links a:hover,
+.dp-nav-links a:focus-visible {
+  color: #ffffff;
+}
+
+.dp-nav-login {
+  position: absolute;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 22px;
+  border-radius: 999px;
+  border: 1.5px solid rgba(196, 167, 78, 0.7);
+  color: #c4a74e;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.dp-nav-login:hover,
+.dp-nav-login:focus-visible {
+  background: rgba(196, 167, 78, 0.12);
+  color: #ddc460;
+}
+
+/* ---- Brand lockup (centered, large) ---- */
+.dp-brand-lockup {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 36px;
+  margin-bottom: 8px;
+}
+
+.dp-brand-lockup svg {
+  width: 64px;
+  height: 50px;
+  flex-shrink: 0;
+}
+
+.dp-brand-lockup-name {
+  font-family: "Sora", "Avenir Next", sans-serif;
+  font-size: 2.4rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #f5fbff;
+}
+
+/* ---- Page content shell ---- */
+.dp-content {
+  position: relative;
+  z-index: 1;
+  max-width: 840px;
+  margin: 0 auto;
+  padding: 0 20px 48px;
+  text-align: center;
+}
+
+.dp-page-label {
+  margin: 0 0 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.dp-title {
+  margin: 16px 0 0;
+  font-size: clamp(2rem, 5vw, 3rem);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  color: #f5fbff;
+}
+
+.dp-subtitle {
+  margin: 14px auto 0;
+  max-width: 38rem;
+  font-size: 1.04rem;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/* ---- CTA button (gradient pill) ---- */
+.dp-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 54px;
+  padding: 0 42px;
+  border-radius: 999px;
+  border: none;
+  background: linear-gradient(135deg, #2a7ac4 0%, #38b8c8 50%, #4dd4a8 100%);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 1.06rem;
+  font-weight: 700;
+  text-decoration: none;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  box-shadow:
+    0 18px 44px rgba(30, 120, 180, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.08);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.dp-cta:hover,
+.dp-cta:focus-visible {
+  transform: translateY(-2px);
+  box-shadow:
+    0 22px 52px rgba(30, 120, 180, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+/* ---- Glass cards ---- */
+.dp-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px;
+  margin-top: 32px;
+}
+
+.dp-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 20px;
+  border-radius: 20px;
+  border: 1px solid rgba(160, 200, 240, 0.14);
+  background: rgba(180, 210, 240, 0.06);
+  backdrop-filter: blur(10px);
+  text-align: center;
+}
+
+.dp-card-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(100, 160, 220, 0.12);
+  color: rgba(140, 190, 240, 0.8);
+}
+
+.dp-card h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #f5fbff;
+}
+
+.dp-card p {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.dp-card .dp-card-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(140, 190, 240, 0.2);
+  background: rgba(40, 90, 150, 0.3);
+  color: rgba(200, 225, 255, 0.85);
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background 160ms ease;
+}
+
+.dp-card .dp-card-cta:hover,
+.dp-card .dp-card-cta:focus-visible {
+  background: rgba(40, 90, 150, 0.5);
+  color: #fff;
+}
+
+/* ---- Footer text / links ---- */
+.dp-bottom-text {
+  position: relative;
+  z-index: 1;
+  margin-top: 28px;
+  font-size: 0.92rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.dp-bottom-text a {
+  color: rgba(255, 255, 255, 0.72);
+  font-weight: 700;
+  text-decoration: none;
+  transition: color 160ms ease;
+}
+
+.dp-bottom-text a:hover,
+.dp-bottom-text a:focus-visible {
+  color: #fff;
+}
+
+.dp-note {
+  position: relative;
+  z-index: 1;
+  margin-top: 6px;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+/* ---- Form (login page) ---- */
+.dp-form {
+  display: grid;
+  gap: 14px;
+  max-width: 420px;
+  margin: 28px auto 0;
+}
+
+.dp-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 18px;
+  min-height: 52px;
+  border-radius: 14px;
+  border: 1px solid rgba(180, 210, 240, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.dp-input-wrap svg {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.dp-input-wrap input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 0.95rem;
+  min-width: 0;
+}
+
+.dp-input-wrap input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.dp-form .dp-cta {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.dp-form-links {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.dp-form-links a {
+  color: rgba(255, 255, 255, 0.65);
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 160ms ease;
+}
+
+.dp-form-links a:hover,
+.dp-form-links a:focus-visible {
+  color: #fff;
+}
+
+.dp-form-links .dp-divider {
+  color: rgba(255, 255, 255, 0.2);
+}
+
+/* ---- Focus states ---- */
+.public-dark-page a:focus-visible,
+.public-dark-page button:focus-visible,
+.public-dark-page input:focus-visible {
+  outline: 2px solid rgba(60, 200, 200, 0.7);
+  outline-offset: 4px;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 699px) {
+  .dp-nav {
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .dp-nav-brand {
+    position: static;
+    order: -1;
+    width: 100%;
+    justify-content: center;
+    margin-bottom: 8px;
+  }
+
+  .dp-nav-login {
+    position: static;
+  }
+
+  .dp-brand-lockup svg {
+    width: 48px;
+    height: 38px;
+  }
+
+  .dp-brand-lockup-name {
+    font-size: 1.8rem;
+  }
+
+  .dp-cards {
+    grid-template-columns: 1fr;
+  }
+}
