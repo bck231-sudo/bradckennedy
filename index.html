@@ -38,7 +38,7 @@
   <script src="/canonical-host.js?v=20260311-host-fix-1"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/site.css?v=20260311-repo-cleanup-1">
   <link rel="stylesheet" href="/assets/homepage.css?v=20260324-figma-rebuild-1">
 
@@ -113,20 +113,15 @@
 
       <!-- AA Logo Lockup -->
       <div class="home-brand-lockup">
-        <svg class="home-aa-mark" aria-hidden="true" width="72" height="56" viewBox="0 0 72 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg class="home-aa-mark" aria-hidden="true" viewBox="0 0 40 44" fill="none">
           <defs>
-            <linearGradient id="aaGrad" x1="0" y1="0" x2="72" y2="56" gradientUnits="userSpaceOnUse">
-              <stop offset="0" stop-color="#3a8fd4"/>
-              <stop offset="0.55" stop-color="#3cc8c8"/>
-              <stop offset="1" stop-color="#6dd4a0"/>
-            </linearGradient>
+            <clipPath id="aaL"><rect x="0" y="0" width="20" height="44"/></clipPath>
+            <clipPath id="aaR"><rect x="20" y="0" width="20" height="44"/></clipPath>
           </defs>
-          <!-- First A (left, slightly behind) -->
-          <path d="M6 52L22 8h6l16 44h-7.5L33 42H14.5L11 52H6zm10.5-16h15L24.5 16.5h-.5L16.5 36z" fill="url(#aaGrad)" opacity="0.6"/>
-          <!-- Second A (right, overlapping in front) -->
-          <path d="M28 52L44 8h6l16 44h-7.5L55 42H36.5L33 52H28zm10.5-16h15L46.5 16.5h-.5L38.5 36z" fill="url(#aaGrad)"/>
+          <path d="M20 3 L3 41 H9.5 L13 32 H27 L30.5 41 H37 L20 3 Z M15.5 26 L20 14 L24.5 26 Z" clip-path="url(#aaL)" fill="#5bbf9a" fill-rule="evenodd"/>
+          <path d="M20 3 L3 41 H9.5 L13 32 H27 L30.5 41 H37 L20 3 Z M15.5 26 L20 14 L24.5 26 Z" clip-path="url(#aaR)" fill="none" stroke="#5bbf9a" stroke-width="2" fill-rule="evenodd"/>
         </svg>
-        <span class="home-brand-name">AdhdAgenda</span>
+        <span class="home-brand-name"><span class="brand-adhd">Adhd</span><span class="brand-agenda">Agenda</span></span>
       </div>
 
       <!-- Main hero layout: phone | copy | timeline -->
@@ -238,7 +233,7 @@
 
         <!-- Center copy -->
         <div class="home-hero-center">
-          <h1 id="hero-title">Track medications, symptoms, notes, and questions for your next appointment.</h1>
+          <h1 id="hero-title">Your medications, symptoms, and notes — ready for every appointment.</h1>
           <p class="home-hero-sub">Finally, an app designed to help adults with ADHD stay organized, manage medications, and prepare for appointments.</p>
           <a class="home-cta-button" href="/how-it-works/">See how it works</a>
         </div>
@@ -247,49 +242,57 @@
         <div class="home-timeline-col" aria-hidden="true">
           <p class="home-timeline-title">TODAY'S SCHEDULE</p>
 
-          <div class="home-timeline-card tl-medication">
-            <span class="tl-icon tl-icon-med">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M15.5 2.5L2.5 15.5c-1.4 1.4-1.4 3.6 0 5s3.6 1.4 5 0l13-13c1.4-1.4 1.4-3.6 0-5s-3.6-1.4-5 0z" stroke="currentColor" stroke-width="2"/><path d="M9 9l6 6" stroke="currentColor" stroke-width="2"/></svg>
-            </span>
-            <div>
-              <strong>Took Medication</strong>
-              <p>50mg Vyvanse</p>
+          <div class="tl-track">
+            <!-- 8:00 AM – Took Medication -->
+            <div class="tl-entry tl-entry-active">
+              <div class="tl-dot tl-dot-blue"></div>
+              <div class="tl-time">8:00 <span>AM</span></div>
+              <div class="tl-card">
+                <span class="tl-card-icon tl-card-icon-med">💊</span>
+                <div>
+                  <strong>Took Medication</strong>
+                  <p>50mg Vyvanse</p>
+                </div>
+              </div>
             </div>
-          </div>
 
-          <div class="home-timeline-time">10:15 AM</div>
-
-          <div class="home-timeline-card tl-note">
-            <span class="tl-icon tl-icon-note">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </span>
-            <div>
-              <strong>Focus Note</strong>
-              <p>Feeling more alert &amp; productive</p>
+            <!-- 10:15 AM – Focus Note -->
+            <div class="tl-entry">
+              <div class="tl-dot tl-dot-gold"></div>
+              <div class="tl-time">10:15 <span>AM</span></div>
+              <div class="tl-card">
+                <span class="tl-card-icon tl-card-icon-note">💡</span>
+                <div>
+                  <strong>Focus Note</strong>
+                  <p>Feeling more alert &amp; productive</p>
+                </div>
+              </div>
             </div>
-          </div>
 
-          <div class="home-timeline-time">12:30 PM</div>
-
-          <div class="home-timeline-card tl-prep">
-            <span class="tl-icon tl-icon-prep">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M9 11l3 3 5-5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="3" y="3" width="18" height="18" rx="5" stroke="currentColor" stroke-width="2"/></svg>
-            </span>
-            <div>
-              <strong>Prepare for Appointment</strong>
-              <p>Review questions for Dr. Lee</p>
+            <!-- 12:30 PM – Prepare for Appointment -->
+            <div class="tl-entry">
+              <div class="tl-dot tl-dot-gold"></div>
+              <div class="tl-time">12:30 <span>PM</span></div>
+              <div class="tl-card">
+                <span class="tl-card-icon tl-card-icon-prep">📋</span>
+                <div>
+                  <strong>Prepare for Appointment</strong>
+                  <p>Review questions for Dr. Lee</p>
+                </div>
+              </div>
             </div>
-          </div>
 
-          <div class="home-timeline-time">2:00 PM</div>
-
-          <div class="home-timeline-card tl-visit">
-            <span class="tl-icon tl-icon-visit">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2"/><path d="M22 21v-2a4 4 0 00-3-3.87" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 3.13a4 4 0 010 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </span>
-            <div>
-              <strong>Doctor's Visit</strong>
-              <p>With Dr. Lee</p>
+            <!-- 2:00 PM – Doctor's Visit -->
+            <div class="tl-entry">
+              <div class="tl-dot tl-dot-grey"></div>
+              <div class="tl-time">2:00 <span>PM</span></div>
+              <div class="tl-card">
+                <span class="tl-card-icon tl-card-icon-visit">🩺</span>
+                <div>
+                  <strong>Doctor's Visit</strong>
+                  <p>with Dr. Lee</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>

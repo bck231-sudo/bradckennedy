@@ -169,30 +169,42 @@ body.public-page-home::after {
 
 .home-aa-mark {
   flex-shrink: 0;
-  width: 72px;
-  height: 56px;
+  width: 36px;
+  height: 40px;
 }
 
 @media (min-width: 700px) {
   .home-aa-mark {
-    width: 88px;
-    height: 68px;
+    width: 44px;
+    height: 48px;
   }
 }
 
 @media (min-width: 1360px) {
   .home-aa-mark {
-    width: 100px;
-    height: 78px;
+    width: 50px;
+    height: 55px;
   }
 }
 
 .home-brand-name {
-  font-family: "Sora", "Avenir Next", sans-serif;
+  font-family: "Space Grotesk", "Sora", "Avenir Next", sans-serif;
   font-size: 2.8rem;
-  font-weight: 700;
+  font-weight: 500;
   letter-spacing: -0.04em;
   color: #f5fbff;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.home-brand-name .brand-adhd {
+  color: #e8eef4;
+  font-weight: 500;
+}
+
+.home-brand-name .brand-agenda {
+  color: #5bbf9a;
+  font-weight: 500;
 }
 
 /* ---- Hero layout (3-col on desktop) ---- */
@@ -506,12 +518,14 @@ body.public-page-home::after {
 
 .home-hero-center h1 {
   margin: 0;
-  max-width: 16ch;
-  font-size: clamp(2rem, 5vw, 3.4rem);
-  font-weight: 800;
-  line-height: 1.08;
-  letter-spacing: -0.025em;
-  color: #f5fbff;
+  max-width: 18ch;
+  font-size: clamp(1.5rem, 3.2vw, 2rem);
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  color: rgba(245, 251, 255, 0.88);
+  text-wrap: balance;
+  -webkit-font-smoothing: antialiased;
 }
 
 .home-hero-sub {
@@ -554,83 +568,154 @@ body.public-page-home::after {
 .home-timeline-col {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  max-width: 320px;
+  gap: 0;
+  max-width: 340px;
   margin: 0 auto;
 }
 
 .home-timeline-title {
-  margin: 0 0 4px;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
+  margin: 0 0 12px;
+  padding-left: 22px;
+  font-family: "Manrope", "Avenir Next", sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.45);
 }
 
-.home-timeline-card {
+/* ---- Vertical track with line ---- */
+.tl-track {
+  position: relative;
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 14px 16px;
-  border-radius: 16px;
-  background: rgba(200, 220, 240, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  backdrop-filter: blur(8px);
+  flex-direction: column;
+  gap: 0;
+  padding-left: 22px;
 }
 
-.home-timeline-card strong {
+/* Vertical line */
+.tl-track::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 8px;
+  bottom: 16px;
+  width: 2px;
+  background: linear-gradient(180deg, rgba(100, 170, 230, 0.5) 0%, rgba(100, 170, 230, 0.15) 100%);
+  border-radius: 2px;
+}
+
+/* ---- Each timeline entry ---- */
+.tl-entry {
+  position: relative;
+  padding-bottom: 16px;
+}
+
+/* ---- Dot on the line ---- */
+.tl-dot {
+  position: absolute;
+  left: -19px;
+  top: 6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  z-index: 1;
+}
+
+.tl-dot-blue {
+  background: #4a9ede;
+  box-shadow: 0 0 10px 3px rgba(74, 158, 222, 0.5), 0 0 20px 6px rgba(74, 158, 222, 0.2);
+}
+
+.tl-dot-gold {
+  background: #e8b840;
+  box-shadow: 0 0 6px 2px rgba(232, 184, 64, 0.3);
+}
+
+.tl-dot-grey {
+  background: #8ca0b4;
+  box-shadow: 0 0 4px 1px rgba(140, 160, 180, 0.2);
+}
+
+/* ---- Time label ---- */
+.tl-time {
+  font-family: "Sora", "Avenir Next", sans-serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 8px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.tl-time span {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+/* ---- White card ---- */
+.tl-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.08),
+    0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.tl-card strong {
   display: block;
-  font-size: 0.92rem;
-  color: #fff;
+  font-family: "Sora", "Avenir Next", sans-serif;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #1a2d44;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.tl-card p {
+  margin: 2px 0 0;
+  font-size: 0.78rem;
+  color: #5a6e82;
   line-height: 1.3;
 }
 
-.home-timeline-card p {
-  margin: 2px 0 0;
-  font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.tl-icon {
+/* ---- Card emoji icon ---- */
+.tl-card-icon {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
+  width: 42px;
+  height: 42px;
   display: grid;
   place-items: center;
-  border-radius: 10px;
+  border-radius: 12px;
+  font-size: 1.4rem;
 }
 
-.tl-icon-med {
-  background: linear-gradient(135deg, #1cb5a9 0%, #34d4b0 100%);
-  color: #fff;
+.tl-card-icon-med {
+  background: linear-gradient(135deg, #e3f0ff, #d0e4f8);
 }
 
-.tl-icon-note {
-  background: linear-gradient(135deg, #e8a040 0%, #f0c060 100%);
-  color: #fff;
+.tl-card-icon-note {
+  background: linear-gradient(135deg, #fff8e0, #ffeeb8);
 }
 
-.tl-icon-prep {
-  background: linear-gradient(135deg, #2aada0 0%, #40d8c0 100%);
-  color: #fff;
+.tl-card-icon-prep {
+  background: linear-gradient(135deg, #e8f5e4, #d4ecd0);
 }
 
-.tl-icon-visit {
-  background: linear-gradient(135deg, #5874cc 0%, #7094e8 100%);
-  color: #fff;
+.tl-card-icon-visit {
+  background: linear-gradient(135deg, #e3eeff, #d0dff8);
 }
 
-.tl-medication {
-  background: linear-gradient(135deg, rgba(28, 181, 169, 0.14), rgba(52, 212, 176, 0.08));
-  border-color: rgba(28, 181, 169, 0.18);
-}
-
-.home-timeline-time {
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.4);
-  padding-left: 4px;
+/* Active entry glow */
+.tl-entry-active .tl-card {
+  box-shadow:
+    0 4px 24px rgba(74, 158, 222, 0.12),
+    0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 /* ---- Benefits strip ---- */
@@ -765,7 +850,7 @@ body.public-page-home::after {
   }
 
   .home-hero-center h1 {
-    font-size: clamp(2.4rem, 4.5vw, 3.6rem);
+    font-size: clamp(1.6rem, 3vw, 2.1rem);
   }
 
   .home-benefits-strip {
@@ -793,8 +878,8 @@ body.public-page-home::after {
   }
 
   .home-hero-center h1 {
-    font-size: 3.2rem;
-    max-width: 14ch;
+    font-size: 2.1rem;
+    max-width: 18ch;
   }
 
   .home-brand-lockup {
@@ -822,7 +907,7 @@ body.public-page-home::after {
   }
 
   .home-hero-center h1 {
-    font-size: 3.6rem;
+    font-size: 2.2rem;
   }
 
   .home-brand-name {
@@ -858,8 +943,8 @@ body.public-page-home::after {
   }
 
   .home-aa-mark {
-    width: 52px;
-    height: 40px;
+    width: 30px;
+    height: 33px;
   }
 
   .home-brand-name {

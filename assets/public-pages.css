@@ -1,7 +1,23 @@
 /* ============================================================
-   AdhdAgenda – Shared public page styles
-   Dark blue starfield pages: get-started, how-it-works, login
+   AdhdAgenda – Unified public page styles
+   Dark blue starfield design system for all public pages
    ============================================================ */
+
+/* ---- Brand wordmark typography ---- */
+.dp-brand-wordmark,
+.dp-nav-brand-name,
+.dp-brand-lockup-name {
+  font-family: "Space Grotesk", "Sora", "Avenir Next", sans-serif;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  color: #f5fbff;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Wordmark colour split */
+.brand-adhd { color: #e8eef4; font-weight: 500; }
+.brand-agenda { color: #5bbf9a; font-weight: 500; }
 
 /* ---- Shared dark page shell ---- */
 .public-dark-page {
@@ -27,9 +43,21 @@ body.public-dark-page::after {
 .public-dark-page h2,
 .public-dark-page h3 {
   font-family: "Sora", "Avenir Next", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Kill default site header/footer */
+.public-dark-page h2 {
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+.public-dark-page h3 {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* Kill default site header/footer when using dp-header */
 .public-dark-page .site-header-inner,
 .public-dark-page .site-footer {
   display: none;
@@ -93,17 +121,18 @@ body.public-dark-page::after {
 }
 
 .dp-nav-brand svg {
-  width: 52px;
-  height: 40px;
+  width: 24px;
+  height: 26px;
   flex-shrink: 0;
 }
 
 .dp-nav-brand-name {
   font-family: "Sora", "Avenir Next", sans-serif;
-  font-size: 1.6rem;
-  font-weight: 700;
-  letter-spacing: -0.03em;
+  font-size: 1.55rem;
+  font-weight: 600;
+  letter-spacing: -0.05em;
   color: #f5fbff;
+  -webkit-font-smoothing: antialiased;
 }
 
 .dp-nav-links {
@@ -161,17 +190,18 @@ body.public-dark-page::after {
 }
 
 .dp-brand-lockup svg {
-  width: 64px;
-  height: 50px;
+  width: 40px;
+  height: 44px;
   flex-shrink: 0;
 }
 
 .dp-brand-lockup-name {
   font-family: "Sora", "Avenir Next", sans-serif;
-  font-size: 2.4rem;
-  font-weight: 700;
-  letter-spacing: -0.03em;
+  font-size: 2.3rem;
+  font-weight: 600;
+  letter-spacing: -0.05em;
   color: #f5fbff;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* ---- Page content shell ---- */
@@ -186,28 +216,40 @@ body.public-dark-page::after {
 
 .dp-page-label {
   margin: 0 0 8px;
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
+  font-family: "Manrope", "Avenir Next", sans-serif;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(255, 255, 255, 0.38);
 }
 
 .dp-title {
-  margin: 16px 0 0;
-  font-size: clamp(2rem, 5vw, 3rem);
-  font-weight: 800;
-  line-height: 1.1;
-  letter-spacing: -0.025em;
+  margin: 16px auto 0;
+  max-width: 680px;
+  font-family: "Sora", "Avenir Next", sans-serif;
+  font-size: clamp(1.9rem, 4.5vw, 2.8rem);
+  font-weight: 600;
+  line-height: 1.18;
+  letter-spacing: -0.04em;
   color: #f5fbff;
+  text-align: center;
+  text-wrap: balance;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .dp-subtitle {
-  margin: 14px auto 0;
-  max-width: 38rem;
-  font-size: 1.04rem;
-  line-height: 1.65;
-  color: rgba(255, 255, 255, 0.55);
+  margin: 16px auto 0;
+  max-width: 34rem;
+  font-family: "Manrope", "Avenir Next", sans-serif;
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.7;
+  letter-spacing: 0.005em;
+  color: rgba(255, 255, 255, 0.52);
+  text-align: center;
+  text-wrap: balance;
 }
 
 /* ---- CTA button (gradient pill) ---- */
@@ -274,8 +316,9 @@ body.public-dark-page::after {
 
 .dp-card h3 {
   margin: 0;
-  font-size: 1.1rem;
-  font-weight: 700;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   color: #f5fbff;
 }
 
@@ -416,6 +459,220 @@ body.public-dark-page::after {
   outline-offset: 4px;
 }
 
+/* ---- Content pages (about, contact, privacy, terms) ---- */
+.dp-content-wide {
+  position: relative;
+  z-index: 1;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 20px 60px;
+  text-align: center;
+}
+
+/* Hero section for content pages */
+.dp-hero-kicker {
+  margin: 0 0 8px;
+  font-family: "Manrope", "Avenir Next", sans-serif;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+/* Glass content panel */
+.dp-panel {
+  margin-top: 28px;
+  padding: 32px 28px;
+  border-radius: 20px;
+  border: 1px solid rgba(160, 200, 240, 0.12);
+  background: rgba(180, 210, 240, 0.05);
+  backdrop-filter: blur(10px);
+  text-align: left;
+}
+
+.dp-panel h2 {
+  margin: 0 0 16px;
+  font-size: 1.2rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: #f5fbff;
+}
+
+.dp-panel h3 {
+  margin: 20px 0 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.dp-panel h3:first-child {
+  margin-top: 0;
+}
+
+.dp-panel p {
+  margin: 0 0 8px;
+  font-size: 0.92rem;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.dp-panel ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.dp-panel ul li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.dp-panel ul li svg {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+  color: rgba(60, 200, 200, 0.7);
+}
+
+.dp-panel .dp-info-note {
+  margin-top: 18px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  border: 1px solid rgba(196, 167, 78, 0.2);
+  background: rgba(196, 167, 78, 0.06);
+}
+
+.dp-panel .dp-info-note strong {
+  color: rgba(220, 196, 96, 0.85);
+  font-size: 0.88rem;
+}
+
+.dp-panel .dp-info-note p {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Mini badges (privacy page) */
+.dp-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.dp-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(60, 200, 200, 0.2);
+  background: rgba(60, 200, 200, 0.06);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgba(60, 200, 200, 0.8);
+}
+
+/* CTA band at bottom of content pages */
+.dp-cta-band {
+  margin-top: 36px;
+  padding: 32px 28px;
+  border-radius: 20px;
+  border: 1px solid rgba(160, 200, 240, 0.12);
+  background: rgba(180, 210, 240, 0.05);
+  backdrop-filter: blur(10px);
+  text-align: center;
+}
+
+.dp-cta-band h2 {
+  margin: 8px 0 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: #f5fbff;
+  text-wrap: balance;
+}
+
+.dp-cta-band p {
+  margin: 10px auto 0;
+  max-width: 34rem;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.dp-cta-row {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+/* Secondary button (ghost style) */
+.dp-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(140, 190, 240, 0.22);
+  background: rgba(40, 90, 150, 0.2);
+  color: rgba(200, 225, 255, 0.85);
+  font-size: 0.92rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.dp-btn-secondary:hover,
+.dp-btn-secondary:focus-visible {
+  background: rgba(40, 90, 150, 0.4);
+  color: #fff;
+}
+
+/* Footer */
+.dp-footer {
+  position: relative;
+  z-index: 1;
+  margin-top: 40px;
+  padding: 24px 20px;
+  text-align: center;
+}
+
+.dp-footer-disclaimer {
+  margin: 0 0 12px;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.28);
+}
+
+.dp-footer-links {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+}
+
+.dp-footer-links a {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 160ms ease;
+}
+
+.dp-footer-links a:hover,
+.dp-footer-links a:focus-visible {
+  color: rgba(255, 255, 255, 0.75);
+}
+
 /* ---- Responsive ---- */
 @media (max-width: 699px) {
   .dp-nav {
@@ -438,7 +695,7 @@ body.public-dark-page::after {
 
   .dp-brand-lockup svg {
     width: 48px;
-    height: 38px;
+    height: 53px;
   }
 
   .dp-brand-lockup-name {
@@ -447,5 +704,13 @@ body.public-dark-page::after {
 
   .dp-cards {
     grid-template-columns: 1fr;
+  }
+
+  .dp-content-wide {
+    padding: 0 16px 40px;
+  }
+
+  .dp-panel {
+    padding: 22px 18px;
   }
 }
